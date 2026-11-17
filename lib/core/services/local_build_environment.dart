@@ -82,7 +82,7 @@ class LocalBuildEnvironmentService {
         'inspectEnvironment',
       );
       if (result == null) {
-        throw const PlatformException(
+        throw PlatformException(
           code: 'EMPTY_RESULT',
           message: 'لم تُرجع خدمة Android معلومات بيئة البناء.',
         );
@@ -112,6 +112,7 @@ class LocalBuildEnvironmentService {
       engineInstalled: false,
       deviceSupported: false,
       runtimeVerified: false,
+      debugBuildVerified: false,
       requiredStorageBytes: 20 * 1024 * 1024 * 1024,
       missingRequirements: const [],
       canBuildLocally: false,
