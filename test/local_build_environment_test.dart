@@ -1,0 +1,95 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:bisho_ide/core/services/local_build_environment.dart';
+
+void main() {
+  group('LocalBuildEnvironment', () {
+    test('does not report ready without an installed engine', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'androidVersion': 30,
+        'availableBytes': 1024 * 1024 * 1024,
+        'engineInstalled': false,
+        'deviceSupported': true,
+        'runtimeVerified': true,
+        'requiredStorageBytes': 12 * 1024 * 1024 * 1024,
+        'canBuildLocally': true,
+        'message': 'not ready',
+      });
+
+      expect(environment.canBuildLocally, isFalse);
+      expect(environment.engineInstalled, isFalse);
+      expect(environment.deviceAbi, 'arm64-v8a');
+    });
+
+    test('does not trust an engine marker without native verification', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'androidVersion': 30,
+        'availableBytes': 2 * 1024 * 1024 * 1024,
+        'engineInstalled': true,
+        'deviceSupported': true,
+        'runtimeVerified': false,
+        'requiredStorageBytes': 12 * 1024 * 1024 * 1024,
+        'canBuildLocally': false,
+        'message': 'toolchain not verified',
+      });
+
+      expect(environment.engineInstalled, isTrue);
+      expect(environment.canBuildLocally, isFalse);
+    });
+
+
+    test('never enables local build without native runtime verification', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'androidVersion': 35,
+        'availableBytes': 20 * 1024 * 1024 * 1024,
+        'engineInstalled': true,
+        'deviceSupported': true,
+        'requiredStorageBytes': 12 * 1024 * 1024 * 1024,
+        'runtimeVerified': false,
+        'canBuildLocally': true,
+        'message': 'manifest only',
+      });
+
+      expect(environment.canBuildLocally, isFalse);
+      expect(environment.runtimeVerified, isFalse);
+    });
+
+    test('exposes missing requirements from native diagnostics', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'armeabi-v7a',
+        'androidVersion': 28,
+        'availableBytes': 100,
+        'engineInstalled': false,
+        'deviceSupported': false,
+        'runtimeVerified': false,
+        'requiredStorageBytes': 12 * 1024 * 1024 * 1024,
+        'missingRequirements': ['arm64-v8a required', 'Android 10 required'],
+        'canBuildLocally': false,
+        'message': 'unsupported',
+      });
+
+      expect(environment.missingRequirements, hasLength(2));
+      expect(environment.requiredStorageLabel, '12.0 GB');
+      expect(environment.deviceSupported, isFalse);
+    });
+
+    test('formats available storage in GiB', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'androidVersion': 30,
+        'availableBytes': 2 * 1024 * 1024 * 1024,
+        'engineInstalled': false,
+        'deviceSupported': false,
+        'runtimeVerified': false,
+        'requiredStorageBytes': 12 * 1024 * 1024 * 1024,
+        'missingRequirements': ['insufficient storage'],
+        'canBuildLocally': false,
+        'message': 'missing',
+      });
+
+      expect(environment.availableStorageLabel, '2.0 GB');
+    });
+  });
+}

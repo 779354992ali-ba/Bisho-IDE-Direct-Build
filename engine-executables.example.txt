@@ -1,0 +1,14 @@
+# Copy this file to engine-executables.txt in the runtime ZIP.
+# Add EVERY executable file from runtime/ and rootfs/; use paths relative to ZIP root.
+runtime/proot
+rootfs/bin/sh
+rootfs/opt/flutter/bin/flutter
+rootfs/usr/lib/jvm/java-17/bin/java
+rootfs/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager
+# Add every executable from each bundled Android build-tools version, for example:
+rootfs/opt/android-sdk/build-tools/36.0.0/aapt2
+rootfs/opt/android-sdk/build-tools/36.0.0/aidl
+rootfs/opt/android-sdk/build-tools/36.0.0/zipalign
+rootfs/opt/android-sdk/build-tools/36.0.0/split-select
+rootfs/opt/android-sdk/build-tools/36.0.0/apksigner
+# Also include all required Linux commands, scripts, helper binaries and NDK/LLVM executables.

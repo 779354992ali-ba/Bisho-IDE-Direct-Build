@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "abi": "arm64-v8a",
+  "runtimeLauncher": "runtime/proot",
+  "rootfsDirectory": "rootfs",
+  "flutterExecutable": "rootfs/opt/flutter/bin/flutter",
+  "javaExecutable": "rootfs/usr/lib/jvm/java-17/bin/java",
+  "androidSdkDirectory": "rootfs/opt/android-sdk",
+  "debugBuildSupported": false,
+  "releaseAotSupported": false
+}
