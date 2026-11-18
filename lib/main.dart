@@ -1324,6 +1324,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       if (file == null) return;
 
       final bytes = await safFiles.readFile(file.uri);
+      if (!mounted) return;
       final content = utf8.decode(bytes, allowMalformed: true);
 
       final extension =
@@ -1416,7 +1417,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     try {
       final directory = await safFiles.pickProjectFolder();
 
-      if (directory == null) return;
+      if (directory == null || !mounted) return;
 
       if (projectUri == directory.uri) {
         refreshExplorer();
@@ -1675,6 +1676,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }) async {
     try {
       final bytes = await safFiles.readFile(file.uri);
+      if (!mounted) return;
       final content = utf8.decode(bytes, allowMalformed: true);
 
       final extension =
@@ -2137,6 +2139,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   Future<void> deleteEntity(SafDocumentFile entity) async {
     try {
       final subtree = await collectSubtree(entity);
+      if (!mounted) return;
 
       final deletedUris = subtree.map((item) => item.uri).toSet();
 
@@ -2509,6 +2512,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       final repositoryUri = await _ensureBackupRepositoryDirectory();
       while (mounted) {
         final snapshots = await _readProjectBackupCatalog(repositoryUri);
+        if (!mounted) return;
         if (snapshots.isEmpty) {
           showMessage('لا توجد نقاط استعادة محفوظة لهذا المشروع بعد. أنشئ نسخة احتياطية أولاً.');
           return;
@@ -2610,7 +2614,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           title: const Text('مقارنة نقطتي استعادة'),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             DropdownButtonFormField<String>(
-              value: olderId,
+              initialValue: olderId,
               decoration: const InputDecoration(labelText: 'النسخة الأقدم'),
               items: snapshots.map((item) => DropdownMenuItem(
                 value: item.id,
@@ -2620,7 +2624,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: newerId,
+              initialValue: newerId,
               decoration: const InputDecoration(labelText: 'النسخة الأحدث'),
               items: snapshots.map((item) => DropdownMenuItem(
                 value: item.id,
@@ -2895,7 +2899,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             .map((entry) => entry.name),
       );
       final encoded = ZipEncoder().encode(archive);
-      if (encoded == null || encoded.isEmpty) {
+      if (encoded.isEmpty) {
         throw Exception('تعذر إنشاء ملف ZIP');
       }
       final zipName = '${projectName.isEmpty ? 'bisho_project' : projectName}.zip';
@@ -2964,7 +2968,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       );
       ProjectArchiveValidator.validateFilePaths(
         archiveFiles.map((entry) => entry.name),
-        directoryPaths: archive.files
+        directoryPaths: decoded.files
             .where((entry) => !entry.isFile)
             .map((entry) => entry.name),
       );
@@ -3049,7 +3053,6 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     saveTabStateSilently();
   }
-
   Future<void> searchCode({bool startInReplaceMode = false}) async {
     final findController = TextEditingController();
     final replaceController = TextEditingController();

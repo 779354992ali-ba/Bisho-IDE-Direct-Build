@@ -89,7 +89,7 @@ class LocalBuildEnvironmentService {
         'inspectEnvironment',
       );
       if (result == null) {
-        throw const PlatformException(
+        throw PlatformException(
           code: 'EMPTY_RESULT',
           message: 'لم تُرجع خدمة Android معلومات بيئة البناء.',
         );
