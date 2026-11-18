@@ -142,7 +142,7 @@ jobs:
             "CC=$CLANG"
             "LD=$CLANG"
             "LD_CMD=$LD_CMD"
-            "STRIP=$LLVM_STRIP"
+            "STRIP=true"
             "OBJCOPY=$LLVM_OBJCOPY"
             "OBJDUMP=$LLVM_OBJDUMP"
             "PKG_CONFIG=pkg-config"
