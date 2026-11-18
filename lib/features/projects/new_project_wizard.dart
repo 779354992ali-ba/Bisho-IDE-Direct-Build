@@ -2000,32 +2000,6 @@ Thumbs.db
     );
   }
 
-  IconData _languageIcon(String language) {
-    switch (language) {
-      case 'Flutter':
-        return Icons.phone_android;
-      case 'Dart':
-        return Icons.code;
-      case 'Python':
-        return Icons.terminal;
-      case 'JavaScript':
-      case 'TypeScript':
-        return Icons.javascript;
-      case 'Java':
-      case 'Kotlin':
-        return Icons.android;
-      case 'Swift':
-        return Icons.apple;
-      case 'HTML':
-      case 'CSS':
-        return Icons.web;
-      case 'SQL':
-      case 'JSON':
-        return Icons.data_object;
-      default:
-        return Icons.code;
-    }
-  }
 
   Widget _buildSettingsStep() {
     return _stepContent(
@@ -2058,7 +2032,7 @@ Thumbs.db
         ),
         const SizedBox(height: 14),
         DropdownButtonFormField<String>(
-          value: _selectedTemplate,
+          initialValue: _selectedTemplate,
           decoration: const InputDecoration(labelText: 'قالب المشروع', border: OutlineInputBorder()),
           items: _availableTemplates.map((value) => DropdownMenuItem(value: value, child: Text(_templateLabel(value)))).toList(),
           onChanged: (value) => setState(() {

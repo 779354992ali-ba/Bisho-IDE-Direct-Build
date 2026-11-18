@@ -136,7 +136,7 @@ PopupMenuItem<String> _bishoMenuItem(
 }
 
 class _BishoSplashGate extends StatefulWidget {
-  const _BishoSplashGate({super.key});
+  const _BishoSplashGate();
 
   @override
   State<_BishoSplashGate> createState() => _BishoSplashGateState();
@@ -3006,7 +3006,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           continue;
         }
         final content = entry.content;
-        final bytes = content is List<int> ? content : List<int>.from(content as Iterable);
+        final bytes = content;
         await _writeArchiveEntry(root.uri, name, bytes);
         importedCount++;
       }
@@ -5653,9 +5653,6 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     showMessage(success);
   }
 
-  void _showDiagnosticsAvailabilityInfo() {
-    showMessage('لوحة التحليل والمشكلات المتكاملة قيد التطوير؛ أدوات التشخيص الحالية تعمل حسب اللغة المدعومة');
-  }
 
   void _showLanguageCapabilities() {
     showModalBottomSheet<void>(

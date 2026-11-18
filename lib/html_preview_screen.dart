@@ -202,13 +202,6 @@ class _HtmlPreviewScreenState extends State<HtmlPreviewScreen> {
     return '$parent${Platform.pathSeparator}$safeName';
   }
 
-  // التحقق من اسم ملف HTML.
-  bool _isHtmlFile(String name) {
-    final lower = name.toLowerCase();
-
-    return lower.endsWith('.html') ||
-        lower.endsWith('.htm');
-  }
 
   // نسخ ملفات المشروع من SAF إلى المجلد المؤقت.
   //
