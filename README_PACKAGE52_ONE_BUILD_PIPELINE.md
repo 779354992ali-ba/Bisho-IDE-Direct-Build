@@ -5,7 +5,7 @@ Package52 keeps the existing Package51 application source and tightens the singl
 ## CI changes
 
 - Uses Ubuntu 24.04 and Java 17.
-- Keeps the Flutter stable version selectable at workflow dispatch; default is 3.47.2.
+- Keeps the Flutter stable version selectable at workflow dispatch; default is 3.47.9.
 - Caches Pub dependencies.
 - Resolves dependencies once, then runs analysis and tests without resolving them again.
 - Validates the required Android Gradle, manifest, and Kotlin activity files before building.
@@ -27,7 +27,7 @@ Package52 keeps the existing Package51 application source and tightens the singl
 ## Single-build instructions
 
 1. Push this package to the repository's `main` branch (or `master`). The workflow runs automatically.
-2. Alternatively, use Actions → Build Flutter APK → Run workflow and keep Flutter version `3.47.2`.
+2. Alternatively, use Actions → Build Flutter APK → Run workflow and keep Flutter version `3.47.9`.
 3. Wait for the `Validate and build one release APK` job.
 4. Download `Bisho-IDE-Release-APK` from the completed workflow's Artifacts section.
 

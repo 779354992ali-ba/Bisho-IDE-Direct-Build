@@ -2964,7 +2964,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       );
       ProjectArchiveValidator.validateFilePaths(
         archiveFiles.map((entry) => entry.name),
-        directoryPaths: decoded.files
+        directoryPaths: archive.files
             .where((entry) => !entry.isFile)
             .map((entry) => entry.name),
       );

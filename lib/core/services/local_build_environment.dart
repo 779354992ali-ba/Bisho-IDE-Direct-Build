@@ -11,9 +11,11 @@ class LocalBuildEnvironment {
     required this.androidVersion,
     required this.availableBytes,
     required this.engineInstalled,
+    required this.alpineRootfsInstalled,
     required this.deviceSupported,
     required this.runtimeVerified,
     required this.debugBuildVerified,
+    required this.releaseBuildVerified,
     required this.requiredStorageBytes,
     required this.missingRequirements,
     required this.canBuildLocally,
@@ -24,9 +26,11 @@ class LocalBuildEnvironment {
   final int androidVersion;
   final int availableBytes;
   final bool engineInstalled;
+  final bool alpineRootfsInstalled;
   final bool deviceSupported;
   final bool runtimeVerified;
   final bool debugBuildVerified;
+  final bool releaseBuildVerified;
   final int requiredStorageBytes;
   final List<String> missingRequirements;
   final bool canBuildLocally;
@@ -37,14 +41,17 @@ class LocalBuildEnvironment {
     final deviceSupported = map['deviceSupported'] == true;
     final runtimeVerified = map['runtimeVerified'] == true;
     final debugBuildVerified = map['debugBuildVerified'] == true;
+    final releaseBuildVerified = map['releaseBuildVerified'] == true;
     return LocalBuildEnvironment(
       deviceAbi: map['deviceAbi']?.toString() ?? 'غير معروف',
       androidVersion: (map['androidVersion'] as num?)?.toInt() ?? 0,
       availableBytes: (map['availableBytes'] as num?)?.toInt() ?? 0,
       engineInstalled: engineInstalled,
+      alpineRootfsInstalled: map['alpineRootfsInstalled'] == true,
       deviceSupported: deviceSupported,
       runtimeVerified: runtimeVerified,
       debugBuildVerified: debugBuildVerified,
+      releaseBuildVerified: releaseBuildVerified,
       requiredStorageBytes:
           (map['requiredStorageBytes'] as num?)?.toInt() ?? 0,
       missingRequirements: (map['missingRequirements'] as List<Object?>? ??
@@ -82,7 +89,7 @@ class LocalBuildEnvironmentService {
         'inspectEnvironment',
       );
       if (result == null) {
-        throw PlatformException(
+        throw const PlatformException(
           code: 'EMPTY_RESULT',
           message: 'لم تُرجع خدمة Android معلومات بيئة البناء.',
         );
@@ -110,10 +117,12 @@ class LocalBuildEnvironmentService {
       androidVersion: 0,
       availableBytes: 0,
       engineInstalled: false,
+      alpineRootfsInstalled: false,
       deviceSupported: false,
       runtimeVerified: false,
       debugBuildVerified: false,
-      requiredStorageBytes: 20 * 1024 * 1024 * 1024,
+      releaseBuildVerified: false,
+      requiredStorageBytes: 1024 * 1024 * 1024,
       missingRequirements: const [],
       canBuildLocally: false,
       message: message,

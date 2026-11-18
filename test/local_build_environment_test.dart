@@ -54,6 +54,45 @@ void main() {
 
       expect(environment.canBuildLocally, isFalse);
       expect(environment.runtimeVerified, isFalse);
+      expect(environment.releaseBuildVerified, isFalse);
+    });
+
+
+    test('defaults Release/AOT proof to false when native field is absent', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'androidVersion': 35,
+        'availableBytes': 8 * 1024 * 1024 * 1024,
+        'engineInstalled': true,
+        'deviceSupported': true,
+        'runtimeVerified': true,
+        'debugBuildVerified': true,
+        'canBuildLocally': true,
+      });
+
+      expect(environment.debugBuildVerified, isTrue);
+      expect(environment.releaseBuildVerified, isFalse);
+      expect(environment.canBuildLocally, isTrue);
+    });
+
+    test('does not confuse runtime or debug verification with Release/AOT proof', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'androidVersion': 35,
+        'availableBytes': 8 * 1024 * 1024 * 1024,
+        'engineInstalled': true,
+        'deviceSupported': true,
+        'runtimeVerified': false,
+        'debugBuildVerified': true,
+        'releaseBuildVerified': false,
+        'requiredStorageBytes': 2 * 1024 * 1024 * 1024,
+        'canBuildLocally': true,
+        'message': 'debug verified only',
+      });
+
+      expect(environment.debugBuildVerified, isTrue);
+      expect(environment.releaseBuildVerified, isFalse);
+      expect(environment.canBuildLocally, isTrue);
     });
 
     test('exposes missing requirements from native diagnostics', () {
@@ -73,6 +112,19 @@ void main() {
       expect(environment.missingRequirements, hasLength(2));
       expect(environment.requiredStorageLabel, '12.0 GB');
       expect(environment.deviceSupported, isFalse);
+    });
+
+
+    test('Alpine rootfs is not assumed installed when native status is absent', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'androidVersion': 30,
+        'availableBytes': 3 * 1024 * 1024 * 1024,
+        'engineInstalled': false,
+        'deviceSupported': true,
+        'canBuildLocally': false,
+      });
+      expect(environment.alpineRootfsInstalled, isFalse);
     });
 
     test('formats available storage in GiB', () {

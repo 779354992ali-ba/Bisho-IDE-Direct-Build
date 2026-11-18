@@ -6,10 +6,11 @@ on:
       flutter_version:
         description: 'Flutter stable version'
         required: true
-        default: '3.47.2'
+        default: '3.47.9'
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: bisho-ide-apk-${{ github.ref }}
@@ -19,7 +20,7 @@ jobs:
   validate-and-build:
     name: Validate and build one release APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - name: Checkout source
         uses: actions/checkout@v5
@@ -29,11 +30,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ github.event.inputs.flutter_version || '3.47.2' }}
+          flutter-version: ${{ inputs.flutter_version || '3.47.9' }}
           channel: stable
           cache: true
 
@@ -42,6 +44,7 @@ jobs:
           flutter --version
           dart --version
           java -version
+          flutter doctor -v
 
       - name: Cache pub packages
         uses: actions/cache@v5
@@ -64,36 +67,95 @@ jobs:
           test -f android/gradle/wrapper/gradle-wrapper.jar
           test -f android/gradle/wrapper/gradle-wrapper.properties
           test -f android/gradlew
-          test -f android/gradlew.bat
           test -f android/app/src/main/kotlin/com/bisho/myapp/MainActivity.kt
-          python3 - <<'PY'
+          python3 - <<'PYXML'
           import xml.etree.ElementTree as ET
           ET.parse('android/app/src/main/AndroidManifest.xml')
           ET.parse('android/app/src/main/res/values/styles.xml')
-          PY
+          print('Android XML validation passed')
+          PYXML
+
+      - name: Prepare build diagnostics
+        if: always()
+        run: mkdir -p build/diagnostics
 
       - name: Analyze Dart source
-        run: flutter analyze --no-pub --no-fatal-infos
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze --no-pub --no-fatal-infos 2>&1 | tee build/diagnostics/analyze.log
 
       - name: Run unit and widget tests
-        run: flutter test --no-pub --reporter expanded
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test --no-pub --reporter expanded 2>&1 | tee build/diagnostics/tests.log
 
       - name: Build universal release APK
-        run: flutter build apk --release --no-pub
-
-      - name: Verify APK output
+        shell: bash
         run: |
+          set -o pipefail
+          flutter build apk --release --no-pub 2>&1 | tee build/diagnostics/apk-build.log
+
+      - name: Verify APK and generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
           APK='build/app/outputs/flutter-apk/app-release.apk'
           test -s "$APK"
-          ls -lh "$APK"
-          sha256sum "$APK" | tee build/app/outputs/flutter-apk/SHA256SUMS.txt
+          mkdir -p build/release-artifact
+          cp "$APK" build/release-artifact/app-release.apk
+          cd build/release-artifact
+          sha256sum app-release.apk | tee SHA256SUMS.txt
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "flutter_version=$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])')"
+            echo "built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > BUILD_INFO.txt
+          ls -lh app-release.apk SHA256SUMS.txt BUILD_INFO.txt
 
       - name: Upload release APK
         uses: actions/upload-artifact@v4
         with:
           name: Bisho-IDE-Release-APK
           path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/app/outputs/flutter-apk/SHA256SUMS.txt
+            build/release-artifact/app-release.apk
+            build/release-artifact/SHA256SUMS.txt
+            build/release-artifact/BUILD_INFO.txt
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Create build diagnostics report
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p build/diagnostics
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "job_status=${{ job.status }}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            echo "finished_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo '--- Toolchain ---'
+            flutter --version 2>&1 || true
+            dart --version 2>&1 || true
+            java -version 2>&1 || true
+          } > build/diagnostics/BUILD_DIAGNOSTICS.txt
+          echo "Run URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> build/diagnostics/BUILD_DIAGNOSTICS.txt
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bisho-IDE-Build-Diagnostics
+          path: build/diagnostics/
+          if-no-files-found: warn
           retention-days: 14

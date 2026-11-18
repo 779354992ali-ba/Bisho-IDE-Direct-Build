@@ -923,7 +923,7 @@ on:
       flutter_version:
         description: Flutter SDK version
         required: true
-        default: '3.47.2'
+        default: '3.47.9'
         type: string
 
 permissions:
@@ -946,7 +946,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
-          flutter-version: ${{ inputs.flutter_version || '3.47.2' }}
+          flutter-version: ${{ inputs.flutter_version || '3.47.9' }}
           cache: true
 
       - name: Cache Pub packages

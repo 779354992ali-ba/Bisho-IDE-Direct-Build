@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "distribution": "Alpine Linux",
+  "release": "3.24.4",
+  "architecture": "aarch64",
+  "archiveFormat": "tar.gz",
+  "archiveUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.4-aarch64.tar.gz",
+  "checksumUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.4-aarch64.tar.gz.sha256",
+  "signatureUrl": "https://dl-cdn.alpinelinux.org/alpine/v3.24/releases/aarch64/alpine-minirootfs-3.24.4-aarch64.tar.gz.asc",
+  "installDirectory": "rootfs/alpine-aarch64",
+  "requiredFiles": ["bin/sh", "etc/alpine-release", "sbin/apk"],
+  "verification": "Fetch the official checksum sidecar over HTTPS, parse exactly one SHA-256 digest, hash the downloaded archive locally, and reject any mismatch before extraction.",
+  "notes": [
+    "This is a bootstrap descriptor only; Package93 does not yet install this archive in the Android app.",
+    "The archive is TAR.GZ and must not be passed to the existing ZIP-only engine installer.",
+    "Tar extraction must reject absolute paths, dot-dot traversal, duplicate normalized paths, oversized expanded content, and unsafe symlink or hardlink targets.",
+    "Alpine rootfs does not include PRoot, Flutter, JDK, Android SDK, Android build-tools, or offline package caches."
+  ]
+}

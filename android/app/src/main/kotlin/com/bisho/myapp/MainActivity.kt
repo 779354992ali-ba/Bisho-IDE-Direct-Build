@@ -16,14 +16,19 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 
 class MainActivity : FlutterActivity() {
     private val localBuildChannel = "com.bisho.ide/local_build"
-    // Installing/updating a full engine needs room for the ZIP and extracted
-    // rootfs. Once installed, normal builds need a smaller but still safe reserve.
-    private val engineInstallStorageBytes = 20L * 1024L * 1024L * 1024L
-    private val minimumBuildStorageBytes = 5L * 1024L * 1024L * 1024L
+    // Dynamic admission: actual archive size + a reserve, not a fixed 20 GB gate.
+    private val engineInstallStorageBytes = 1024L * 1024L * 1024L
+    private val extractionSafetyReserveBytes = 512L * 1024L * 1024L
+    private val minimumBuildStorageBytes = 2560L * 1024L * 1024L
     private val buildExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var activeBuildProcess: Process? = null
     @Volatile private var stagingCancelled: Boolean = false
@@ -47,8 +52,8 @@ class MainActivity : FlutterActivity() {
                                 mapOf("deviceAbi" to (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"),
                                     "androidVersion" to Build.VERSION.SDK_INT, "availableBytes" to StatFs(filesDir.absolutePath).availableBytes,
                                     "requiredStorageBytes" to engineInstallStorageBytes, "engineInstallStorageBytes" to engineInstallStorageBytes,
-                                    "deviceSupported" to false, "engineInstalled" to false, "runtimeVerified" to false,
-                                    "debugBuildVerified" to false, "canBuildLocally" to false,
+                                    "deviceSupported" to false, "engineInstalled" to false, "alpineRootfsInstalled" to false, "runtimeVerified" to false,
+                                    "debugBuildVerified" to false, "releaseBuildVerified" to false, "canBuildLocally" to false,
                                     "missingRequirements" to listOf(error.message ?: "تعذر فحص بيئة البناء."),
                                     "message" to (error.message ?: "تعذر فحص بيئة البناء."))
                             }
@@ -63,6 +68,21 @@ class MainActivity : FlutterActivity() {
                                 mapOf("success" to false, "message" to (error.message ?: "تعذر اختبار المحرك."))
                             }
                             runOnUiThread { result.success(probe) }
+                        }
+                    }
+                    "installAlpineRootfs" -> {
+                        val archivePath = call.argument<String>("archivePath")
+                        val sha256 = call.argument<String>("sha256")
+                        buildExecutor.execute {
+                            try {
+                                if (archivePath.isNullOrBlank() || sha256.isNullOrBlank()) {
+                                    throw IllegalArgumentException("بيانات Alpine غير مكتملة.")
+                                }
+                                val installed = installAlpineRootfs(archivePath, sha256)
+                                runOnUiThread { result.success(installed) }
+                            } catch (error: Exception) {
+                                runOnUiThread { result.success(mapOf("success" to false, "message" to (error.message ?: "فشل تثبيت Alpine."))) }
+                            }
                         }
                     }
                     "installEngine" -> {
@@ -138,6 +158,129 @@ class MainActivity : FlutterActivity() {
     }
 
 
+    /** Install the official Alpine minirootfs TAR.GZ after a caller-supplied SHA-256 check. */
+    private fun installAlpineRootfs(archivePath: String, expectedSha256: String): Map<String, Any> {
+        if (!expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) throw IllegalArgumentException("بصمة Alpine غير صالحة.")
+        val downloads = File(filesDir, "bisho-engine-downloads").canonicalFile
+        val archive = File(archivePath).canonicalFile
+        if (!archive.path.startsWith(downloads.path + File.separator) || !archive.isFile || archive.length() <= 0L) {
+            throw SecurityException("أرشيف Alpine خارج مجلد التنزيل الآمن أو غير موجود.")
+        }
+        if (archive.length() > 256L * 1024L * 1024L) throw IllegalArgumentException("أرشيف Alpine أكبر من الحد المسموح.")
+        if (StatFs(filesDir.absolutePath).availableBytes < 1024L * 1024L * 1024L) throw IllegalStateException("يلزم 1 GB مساحة حرة قبل تثبيت Alpine.")
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(archive).use { input ->
+            val buffer = ByteArray(256 * 1024)
+            while (true) { val n = input.read(buffer); if (n < 0) break; digest.update(buffer, 0, n) }
+        }
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        if (!actual.equals(expectedSha256, true)) throw SecurityException("فشلت مطابقة SHA-256 لأرشيف Alpine.")
+
+        val root = File(filesDir, "bisho-local-build-engine/rootfs/alpine-aarch64").canonicalFile
+        val staging = File(filesDir, "bisho-local-build-engine/rootfs/alpine-aarch64.installing").canonicalFile
+        if (staging.exists()) staging.deleteRecursively()
+        if (!staging.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد Alpine المؤقت.")
+        val rootPath = staging.toPath().normalize()
+        val names = HashSet<String>()
+        val links = ArrayList<Pair<TarArchiveEntry, Path>>()
+        var expanded = 0L
+        var count = 0
+        try {
+            TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(FileInputStream(archive), 256 * 1024))).use { tar ->
+                val buffer = ByteArray(256 * 1024)
+                while (true) {
+                    val entry = tar.nextTarEntry ?: break
+                    count++
+                    if (count > 100000) throw SecurityException("أرشيف Alpine يحتوي عددًا مفرطًا من العناصر.")
+                    val raw = entry.name.replace('\\', '/')
+                    // Official minirootfs archives may contain a standalone ./ root entry.
+                    var clean = raw.removeSuffix("/")
+                    while (clean.startsWith("./")) clean = clean.removePrefix("./")
+                    if ((clean.isBlank() || clean == ".") && entry.isDirectory) continue
+                    if (clean.isBlank() || clean == "." || clean.startsWith("/") || clean.contains('\u0000') ||
+                        clean.split('/').any { it.isBlank() || it == "." || it == ".." } || Regex("^[A-Za-z]:").containsMatchIn(clean)) {
+                        throw SecurityException("مسار TAR غير آمن: $raw")
+                    }
+                    val target = rootPath.resolve(clean).normalize()
+                    if (!target.startsWith(rootPath) || !names.add(target.toString())) throw SecurityException("مسار TAR مكرر أو خارج Alpine: $raw")
+                    if (entry.isSymbolicLink || entry.isLink) {
+                        links.add(entry to target)
+                        continue
+                    }
+                    if (entry.isCharacterDevice || entry.isBlockDevice || entry.isFIFO) {
+                        // Android app sandboxes cannot create device nodes; Alpine binds these at runtime.
+                        continue
+                    }
+                    if (entry.isDirectory) {
+                        Files.createDirectories(target)
+                        continue
+                    }
+                    if (!entry.isFile || entry.size < 0L) throw SecurityException("نوع عنصر TAR غير مدعوم: $raw")
+                    expanded += entry.size
+                    if (expanded > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم Alpine المفكوك تجاوز 12 GB.")
+                    if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف الاستخراج لحماية مساحة الهاتف.")
+                    Files.createDirectories(target.parent)
+                    FileOutputStream(target.toFile()).use { out ->
+                        var copied = 0L
+                        while (true) {
+                            val n = tar.read(buffer)
+                            if (n < 0) break
+                            copied += n
+                            if (copied > entry.size) throw SecurityException("بيانات TAR تجاوزت الحجم المعلن.")
+                            out.write(buffer, 0, n)
+                        }
+                        if (copied != entry.size) throw SecurityException("حجم ملف TAR لا يطابق الرأس.")
+                        out.fd.sync()
+                    }
+                    val mode = entry.mode
+                    target.toFile().setReadable(mode and 0x124 != 0, false)
+                    target.toFile().setWritable(mode and 0x092 != 0, false)
+                    target.toFile().setExecutable(mode and 0x049 != 0, false)
+                }
+            }
+            // Links are applied only after regular files have been extracted, preventing link-based path escapes.
+            for ((entry, linkPath) in links) {
+                val linkName = entry.linkName.replace('\\', '/')
+                if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط TAR فارغ أو غير صالح.")
+                val linkTarget = if (entry.isSymbolicLink) {
+                    if (linkName.startsWith("/")) rootPath.resolve(linkName.removePrefix("/")).normalize()
+                    else linkPath.parent.resolve(linkName).normalize()
+                } else {
+                    rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
+                }
+                if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط TAR يشير خارج Alpine: $linkName")
+                Files.createDirectories(linkPath.parent)
+                if (entry.isSymbolicLink) {
+                    val relativeTarget = linkPath.parent.relativize(linkTarget)
+                    Files.createSymbolicLink(linkPath, relativeTarget)
+                } else {
+                    if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في TAR يشير إلى ملف غير موجود.")
+                    Files.copy(linkTarget, linkPath)
+                }
+            }
+            val release = File(staging, "etc/alpine-release")
+            val shell = File(staging, "bin/sh")
+            val apk = File(staging, "sbin/apk")
+            if (!release.isFile || !shell.exists() || !apk.exists()) throw IllegalStateException("Alpine rootfs غير مكتمل؛ الملفات الأساسية مفقودة.")
+            val expected = "3.24.4"
+            if (!release.readText().trim().startsWith(expected)) throw SecurityException("إصدار Alpine داخل الأرشيف لا يطابق $expected.")
+            root.parentFile?.let { if (!it.exists()) it.mkdirs() }
+            val previous = File(root.parentFile, "alpine-aarch64.previous")
+            if (previous.exists()) previous.deleteRecursively()
+            if (root.exists() && !root.renameTo(previous)) throw IllegalStateException("تعذر حفظ نسخة Alpine السابقة.")
+            if (!staging.renameTo(root)) {
+                if (previous.exists()) previous.renameTo(root)
+                throw IllegalStateException("تعذر تفعيل Alpine بعد الاستخراج.")
+            }
+            if (previous.exists()) previous.deleteRecursively()
+            return mapOf("success" to true, "rootfsDirectory" to root.absolutePath, "bytes" to expanded,
+                "entries" to count, "release" to expected, "message" to "تم التحقق من Alpine واستخراجه. لم يتم تثبيت PRoot أو Flutter أو SDK بعد.")
+        } catch (error: Exception) {
+            staging.deleteRecursively()
+            throw error
+        }
+    }
+
     /** Verify the downloaded archive and extract it without loading it into RAM. */
     private fun installLocalBuildEngine(archivePath: String, expectedSha256: String): Map<String, Any> {
         if (!expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
@@ -152,12 +295,9 @@ class MainActivity : FlutterActivity() {
             throw IllegalArgumentException("حجم الحزمة يتجاوز 8 GB.")
         }
         val freeBytes = StatFs(filesDir.absolutePath).availableBytes
-        // The downloaded ZIP already occupies part of the 20 GB install budget.
-        // Reserve the remaining extraction budget instead of requiring another
-        // full 20 GB after the archive has been downloaded.
-        val remainingBudget = (engineInstallStorageBytes - archive.length()).coerceAtLeast(0L)
-        if (freeBytes < remainingBudget) {
-            throw IllegalStateException("المساحة الحرة لا تكفي لفك المحرك بأمان؛ يلزم ${remainingBudget / (1024L * 1024L * 1024L)} GB إضافية على الأقل.")
+        // The archive is already downloaded. Keep a live reserve, not a fixed 20 GB budget.
+        if (freeBytes < engineInstallStorageBytes) {
+            throw IllegalStateException("المساحة الحرة بعد التنزيل أقل من 1 GB؛ أوقف التثبيت لحماية الهاتف.")
         }
         emitBuildEvent("جارٍ حساب SHA-256 لحزمة المحرك...")
         val digest = MessageDigest.getInstance("SHA-256")
@@ -220,6 +360,9 @@ class MainActivity : FlutterActivity() {
                                 extractedBytes += count
                                 if (extractedBytes > 12L * 1024L * 1024L * 1024L) {
                                     throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
+                                }
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) {
+                                    throw IllegalStateException("توقف فك المحرك قبل امتلاء مساحة الهاتف؛ المتبقي أقل من 512 MB.")
                                 }
                                 out.write(buffer, 0, count)
                             }
@@ -538,7 +681,7 @@ class MainActivity : FlutterActivity() {
             val project = File(projectPath).canonicalFile
             val freeBeforeBuild = StatFs(filesDir.absolutePath).availableBytes
             if (freeBeforeBuild < minimumBuildStorageBytes) {
-                throw IllegalStateException("المساحة الحرة غير كافية للبناء المحلي؛ يلزم توفير 5 GB على الأقل لمساحة Gradle وملفات البناء المؤقتة.")
+                throw IllegalStateException("المساحة الحرة غير كافية للبناء المحلي؛ يلزم توفير 2.5 GB على الأقل كبداية لمساحة Gradle وملفات البناء المؤقتة؛ المشاريع الكبيرة قد تحتاج أكثر.")
             }
             val stagingRoot = File(filesDir, "bisho-local-builds").canonicalFile
             // The staging folder is app-private. Reject arbitrary paths supplied
@@ -1052,8 +1195,8 @@ class MainActivity : FlutterActivity() {
         }
         if (storage < requiredForCurrentState) {
             missing.add(if (engineInstalled)
-                "المساحة الحرة أقل من 5 GB؛ يلزم توفير مساحة لملفات Gradle والبناء المؤقتة."
-            else "يلزم توفير 20 GB حرة لتنزيل محرك البناء وفكّه بأمان.")
+                "المساحة الحرة أقل من 2.5 GB؛ المشاريع الكبيرة قد تحتاج مساحة إضافية أثناء البناء."
+            else "يلزم توفر حجم الحزمة الفعلية إضافة إلى 1 GB احتياطي؛ لا يوجد شرط ثابت قدره 20 GB.")
         }
         missing.addAll(engineCheck.second)
 
@@ -1074,7 +1217,12 @@ class MainActivity : FlutterActivity() {
                     verified.optString("artifactSha256") == sha256File(artifact)
             }
         } catch (_: Exception) { false }
-        val runtimeVerified = verificationMatches("local-build-verification.json", "release")
+        // Keep the compatibility runtime flag separate from the explicit
+        // Release/AOT proof flag. Both currently require the retained Release
+        // APK proof, but callers must consume releaseBuildVerified for release
+        // readiness and must never infer it from Debug verification.
+        val releaseBuildVerified = verificationMatches("local-build-verification.json", "release")
+        val runtimeVerified = releaseBuildVerified
         val debugBuildVerified = verificationMatches("local-build-debug-verification.json", "debug")
         val canBuildLocally = deviceSupported && engineInstalled && debugBuildVerified
         val message = when {
@@ -1084,7 +1232,7 @@ class MainActivity : FlutterActivity() {
                 "الجهاز يحقق متطلبات العتاد الأولية، لكن بيئة Flutter/JDK/Android SDK غير مكتملة داخل التطبيق. ${missing.joinToString(" ")}"
             !debugBuildVerified ->
                 "ملفات المحرك موجودة؛ يلزم تنفيذ Debug APK فعلي والتحقق من توقيعه ومحاذاته على هذا الجهاز."
-            !runtimeVerified ->
+            !releaseBuildVerified ->
                 "بناء Debug المحلي اجتاز الاختبار. لم ينجح بعد بناء Release/AOT؛ لا تعتبر نسخة الإنتاج جاهزة."
             else -> "اجتاز المحرك اختباري Debug وRelease وإثبات APK على هذا الجهاز."
         }
@@ -1097,8 +1245,10 @@ class MainActivity : FlutterActivity() {
             "engineInstallStorageBytes" to engineInstallStorageBytes,
             "deviceSupported" to deviceSupported,
             "engineInstalled" to engineInstalled,
+            "alpineRootfsInstalled" to File(engineDirectory, "rootfs/alpine-aarch64/etc/alpine-release").let { it.isFile && it.readText().trim().startsWith("3.24.4") },
             "runtimeVerified" to runtimeVerified,
             "debugBuildVerified" to debugBuildVerified,
+            "releaseBuildVerified" to releaseBuildVerified,
             "canBuildLocally" to canBuildLocally,
             "missingRequirements" to missing,
             "message" to message

@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "status": "provisioning-not-implemented",
+  "targetAbi": "arm64-v8a",
+  "deviceAndroidMinimumApi": 29,
+  "flutter": {
+    "version": "3.47.9",
+    "source": "https://docs.flutter.dev/install/archive",
+    "archiveIntegrity": "must-be-resolved-from-official-release-metadata-at-download-time"
+  },
+  "java": {
+    "major": 17,
+    "vendor": "Temurin-or-equivalent-aarch64",
+    "source": "https://adoptium.net/temurin/releases/",
+    "archiveIntegrity": "must-be-resolved-from-vendor-checksum-and-signature"
+  },
+  "androidSdk": {
+    "platformApi": 36,
+    "buildToolsVersion": "36.0.0",
+    "commandLineTools": "latest-pinned-release-required",
+    "licenses": "must-be-accepted-and-stored-during-online-provisioning",
+    "hostTools": {
+      "requiredAbi": "linux-aarch64",
+      "required": ["aapt2", "aidl", "zipalign", "split-select", "apksigner"],
+      "status": "official-google-linux-host-tools-are-not-assumed-to-be-aarch64-compatible"
+    }
+  },
+  "offlineCaches": [
+    "flutter/bin/cache/artifacts/engine/android-arm64",
+    "pub-cache",
+    "gradle-wrapper-distributions",
+    "gradle-modules-and-plugin-artifacts",
+    "android-sdk-platforms-build-tools-platform-tools-licenses"
+  ],
+  "proofRequirements": {
+    "debug": "build-a-real-arm64-debug-apk-with-network-disabled-and-verify-signature-and-zip-alignment",
+    "release": "separate-release-aot-build-proof-and-artifact-verification",
+    "noNetworkBuild": "must-be-demonstrated-after-first-online-provisioning"
+  },
+  "releaseAot": {
+    "enabled": false,
+    "reason": "Do not enable until an Android-target AOT gen_snapshot executable is present and a real Release build passes on the target phone."
+  }
+}

@@ -1,4 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
@@ -454,6 +458,175 @@ class GitHubRepositoryService {
       break;
     }
     throw StateError(_apiError(response!));
+  }
+
+  /// Downloads the diagnostic ZIP for a workflow run, including failed runs.
+  /// The ZIP is validated before being returned and is saved without extracting
+  /// untrusted archive paths on the Android device.
+  Future<Uint8List> downloadBuildDiagnostics({
+    required String token,
+    required String owner,
+    required String repository,
+    required int runId,
+    String artifactName = 'Bisho-IDE-Build-Diagnostics',
+  }) async {
+    final headers = _headers(token);
+    final artifactsResponse = await _client.get(
+      Uri.https('api.github.com', '/repos/$owner/$repository/actions/runs/$runId/artifacts'),
+      headers: headers,
+    ).timeout(const Duration(seconds: 30));
+    if (artifactsResponse.statusCode != 200) {
+      throw StateError('تعذر جلب تقارير البناء: ${_apiError(artifactsResponse)}');
+    }
+    final payload = jsonDecode(artifactsResponse.body) as Map<String, dynamic>;
+    final artifacts = (payload['artifacts'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>();
+    Map<String, dynamic>? artifact;
+    for (final candidate in artifacts) {
+      if (candidate['name'] == artifactName && candidate['expired'] != true) {
+        artifact = candidate;
+        break;
+      }
+    }
+    if (artifact == null) {
+      throw StateError('لا يوجد تقرير تشخيص صالح لهذا التشغيل باسم $artifactName.');
+    }
+    final artifactId = artifact['id'];
+    if (artifactId is! int) throw StateError('معرّف تقرير التشخيص غير صالح.');
+    final size = artifact['size_in_bytes'];
+    if (size is int && size > 50 * 1024 * 1024) {
+      throw StateError('حجم تقرير التشخيص يتجاوز الحد الآمن البالغ 50 ميجابايت.');
+    }
+    final downloadResponse = await _client.get(
+      Uri.https('api.github.com', '/repos/$owner/$repository/actions/artifacts/$artifactId/zip'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Bisho-IDE',
+      },
+    ).timeout(const Duration(minutes: 2));
+    if (downloadResponse.statusCode != 200) {
+      throw StateError('تعذر تنزيل تقرير التشخيص: ${_apiError(downloadResponse)}');
+    }
+    final bytes = downloadResponse.bodyBytes;
+    if (bytes.isEmpty || bytes.length > 50 * 1024 * 1024) {
+      throw StateError('ملف التشخيص فارغ أو أكبر من الحد الآمن.');
+    }
+    Archive archive;
+    try {
+      archive = ZipDecoder().decodeBytes(bytes, verify: true);
+    } catch (_) {
+      throw StateError('تقرير التشخيص ليس ZIP صالحًا أو أنه تالف.');
+    }
+    if (archive.files.length > 1000) {
+      throw StateError('يحتوي تقرير التشخيص على عدد ملفات غير متوقع.');
+    }
+    final hasReport = archive.files.any((entry) =>
+        entry.isFile && entry.name.replaceAll('\\', '/').split('/').last ==
+            'BUILD_DIAGNOSTICS.txt');
+    if (!hasReport) {
+      throw StateError('ملف BUILD_DIAGNOSTICS.txt غير موجود داخل تقرير البناء.');
+    }
+    return Uint8List.fromList(bytes);
+  }
+
+  /// Downloads the release APK from the successful run's Actions artifact.
+  /// The archive and extracted APK are size-bounded; if SHA256SUMS.txt is
+  /// present, the APK must match its published digest before it is returned.
+  Future<Uint8List> downloadReleaseApk({
+    required String token,
+    required String owner,
+    required String repository,
+    required int runId,
+    String artifactName = 'Bisho-IDE-Release-APK',
+  }) async {
+    final headers = _headers(token);
+    final artifactsResponse = await _client.get(
+      Uri.https('api.github.com', '/repos/$owner/$repository/actions/runs/$runId/artifacts'),
+      headers: headers,
+    ).timeout(const Duration(seconds: 30));
+    if (artifactsResponse.statusCode != 200) {
+      throw StateError('تعذر جلب ملفات البناء: ${_apiError(artifactsResponse)}');
+    }
+    final payload = jsonDecode(artifactsResponse.body) as Map<String, dynamic>;
+    final artifacts = (payload['artifacts'] as List? ?? const [])
+        .whereType<Map<String, dynamic>>();
+    Map<String, dynamic>? artifact;
+    for (final candidate in artifacts) {
+      if (candidate['name'] == artifactName && candidate['expired'] != true) {
+        artifact = candidate;
+        break;
+      }
+    }
+    if (artifact == null) {
+      throw StateError('لم يعثر GitHub على Artifact صالح باسم $artifactName.');
+    }
+    final artifactId = artifact['id'];
+    if (artifactId is! int) throw StateError('معرّف Artifact غير صالح.');
+    final size = artifact['size_in_bytes'];
+    if (size is int && size > 250 * 1024 * 1024) {
+      throw StateError('حجم Artifact يتجاوز الحد الآمن البالغ 250 ميجابايت.');
+    }
+
+    final downloadResponse = await _client.get(
+      Uri.https('api.github.com', '/repos/$owner/$repository/actions/artifacts/$artifactId/zip'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Accept': 'application/vnd.github+json',
+        'User-Agent': 'Bisho-IDE',
+      },
+    ).timeout(const Duration(minutes: 3));
+    if (downloadResponse.statusCode != 200) {
+      throw StateError('تعذر تنزيل Artifact: ${_apiError(downloadResponse)}');
+    }
+    final archiveBytes = downloadResponse.bodyBytes;
+    if (archiveBytes.isEmpty || archiveBytes.length > 250 * 1024 * 1024) {
+      throw StateError('ملف Artifact فارغ أو أكبر من الحد الآمن.');
+    }
+
+    Archive decoded;
+    try {
+      decoded = ZipDecoder().decodeBytes(archiveBytes, verify: true);
+    } catch (_) {
+      throw StateError('ملف Artifact الذي أعاده GitHub ليس ZIP صالحًا أو تالف.');
+    }
+    if (decoded.files.length > 5000) {
+      throw StateError('Artifact يحتوي على عدد ملفات يتجاوز الحد الآمن.');
+    }
+    var expandedBytes = 0;
+    for (final entry in decoded.files) {
+      expandedBytes += entry.size;
+      if (expandedBytes > 200 * 1024 * 1024) {
+        throw StateError('الحجم المفكوك لـ Artifact يتجاوز الحد الآمن البالغ 200 ميجابايت.');
+      }
+    }
+    ArchiveFile? apkFile;
+    String? expectedSha;
+    for (final entry in decoded.files) {
+      if (!entry.isFile) continue;
+      final name = entry.name.replaceAll('\\', '/');
+      if (name.split('/').last == 'app-release.apk') {
+        if (apkFile != null) throw StateError('يحتوي Artifact على أكثر من APK مطابق.');
+        if (entry.size <= 0 || entry.size > 150 * 1024 * 1024) {
+          throw StateError('حجم APK خارج الحدود المسموحة.');
+        }
+        apkFile = entry;
+      } else if (name.split('/').last == 'SHA256SUMS.txt') {
+        final text = utf8.decode(entry.content as List<int>, allowMalformed: false);
+        final match = RegExp(r'([a-fA-F0-9]{64})\s+\*?.*app-release\.apk(?:\s|$)').firstMatch(text);
+        expectedSha = match?.group(1)?.toLowerCase();
+      }
+    }
+    if (apkFile == null) throw StateError('لم يوجد app-release.apk داخل Artifact.');
+    final bytes = Uint8List.fromList(apkFile.content as List<int>);
+    if (expectedSha == null) {
+      throw StateError('Artifact لا يحتوي على SHA256SUMS.txt صالح؛ أُوقف الحفظ لعدم اكتمال التحقق.');
+    }
+    final actualSha = sha256.convert(bytes).toString();
+    if (actualSha != expectedSha) {
+      throw StateError('فشل التحقق من SHA-256 لملف APK؛ لن يتم حفظ ملف غير موثوق.');
+    }
+    return bytes;
   }
 
   Future<http.Response> _postJsonWithRetry(

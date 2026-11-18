@@ -51,6 +51,11 @@ android {
     }
 }
 
+dependencies {
+    // Audited TAR/PAX/GZIP reader; extraction is additionally path- and size-bounded below.
+    implementation "org.apache.commons:commons-compress:1.28.0"
+}
+
 flutter {
     source = "../.."
 }

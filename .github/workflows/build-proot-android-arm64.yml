@@ -1,0 +1,58 @@
+name: Build upstream PRoot for Android ARM64
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout pinned upstream source
+        uses: actions/checkout@v4
+        with:
+          repository: proot-me/proot
+          ref: v5.5.0
+          path: upstream-proot
+          fetch-depth: 1
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake make pkg-config gettext libtalloc-dev
+      - name: Install Android NDK
+        uses: android-actions/setup-android@v3
+      - name: Install pinned NDK side-by-side
+        run: sdkmanager 'ndk;29.0.14206865'
+      - name: Configure and cross-compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          NDK="$ANDROID_SDK_ROOT/ndk/29.0.14206865"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          cd upstream-proot
+          ./bootstrap
+          CC="$TOOLCHAIN/aarch64-linux-android24-clang" \
+          CXX="$TOOLCHAIN/aarch64-linux-android24-clang++" \
+          AR="$TOOLCHAIN/llvm-ar" RANLIB="$TOOLCHAIN/llvm-ranlib" \
+          ./configure --host=aarch64-linux-android --disable-python
+          make -j2 V=1
+          install -D -m 0755 src/proot "$GITHUB_WORKSPACE/out/proot" || \
+            install -D -m 0755 proot "$GITHUB_WORKSPACE/out/proot"
+          file "$GITHUB_WORKSPACE/out/proot"
+          "$GITHUB_WORKSPACE/out/proot" --version
+          readelf -h "$GITHUB_WORKSPACE/out/proot" | grep -E 'Machine:.*AArch64'
+      - name: Record provenance and checksum
+        run: |
+          mkdir -p out
+          git -C upstream-proot rev-parse HEAD > out/UPSTREAM_COMMIT.txt
+          printf 'Upstream: https://github.com/proot-me/proot\nTag: v5.5.0\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
+          sha256sum out/proot > out/SHA256SUMS
+          cp upstream-proot/COPYING out/UPSTREAM_COPYING 2>/dev/null || true
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bisho-proot-android-arm64-v5.5.0
+          path: out/
+          if-no-files-found: error

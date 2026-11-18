@@ -62,10 +62,10 @@ class LocalBuildEngineInstaller {
     try {
       final environment = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
       final available = (environment?['availableBytes'] as num?)?.toInt() ?? 0;
-      final required = (environment?['engineInstallStorageBytes'] as num?)?.toInt() ??
-          20 * 1024 * 1024 * 1024;
-      if (available < required) {
-        throw StateError('المساحة الحرة غير كافية قبل التنزيل؛ يلزم ${_formatBytes(required)} على الأقل.');
+      final requiredReserve = (environment?['engineInstallStorageBytes'] as num?)?.toInt() ??
+          1024 * 1024 * 1024;
+      if (available < requiredReserve) {
+        throw StateError('يلزم توفر ${_formatBytes(requiredReserve)} كمساحة احتياطية قبل تنزيل المحرك.');
       }
       final support = await getApplicationSupportDirectory();
       final downloadDir = Directory('${support.path}/bisho-engine-downloads');
@@ -90,6 +90,11 @@ class LocalBuildEngineInstaller {
       final total = response.contentLength;
       if (total <= 0 || total > 8 * 1024 * 1024 * 1024) {
         throw StateError('حجم الحزمة غير معروف أو يتجاوز الحد المسموح (8 GB).');
+      }
+      final current = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
+      final freeAfterArchive = (current?['availableBytes'] as num?)?.toInt() ?? 0;
+      if (freeAfterArchive < total + 1024 * 1024 * 1024) {
+        throw StateError('المساحة لا تكفي لهذه الحزمة: يلزم ${_formatBytes(total)} للتنزيل إضافة إلى 1 GB احتياطي. اختر حزمة أصغر أو وفر مساحة.');
       }
       sink = archive.openWrite();
       var received = 0;

@@ -31,7 +31,7 @@ void main() {
         expect(request.url.path, '/repos/demo/app/actions/workflows/build-android.yml/dispatches');
         final body = jsonDecode(request.body) as Map<String, dynamic>;
         expect(body['ref'], 'main');
-        expect((body['inputs'] as Map)['flutter_version'], '3.47.2');
+        expect((body['inputs'] as Map)['flutter_version'], '3.47.9');
         return http.Response('', 204);
       });
       final service = GitHubRepositoryService(client: client);
@@ -41,7 +41,25 @@ void main() {
         repository: 'app',
         workflow: 'build-android.yml',
         branch: 'main',
-        flutterVersion: '3.47.2',
+        flutterVersion: '3.47.9',
+      );
+      client.close();
+    });
+
+    test('reports a missing diagnostics artifact for a workflow run', () async {
+      final client = MockClient((request) async {
+        expect(request.method, 'GET');
+        expect(request.url.path, '/repos/demo/app/actions/runs/123/artifacts');
+        return http.Response(jsonEncode({'artifacts': []}), 200);
+      });
+      final service = GitHubRepositoryService(client: client);
+      await expectLater(
+        service.downloadBuildDiagnostics(
+          token: 'test-token', owner: 'demo', repository: 'app', runId: 123,
+        ),
+        throwsA(isA<StateError>().having(
+          (error) => error.message, 'message', contains('لا يوجد تقرير تشخيص صالح'),
+        )),
       );
       client.close();
     });

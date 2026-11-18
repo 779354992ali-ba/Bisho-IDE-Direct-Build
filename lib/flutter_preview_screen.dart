@@ -16,6 +16,7 @@ import 'core/services/project_health_analyzer.dart';
 import 'core/services/local_build_environment.dart';
 import 'core/services/local_build_runner.dart';
 import 'core/services/local_build_engine_installer.dart';
+import 'core/services/alpine_rootfs_installer.dart';
 
 class FlutterPreviewScreen extends StatefulWidget {
   final String projectName;
@@ -48,12 +49,14 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   final _repoController = TextEditingController();
   final _workflowController = TextEditingController(text: 'main.yml');
   final _branchController = TextEditingController(text: 'main');
-  final _versionController = TextEditingController(text: '3.47.2');
+  final _versionController = TextEditingController(text: '3.47.9');
   final _tokenController = TextEditingController();
   final _githubService = GitHubRepositoryService();
   final _localBuildService = LocalBuildEnvironmentService();
   late final _localBuildRunner = LocalBuildRunner();
   final _engineInstaller = LocalBuildEngineInstaller();
+  final _alpineInstaller = AlpineRootfsInstaller();
+  bool _alpineInstalling = false;
   final _engineUrlController = TextEditingController();
   final _engineShaController = TextEditingController();
   StreamSubscription<EngineInstallProgress>? _engineInstallSubscription;
@@ -110,6 +113,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
     _localBuildSubscription?.cancel();
     _engineInstallSubscription?.cancel();
     _engineInstaller.dispose();
+    unawaited(_alpineInstaller.cancel());
     _engineUrlController.dispose();
     _engineShaController.dispose();
     super.dispose();
@@ -228,6 +232,41 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       if (mounted) setState(() => _engineInstalling = false);
       await _inspectLocalBuildEnvironment();
     }
+  }
+
+  Future<void> _installAlpineRootfs() async {
+    if (_alpineInstalling || _engineInstalling || _localBuildRunning || _probingLocalEngine) return;
+    final free = _localBuildEnvironment?.availableBytes ?? 0;
+    if (free < 1024 * 1024 * 1024) {
+      _showMessage('يلزم توفر 1 GB على الأقل قبل تثبيت Alpine.');
+      return;
+    }
+    setState(() {
+      _alpineInstalling = true;
+      _localBuildLog = 'بدء تنزيل Alpine ARM64 والتحقق من بصمته الرسمية...';
+    });
+    try {
+      final result = await _alpineInstaller.install(onProgress: (message, received, total) {
+        if (!mounted) return;
+        final progress = total > 0 ? ' ${(received * 100 / total).clamp(0, 100).toStringAsFixed(1)}%' : '';
+        setState(() => _localBuildLog = '$message$progress');
+      });
+      if (!mounted) return;
+      setState(() => _localBuildLog = result['message']?.toString() ?? 'اكتمل تثبيت Alpine.');
+      _showMessage('تم تثبيت Alpine والتحقق من ملفات النظام الأساسية.');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _localBuildLog = 'فشل تثبيت Alpine: $error');
+      _showMessage('تعذر تثبيت Alpine: $error');
+    } finally {
+      if (mounted) setState(() => _alpineInstalling = false);
+      await _inspectLocalBuildEnvironment();
+    }
+  }
+
+  Future<void> _cancelAlpineInstall() async {
+    await _alpineInstaller.cancel();
+    if (mounted) setState(() => _localBuildLog = 'تم طلب إلغاء تنزيل Alpine.');
   }
 
   Future<void> _probeLocalBuildEngine() async {
@@ -706,6 +745,83 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
     return body.length > 400 ? body.substring(0, 400) : body;
   }
 
+  Future<void> _downloadBuildDiagnostics() async {
+    final runId = int.tryParse(_runId ?? '');
+    final repoParts = _repo.split('/');
+    final token = _tokenController.text.trim();
+    final projectUri = _projectUri;
+    if (runId == null || repoParts.length != 2 || token.isEmpty || projectUri == null) {
+      _show('لا توجد عملية بناء أو بيانات تنزيل تقرير صالحة.');
+      return;
+    }
+    setState(() { _busy = true; _status = 'جارٍ تنزيل تقرير تشخيص GitHub Actions...'; });
+    try {
+      final bytes = await _githubService.downloadBuildDiagnostics(
+        token: token, owner: repoParts[0], repository: repoParts[1], runId: runId,
+      );
+      final saved = await widget.safFiles.saveFile(
+        parentUri: projectUri,
+        fileName: 'bisho-build-diagnostics-$runId.zip',
+        bytes: bytes,
+        mimeType: 'application/zip',
+        overwrite: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = 'تم تنزيل تقرير التشخيص وحفظه داخل مجلد المشروع.';
+        _log += '\nتقرير التشخيص: ${saved.name}\nالحجم: ${bytes.length} bytes';
+      });
+      _show('تم حفظ تقرير تشخيص البناء.');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() { _status = 'تعذر تنزيل تقرير التشخيص'; _log += '\n$error'; });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _downloadRemoteApk() async {
+    final runId = int.tryParse(_runId ?? '');
+    final repoParts = _repo.split('/');
+    final token = _tokenController.text.trim();
+    final projectUri = _projectUri;
+    if (runId == null || repoParts.length != 2 || token.isEmpty || projectUri == null) {
+      _show('لا توجد عملية بناء مكتملة أو بيانات تنزيل صالحة.');
+      return;
+    }
+    if (_workflowStatus != 'completed' || _workflowConclusion != 'success') {
+      _show('لا يمكن تنزيل APK قبل نجاح عملية البناء.');
+      return;
+    }
+    setState(() { _busy = true; _status = 'جارٍ تنزيل APK والتحقق من بصمة SHA-256...'; });
+    try {
+      final bytes = await _githubService.downloadReleaseApk(
+        token: token,
+        owner: repoParts[0],
+        repository: repoParts[1],
+        runId: runId,
+      );
+      final saved = await widget.safFiles.saveFile(
+        parentUri: projectUri,
+        fileName: 'app-release.apk',
+        bytes: bytes,
+        mimeType: 'application/vnd.android.package-archive',
+        overwrite: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _status = 'تم تنزيل APK والتحقق منه وحفظه داخل مجلد المشروع.';
+        _log += '\nAPK: ${saved.name}\nالحجم: ${bytes.length} bytes\nSHA-256: اجتاز التحقق من ملف SHA256SUMS.txt.';
+      });
+      _show('تم حفظ app-release.apk داخل مجلد المشروع.');
+    } catch (error) {
+      if (!mounted) return;
+      setState(() { _status = 'فشل تنزيل APK'; _log += '\n$error'; });
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _refreshBuildStatus() async {
     if (!_credentialsValid) {
       _show('أدخل بيانات GitHub أولاً');
@@ -1015,11 +1131,13 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   _localBuildInfoRow('دعم الجهاز', _localBuildEnvironment!.deviceSupported
                       ? 'يحقق المتطلبات الأولية' : 'لا يحقق المتطلبات الأولية'),
                   _localBuildInfoRow('المساحة المطلوبة', _localBuildEnvironment!.requiredStorageLabel),
+                  _localBuildInfoRow('نظام Alpine ARM64', _localBuildEnvironment!.alpineRootfsInstalled
+                      ? 'مثبّت وموجود' : 'غير مثبّت'),
                   _localBuildInfoRow('ملفات المحرك', _localBuildEnvironment!.engineInstalled
                       ? 'موجودة بنيويًا' : 'غير مكتملة'),
                   _localBuildInfoRow('اختبار Debug APK', _localBuildEnvironment!.debugBuildVerified
                       ? 'نجح البناء والتحقق من التوقيع والمحاذاة' : 'لم ينجح بعد'),
-                  _localBuildInfoRow('اختبار Release/AOT', _localBuildEnvironment!.runtimeVerified
+                  _localBuildInfoRow('اختبار Release/AOT', _localBuildEnvironment!.releaseBuildVerified
                       ? 'تم إنتاج APK والتحقق من توقيعه' : 'لم ينجح بعد؛ Debug لا يكفي لاعتماده'),
                   if (_localBuildEnvironment!.missingRequirements.isNotEmpty) ...[
                     const SizedBox(height: 6),
@@ -1043,8 +1161,26 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                 const SizedBox(height: 10),
                 SizedBox(
                   width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _alpineInstalling || _engineInstalling || _localBuildRunning || _probingLocalEngine || _checkingLocalBuild
+                        ? null : _installAlpineRootfs,
+                    icon: _alpineInstalling
+                        ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                        : const Icon(Icons.archive_outlined),
+                    label: Text(_alpineInstalling ? 'جارٍ تنزيل واستخراج Alpine...' : 'تثبيت Alpine ARM64 داخل التطبيق'),
+                  ),
+                ),
+                if (_alpineInstalling)
+                  Align(alignment: Alignment.centerRight, child: TextButton.icon(
+                    onPressed: _cancelAlpineInstall,
+                    icon: const Icon(Icons.cancel_outlined),
+                    label: const Text('إلغاء تثبيت Alpine'),
+                  )),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _engineInstalling || _localBuildRunning || _probingLocalEngine || _checkingLocalBuild ||
+                    onPressed: _engineInstalling || _alpineInstalling || _localBuildRunning || _probingLocalEngine || _checkingLocalBuild ||
                         !(_localBuildEnvironment?.engineInstalled == true)
                         ? null : _probeLocalBuildEngine,
                     icon: _probingLocalEngine
@@ -1057,7 +1193,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: _engineInstalling || _localBuildRunning || _probingLocalEngine || _checkingLocalBuild ||
+                    onPressed: _engineInstalling || _alpineInstalling || _localBuildRunning || _probingLocalEngine || _checkingLocalBuild ||
                         !(_localBuildEnvironment?.deviceSupported == true)
                         ? null : _installLocalBuildEngine,
                     icon: _engineInstalling
@@ -1259,10 +1395,28 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                       label: const Text('فتح تفاصيل البناء وتنزيل APK'),
                     )),
                 ],
+                if (_runId != null) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _downloadBuildDiagnostics,
+                      icon: const Icon(Icons.bug_report_outlined),
+                      label: const Text('تنزيل تقرير التشخيص (حتى عند فشل البناء)'),
+                    )),
+                ],
+                if (success) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _busy ? null : _downloadRemoteApk,
+                      icon: const Icon(Icons.download_rounded),
+                      label: const Text('تنزيل APK إلى مجلد المشروع'),
+                    )),
+                ],
                 if (success)
                   const Padding(
                     padding: EdgeInsets.only(top: 8),
-                    child: Text('اكتمل البناء بنجاح. افتح تفاصيل التشغيل للوصول إلى Artifact وتنزيل APK.',
+                    child: Text('اكتمل البناء بنجاح. يمكنك تنزيل APK مباشرةً إلى مجلد المشروع من الزر أعلاه.',
                       style: TextStyle(color: Colors.greenAccent, fontSize: 12)),
                   ),
               ],
