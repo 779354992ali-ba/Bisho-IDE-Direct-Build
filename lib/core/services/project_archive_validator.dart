@@ -94,23 +94,40 @@ class ProjectArchiveValidator {
       normalizedDirectories.add(path);
     }
 
-    // Every spelling of an implicit or explicit parent directory must agree.
+    // Every implicit and explicit directory spelling must agree.
     final directorySpellings = <String, String>{};
-    for (final path in [...normalizedFiles, ...normalizedDirectories]) {
+
+    void registerDirectory(String directory) {
+      final key = directory.toLowerCase();
+      final previous = directorySpellings[key];
+
+      if (previous != null && previous != directory) {
+        throw FormatException(
+          'مجلدان يختلفان في حالة الأحرف داخل ZIP: $previous و $directory',
+        );
+      }
+
+      directorySpellings[key] = directory;
+
+      if (portableFiles.containsKey(key)) {
+        throw FormatException('تعارض ملف ومجلد داخل ZIP: $directory');
+      }
+    }
+
+    // Files imply all their parent directories.
+    for (final path in normalizedFiles) {
       final parts = path.split('/');
       for (var i = 1; i < parts.length; i++) {
-        final parent = parts.take(i).join('/');
-        final key = parent.toLowerCase();
-        final previous = directorySpellings[key];
-        if (previous != null && previous != parent) {
-          throw FormatException(
-            'مجلدان يختلفان في حالة الأحرف داخل ZIP: $previous و $parent',
-          );
-        }
-        directorySpellings[key] = parent;
-        if (portableFiles.containsKey(key)) {
-          throw FormatException('تعارض ملف ومجلد داخل ZIP: $parent');
-        }
+        registerDirectory(parts.take(i).join('/'));
+      }
+    }
+
+    // Explicit directory entries also imply their parents, and their own
+    // complete path must be checked (including its casing).
+    for (final path in normalizedDirectories) {
+      final parts = path.split('/');
+      for (var i = 1; i <= parts.length; i++) {
+        registerDirectory(parts.take(i).join('/'));
       }
     }
   }
