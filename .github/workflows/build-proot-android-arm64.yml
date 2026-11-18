@@ -121,21 +121,19 @@ jobs:
           fi
           printf "Talloc objects found: %s\n" "${TALLOC_OBJECTS[@]}"
 
-          REPLACE_OBJECTS=()
-          while IFS= read -r -d '' object; do
-            if "$TOOLCHAIN/llvm-nm" -g --defined-only "$object" 2>/dev/null | grep -Eq '[[:space:]][Tt][[:space:]]+rep_memset_explicit$'; then
-              REPLACE_OBJECTS+=("$object")
-            fi
-          done < <(find bin/default -type f -name '*.o' -print0)
-
-          if (( ${#REPLACE_OBJECTS[@]} != 1 )); then
-            echo "ERROR: Expected exactly one object defining rep_memset_explicit."
-            printf "Found: %s\n" "${REPLACE_OBJECTS[@]}"
+          REPLACE_OBJECT="bin/default/lib/replace/replace.c.1.o"
+          if [[ ! -f "$REPLACE_OBJECT" ]]; then
+            echo "ERROR: Talloc libreplace object not found: $REPLACE_OBJECT"
             exit 1
           fi
 
-          printf "Talloc replace object: %s\n" "${REPLACE_OBJECTS[@]}"
-          TALLOC_OBJECTS+=("${REPLACE_OBJECTS[@]}")
+          if ! "$TOOLCHAIN/llvm-nm" -g --defined-only "$REPLACE_OBJECT" | grep -Eq '[[:space:]][Tt][[:space:]]+rep_memset_explicit$'; then
+            echo "ERROR: Selected object does not define rep_memset_explicit."
+            exit 1
+          fi
+
+          echo "Talloc replace object: $REPLACE_OBJECT"
+          TALLOC_OBJECTS+=("$REPLACE_OBJECT")
 
           rm -f "$TALLOC_PREFIX/lib/libtalloc.a"
           "$LLVM_AR" rcs "$TALLOC_PREFIX/lib/libtalloc.a" "${TALLOC_OBJECTS[@]}"
