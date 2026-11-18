@@ -23,7 +23,7 @@ jobs:
           sudo apt-get install -y make pkg-config python3 curl file binutils
 
       - name: Install Android NDK
-        uses: android-actions/setup-android@v3.2.2
+        uses: android-actions/setup-android@v4.0.2
 
       - name: Install pinned NDK side-by-side
         run: sdkmanager 'ndk;29.0.14206865'
