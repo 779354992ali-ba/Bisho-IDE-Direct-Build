@@ -50,7 +50,7 @@ jobs:
           LD_CMD="$TOOLCHAIN/ld.lld"
 
           for tool in "$CLANG" "$LLVM_AR" "$LLVM_RANLIB" \
-                      "$LLVM_STRIP" "$LLVM_OBJCOPY" \
+                      "$LLVM_STRIP" "$GNU_OBJCOPY" \
                       "$LLVM_OBJDUMP" "$LD_CMD"; do
             test -x "$tool" || {
               echo "Missing Android NDK tool: $tool"
