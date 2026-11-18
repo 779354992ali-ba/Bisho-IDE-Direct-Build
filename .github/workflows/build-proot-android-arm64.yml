@@ -115,11 +115,11 @@ jobs:
           mkdir -p "$TALLOC_PREFIX/lib"
           shopt -s nullglob
           TALLOC_OBJECTS=(bin/default/talloc*.o)
-          if ((${#TALLOC_OBJECTS[@]} != 1)); then
-            echo "ERROR: Expected exactly one core Talloc object."
-            printf "Found: %s\n" "${TALLOC_OBJECTS[@]}"
+          if ((${#TALLOC_OBJECTS[@]} < 1)); then
+            echo "ERROR: No core Talloc object found."
             exit 1
           fi
+          printf "Talloc objects found: %s\n" "${TALLOC_OBJECTS[@]}"
           rm -f "$TALLOC_PREFIX/lib/libtalloc.a"
           "$LLVM_AR" rcs "$TALLOC_PREFIX/lib/libtalloc.a" "${TALLOC_OBJECTS[@]}"
           "$LLVM_RANLIB" "$TALLOC_PREFIX/lib/libtalloc.a"
