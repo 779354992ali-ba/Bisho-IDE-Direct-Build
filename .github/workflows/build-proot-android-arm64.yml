@@ -28,11 +28,6 @@ jobs:
       - name: Install pinned NDK side-by-side
         run: sdkmanager 'ndk;29.0.14206865'
 
-      - name: Install GNU ARM64 binutils
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y binutils-aarch64-linux-gnu
-
       - name: Build Android ARM64 talloc and PRoot
         shell: bash
         run: |
@@ -45,12 +40,12 @@ jobs:
           LLVM_AR="$TOOLCHAIN/llvm-ar"
           LLVM_RANLIB="$TOOLCHAIN/llvm-ranlib"
           LLVM_STRIP="$TOOLCHAIN/llvm-strip"
-          GNU_OBJCOPY="$(command -v aarch64-linux-gnu-objcopy)"
+          LLVM_OBJCOPY="$TOOLCHAIN/llvm-objcopy"
           LLVM_OBJDUMP="$TOOLCHAIN/llvm-objdump"
           LD_CMD="$TOOLCHAIN/ld.lld"
 
           for tool in "$CLANG" "$LLVM_AR" "$LLVM_RANLIB" \
-                      "$LLVM_STRIP" "$GNU_OBJCOPY" \
+                      "$LLVM_STRIP" "$LLVM_OBJCOPY" \
                       "$LLVM_OBJDUMP" "$LD_CMD"; do
             test -x "$tool" || {
               echo "Missing Android NDK tool: $tool"
@@ -143,12 +138,29 @@ jobs:
 
           PROOT_SRC="$GITHUB_WORKSPACE/upstream-proot"
 
+          python3 - "$PROOT_SRC/src/GNUmakefile" <<'PATCH_PY'
+          import sys
+          from pathlib import Path
+
+          p = Path(sys.argv[1])
+          s = p.read_text()
+
+          old = "LOADER_LDFLAGS$1 += -static -nostdlib -Wl$(BUILD_ID_NONE),-Ttext=$(LOADER_ADDRESS$1),-z,noexecstack"
+          new = "LOADER_LDFLAGS$1 += -static -nostdlib -Wl$(BUILD_ID_NONE),-Ttext=$(LOADER_ADDRESS$1),--rosegment,-z,noexecstack"
+
+          if s.count(old) != 1:
+              raise SystemExit("ERROR: Expected loader linker flags not found exactly once.")
+
+          p.write_text(s.replace(old, new, 1))
+          print("OK: Applied NDK r29 --rosegment workaround.")
+          PATCH_PY
+
           MAKE_ARGS=(
             "CC=$CLANG"
             "LD=$CLANG"
             "LD_CMD=$LD_CMD"
-            "STRIP=true"
-            "OBJCOPY=$GNU_OBJCOPY"
+            "STRIP=$LLVM_STRIP"
+            "OBJCOPY=$LLVM_OBJCOPY"
             "OBJDUMP=$LLVM_OBJDUMP"
             "PKG_CONFIG=pkg-config"
             "WITHOUT_PYTHON=1"
