@@ -120,6 +120,23 @@ jobs:
             exit 1
           fi
           printf "Talloc objects found: %s\n" "${TALLOC_OBJECTS[@]}"
+
+          REPLACE_OBJECTS=()
+          while IFS= read -r -d '' object; do
+            if "$TOOLCHAIN/llvm-nm" -g --defined-only "$object" 2>/dev/null | grep -Eq '[[:space:]][Tt][[:space:]]+rep_memset_explicit$'; then
+              REPLACE_OBJECTS+=("$object")
+            fi
+          done < <(find bin/default -type f -name '*.o' -print0)
+
+          if (( ${#REPLACE_OBJECTS[@]} != 1 )); then
+            echo "ERROR: Expected exactly one object defining rep_memset_explicit."
+            printf "Found: %s\n" "${REPLACE_OBJECTS[@]}"
+            exit 1
+          fi
+
+          printf "Talloc replace object: %s\n" "${REPLACE_OBJECTS[@]}"
+          TALLOC_OBJECTS+=("${REPLACE_OBJECTS[@]}")
+
           rm -f "$TALLOC_PREFIX/lib/libtalloc.a"
           "$LLVM_AR" rcs "$TALLOC_PREFIX/lib/libtalloc.a" "${TALLOC_OBJECTS[@]}"
           "$LLVM_RANLIB" "$TALLOC_PREFIX/lib/libtalloc.a"
