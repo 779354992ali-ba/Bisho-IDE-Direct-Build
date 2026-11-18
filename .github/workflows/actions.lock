@@ -3,6 +3,15 @@
 # Docs: https://gh.io/actions-lockfile
 version: 'v0.0.3'
 workflows:
+    '.github/workflows/build-proot-android-arm64.yml':
+        - 'actions/checkout@v4.4.0'
+        - 'actions/upload-artifact@v4.6.2'
+        - 'android-actions/setup-android@v3.2.2'
+    '.github/workflows/direct-apk-build.yml':
+        - 'actions/checkout@v5.1.0'
+        - 'actions/setup-java@v5.7.0'
+        - 'actions/upload-artifact@v4.6.2'
+        - 'subosito/flutter-action@v2.23.0'
     '.github/workflows/main.yml':
         - 'actions/cache@v5'
         - 'actions/checkout@v5.1.0'
@@ -15,6 +24,11 @@ dependencies:
         commit: 'sha1-caa296126883cff596d87d8935842f9db880ef25'
         owner_id: 44036562
         repo_id: 215566462
+    'actions/checkout@v4.4.0':
+        ref: 'v4.4.0'
+        commit: 'sha1-11d5960a326750d5838078e36cf38b85af677262'
+        owner_id: 44036562
+        repo_id: 197814629
     'actions/checkout@v5.1.0':
         ref: 'v5.1.0'
         commit: 'sha1-fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09'
@@ -30,6 +44,11 @@ dependencies:
         commit: 'sha1-ea165f8d65b6e75b540449e92b4886f43607fa02'
         owner_id: 44036562
         repo_id: 192625955
+    'android-actions/setup-android@v3.2.2':
+        ref: 'v3.2.2'
+        commit: 'sha1-9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407'
+        owner_id: 69522701
+        repo_id: 286780795
     'subosito/flutter-action@v2.23.0':
         ref: 'v2.23.0'
         commit: 'sha1-1a449444c387b1966244ae4d4f8c696479add0b2'
