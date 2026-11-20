@@ -28,7 +28,15 @@
         "split-select",
         "apksigner"
       ],
-      "status": "ARM64 replacements are community-sourced; exact release, checksums, license, and in-rootfs execution must be pinned before packaging"
+      "status": "ARM64 replacements are community-sourced; exact release, checksums, license, and in-rootfs execution must be pinned before packaging",
+      "release": "https://github.com/Commit451/android-arm-build-tools/releases/tag/platform-tools-35.0.1",
+      "publishedSha256": {
+        "aapt2": "c57d02d2986d7d68147d74525ad8a5fbb105f12723b33f1ce9eab12acd238cf0",
+        "aidl": "9ae2dfac8ff49f34d493c2fd3d96f6153563f2ec0f07d18f6f661d0e8403d6a2",
+        "zipalign": "d0688e26a0960b010c9702c4a4f6e53308d239a618b1dd0e5d0f4c5ad1c84fe6",
+        "splitSelect": "172ecf6c4e93cc6f80a544f48b9a8fe770dd67f83b2f277504291cb4d1b82e3e",
+        "archive": "a6a8d0fbc40bf42dddd88ebd336c4f5c71d638dbd760e239fff93c15445ecc84"
+      }
     }
   },
   "offlineCaches": [
@@ -46,5 +54,13 @@
   "releaseAot": {
     "enabled": false,
     "reason": "Keep disabled until an Android-target Linux ARM64 gen_snapshot is available and a real Release APK passes on-device."
+  },
+  "proot": {
+    "source": "https://github.com/proot-me/proot",
+    "tag": "v5.5.0",
+    "ndk": "29.0.14206865",
+    "target": "aarch64-linux-android24",
+    "observedSha256": "145b02b5b293c3ed7fdc76de7889b39f167c16d680152188a4ce5384b3dc48f3",
+    "status": "built-and-ELF-validated-by-Package100-CI; still requires on-device ptrace/rootfs smoke test"
   }
 }
