@@ -33,6 +33,11 @@ command -v timeout >/dev/null || { echo "the 'timeout' utility is required for b
 host_proot="${BISHO_HOST_PROOT:-$(command -v proot || true)}"
 [[ -n "$host_proot" && -x "$host_proot" ]] || { echo "a native Linux ARM64 host PRoot is required (set BISHO_HOST_PROOT)" >&2; exit 2; }
 file "$host_proot" | grep -Eqi 'ELF .*ARM aarch64|ELF .*ARM64' || { echo "host PRoot must be a Linux ARM64 executable: $host_proot" >&2; exit 2; }
+readelf -h "$host_proot" | grep -Eqi 'Machine:.*AArch64' || { echo "host PRoot ELF machine is not AArch64" >&2; exit 2; }
+if readelf -lW "$host_proot" | grep -Fq '/system/bin/linker64'; then
+  echo "host PRoot is Android-linked; a native Linux ARM64 host PRoot is required" >&2
+  exit 2
+fi
 [[ "$output_zip" != "$source_dir" && "$output_zip" != "$source_dir"/* ]] || {
   echo "output ZIP must be outside RUNTIME_DIR" >&2; exit 2;
 }
