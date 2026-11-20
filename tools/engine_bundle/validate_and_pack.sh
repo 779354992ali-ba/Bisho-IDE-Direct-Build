@@ -52,20 +52,20 @@ for item in "${required[@]}"; do
   [[ -e "$source_dir/$item" ]] || { echo "missing required engine path: $item" >&2; exit 3; }
 done
 
-chmod +x "$host_proot" "$source_dir/rootfs/bin/sh" \
+chmod +x "$source_dir/runtime/proot" "$source_dir/rootfs/bin/sh" \
   "$source_dir/rootfs/opt/flutter/bin/flutter" "$source_dir/rootfs/usr/lib/jvm/java-17/bin/java" \
   "$source_dir/rootfs/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager"
 
 # The packaged launcher is an Android executable, not a Linux host tool.
 # Validate its ABI/linker statically; only the separate host PRoot may execute
 # the ARM64 Linux guest during packaging smoke tests.
-file "$host_proot" | grep -Eqi 'ARM aarch64|ARM64' || {
+file "$source_dir/runtime/proot" | grep -Eqi 'ARM aarch64|ARM64' || {
   echo "PRoot launcher is not an ARM64 executable" >&2; exit 3;
 }
-readelf -h "$host_proot" | grep -Eqi 'Machine:.*AArch64' || {
+readelf -h "$source_dir/runtime/proot" | grep -Eqi 'Machine:.*AArch64' || {
   echo "PRoot launcher ELF machine is not AArch64" >&2; exit 3;
 }
-readelf -lW "$host_proot" | grep -Fq '/system/bin/linker64' || {
+readelf -lW "$source_dir/runtime/proot" | grep -Fq '/system/bin/linker64' || {
   echo "PRoot launcher is not linked to Android /system/bin/linker64" >&2; exit 3;
 }
 file "$source_dir/rootfs/usr/lib/jvm/java-17/bin/java" | grep -Eqi 'ARM aarch64|ARM64' || {
