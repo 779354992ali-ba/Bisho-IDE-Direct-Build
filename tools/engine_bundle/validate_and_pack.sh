@@ -15,7 +15,8 @@ RUNTIME_DIR must contain:
   rootfs/usr/lib/jvm/java-17/bin/java (or edit the manifest below)
   rootfs/opt/android-sdk/{platforms,build-tools,platform-tools,licenses,cmdline-tools/latest/bin}
 
-Run this on a Linux ARM64 host where PRoot and every bundled command can actually execute.
+Run this on a Linux ARM64 host with a separate native Linux ARM64 PRoot installed.
+The bundled runtime/proot targets Android (linker64) and must never be executed on the Linux host.
 EOF
 }
 [[ $# -eq 2 ]] || { usage >&2; exit 2; }
@@ -27,6 +28,11 @@ output_zip=$(realpath -m "$2")
 }
 command -v file >/dev/null || { echo "the 'file' utility is required for ELF architecture checks" >&2; exit 2; }
 command -v zip >/dev/null || { echo "the 'zip' utility is required to create the engine archive" >&2; exit 2; }
+command -v readelf >/dev/null || { echo "the 'readelf' utility is required for Android ELF checks" >&2; exit 2; }
+command -v timeout >/dev/null || { echo "the 'timeout' utility is required for bounded smoke tests" >&2; exit 2; }
+host_proot="${BISHO_HOST_PROOT:-$(command -v proot || true)}"
+[[ -n "$host_proot" && -x "$host_proot" ]] || { echo "a native Linux ARM64 host PRoot is required (set BISHO_HOST_PROOT)" >&2; exit 2; }
+file "$host_proot" | grep -Eqi 'ELF .*ARM aarch64|ELF .*ARM64' || { echo "host PRoot must be a Linux ARM64 executable: $host_proot" >&2; exit 2; }
 [[ "$output_zip" != "$source_dir" && "$output_zip" != "$source_dir"/* ]] || {
   echo "output ZIP must be outside RUNTIME_DIR" >&2; exit 2;
 }
@@ -46,13 +52,21 @@ for item in "${required[@]}"; do
   [[ -e "$source_dir/$item" ]] || { echo "missing required engine path: $item" >&2; exit 3; }
 done
 
-chmod +x "$source_dir/runtime/proot" "$source_dir/rootfs/bin/sh" \
+chmod +x "$host_proot" "$source_dir/rootfs/bin/sh" \
   "$source_dir/rootfs/opt/flutter/bin/flutter" "$source_dir/rootfs/usr/lib/jvm/java-17/bin/java" \
   "$source_dir/rootfs/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager"
 
-# Check runtime execution instead of trusting executable bits or ELF names.
-file "$source_dir/runtime/proot" | grep -Eqi 'ARM aarch64|ARM64' || {
-  echo "PRoot launcher is not a Linux ARM64 executable" >&2; exit 3;
+# The packaged launcher is an Android executable, not a Linux host tool.
+# Validate its ABI/linker statically; only the separate host PRoot may execute
+# the ARM64 Linux guest during packaging smoke tests.
+file "$host_proot" | grep -Eqi 'ARM aarch64|ARM64' || {
+  echo "PRoot launcher is not an ARM64 executable" >&2; exit 3;
+}
+readelf -h "$host_proot" | grep -Eqi 'Machine:.*AArch64' || {
+  echo "PRoot launcher ELF machine is not AArch64" >&2; exit 3;
+}
+readelf -lW "$host_proot" | grep -Fq '/system/bin/linker64' || {
+  echo "PRoot launcher is not linked to Android /system/bin/linker64" >&2; exit 3;
 }
 file "$source_dir/rootfs/usr/lib/jvm/java-17/bin/java" | grep -Eqi 'ARM aarch64|ARM64' || {
   echo "Java executable is not a Linux ARM64 executable" >&2; exit 3;
@@ -60,8 +74,8 @@ file "$source_dir/rootfs/usr/lib/jvm/java-17/bin/java" | grep -Eqi 'ARM aarch64|
 file "$source_dir/rootfs/opt/flutter/bin/cache/dart-sdk/bin/dart" | grep -Eqi 'ARM aarch64|ARM64' || {
   echo "Flutter's Dart VM is missing or not a Linux ARM64 executable" >&2; exit 3;
 }
-"$source_dir/runtime/proot" --version >/dev/null
-"$source_dir/runtime/proot" -0 -r "$source_dir/rootfs" /bin/sh -lc \
+"$host_proot" --version >/dev/null
+"$host_proot" -0 -r "$source_dir/rootfs" /bin/sh -lc \
   "set -eu; /bin/sh -c 'echo ROOTFS_OK'; /opt/flutter/bin/flutter --version; /usr/lib/jvm/java-17/bin/java -version; /opt/android-sdk/cmdline-tools/latest/bin/sdkmanager --version"
 
 sdk="$source_dir/rootfs/opt/android-sdk"
@@ -84,7 +98,7 @@ for build_tools in $(printf '%s\n' "$sdk"/build-tools/* | sort -Vr); do
     }
   done
   version=${build_tools##*/}
-  "$source_dir/runtime/proot" -0 -r "$source_dir/rootfs" /bin/sh -lc \
+  "$host_proot" -0 -r "$source_dir/rootfs" /bin/sh -lc \
     "export JAVA_HOME=/usr/lib/jvm/java-17; export PATH=\$JAVA_HOME/bin:/usr/bin:/bin; /opt/android-sdk/build-tools/$version/aapt2 version; /opt/android-sdk/build-tools/$version/aidl --version; /opt/android-sdk/build-tools/$version/zipalign -h >/dev/null 2>&1 || test \$? -le 2; /opt/android-sdk/build-tools/$version/split-select --help >/dev/null 2>&1 || test \$? -le 2; /opt/android-sdk/build-tools/$version/apksigner version" >/dev/null
   found_tools=1
   selected_build_tools="$version"
@@ -100,7 +114,7 @@ trap '[[ -z "$stage" ]] || rm -rf "$stage"; rm -rf "$smoke_dir"' EXIT
 mkdir -p "$source_dir/rootfs/tmp/bisho-engine-smoke" "$smoke_dir/project" "$smoke_dir/home" "$smoke_dir/pub-cache" "$smoke_dir/gradle"
 smoke_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; export FLUTTER_SUPPRESS_ANALYTICS=true; printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/$selected_build_tools/aapt2\n' > /tmp/bisho-engine-smoke/gradle/gradle.properties; /opt/flutter/bin/flutter precache --android; /opt/flutter/bin/flutter create --platforms=android --project-name bisho_engine_smoke /tmp/bisho-engine-smoke/project; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter pub get; /opt/flutter/bin/flutter build apk --debug --target-platform android-arm64; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose build/app/outputs/flutter-apk/app-debug.apk; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 build/app/outputs/flutter-apk/app-debug.apk"
 echo "Running real ARM64 Flutter Debug smoke build (up to 60 minutes)..."
-timeout 60m "$source_dir/runtime/proot" -0 -r "$source_dir/rootfs" \
+timeout 60m "$host_proot" -0 -r "$source_dir/rootfs" \
   -b "$smoke_dir:/tmp/bisho-engine-smoke" -b /dev -b /proc /bin/sh -lc "$smoke_script"
 [[ -s "$smoke_dir/project/build/app/outputs/flutter-apk/app-debug.apk" ]] || {
   echo "Debug smoke build did not produce a non-empty APK" >&2; exit 5;
@@ -113,7 +127,7 @@ aot="$source_dir/rootfs/opt/flutter/bin/cache/artifacts/engine/android-arm64-rel
 release_supported=false
 if [[ -x "$aot" ]]; then
   release_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter build apk --release --target-platform android-arm64; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose build/app/outputs/flutter-apk/app-release.apk; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 build/app/outputs/flutter-apk/app-release.apk"
-  if timeout 60m "$source_dir/runtime/proot" -0 -r "$source_dir/rootfs" \
+  if timeout 60m "$host_proot" -0 -r "$source_dir/rootfs" \
       -b "$smoke_dir:/tmp/bisho-engine-smoke" -b /dev -b /proc /bin/sh -lc "$release_script"; then
     [[ -s "$smoke_dir/project/build/app/outputs/flutter-apk/app-release.apk" ]] && release_supported=true
   fi
