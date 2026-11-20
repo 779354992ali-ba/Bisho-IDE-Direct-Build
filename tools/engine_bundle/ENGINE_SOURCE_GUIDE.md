@@ -47,5 +47,19 @@ The script expects the fixed directory layout documented in `PACKAGE82_RUNTIME_B
 - Include a non-empty `rootfs/opt/android-sdk/licenses/android-sdk-license` file after the Android SDK licenses have been accepted on the ARM64 provisioning host.
 - The packer and app select the newest complete Build Tools version by version sort (`sort -Vr`); keep `aapt2`, `aidl`, `zipalign`, `split-select`, and `apksigner` together in that selected version directory.
 - Package86 retains the last three Debug and Release APKs separately from the temporary staged project and validates their SHA-256 against the build-proof record. Removing or changing a retained APK invalidates the corresponding proof.
-- Engine installation still requires 20 GB free. Once installed, the app requires at least 5 GB free for a build workspace and Gradle caches.
+- Current native installer admission is dynamic: after download it requires 1 GiB free; extraction stops before using the final 512 MiB reserve; the archive and expanded payload are capped at 8 GiB and 12 GiB respectively. Once installed, the current native build preflight requires 2.5 GiB free as a starting reserve, not a guarantee for every project. Keep this aligned with `MainActivity.kt`; do not reintroduce the obsolete 20 GB / 5 GB gates.
 - Gradle worker count and JVM heap are bounded for mobile devices. These settings improve predictability but do not guarantee that every device has sufficient RAM for every Flutter project.
+
+
+## Package100 pinned source observations
+
+- Flutter reference installer repository: `0xR0/arm64-flutter-setup`, observed commit `6a6eb5e13ce99d99e5604b6be83ecb46b3098e02`; its documented baseline is Flutter tag `3.27.4` / Dart `3.6.2`. The helper repository is unsigned and is a compatibility reference, not a trusted binary distribution. Do not pipe its moving `master` installer into a production build.
+- ARM64 Android PRoot: upstream `proot-me/proot` tag `v5.5.0`, built with Android NDK `29.0.14206865` for `aarch64-linux-android24`. Package100 CI successfully built an Android ELF with interpreter `/system/bin/linker64`; observed binary SHA-256: `145b02b5b293c3ed7fdc76de7889b39f167c16d680152188a4ce5384b3dc48f3`.
+- Commit451 ARM64 Build Tools release `platform-tools-35.0.1` (2026-05-21) published these SHA-256 values:
+  - `aapt2`: `c57d02d2986d7d68147d74525ad8a5fbb105f12723b33f1ce9eab12acd238cf0`
+  - `aidl`: `9ae2dfac8ff49f34d493c2fd3d96f6153563f2ec0f07d18f6f661d0e8403d6a2`
+  - `zipalign`: `d0688e26a0960b010c9702c4a4f6e53308d239a618b1dd0e5d0f4c5ad1c84fe6`
+  - `split-select`: `172ecf6c4e93cc6f80a544f48b9a8fe770dd67f83b2f277504291cb4d1b82e3e`
+  - combined archive: `a6a8d0fbc40bf42dddd88ebd336c4f5c71d638dbd760e239fff93c15445ecc84`
+- These pinned hashes make provisioning reproducible, but do not by themselves certify that the tools run together inside Bisho's final guest rootfs. The complete Debug smoke build and phone probe remain mandatory.
+- Android SDK license acceptance must be performed by the publisher/user after reviewing and accepting the applicable terms. Package100 does not fabricate or silently insert an acceptance file.
