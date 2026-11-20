@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "status": "provisioning-not-implemented",
+  "status": "reference-only-not-provisioned",
   "targetAbi": "arm64-v8a",
   "deviceAndroidMinimumApi": 29,
   "flutter": {
-    "version": "3.47.9",
-    "source": "https://docs.flutter.dev/install/archive",
-    "archiveIntegrity": "must-be-resolved-from-official-release-metadata-at-download-time"
+    "version": "3.27.4",
+    "source": "https://github.com/0xR0/arm64-flutter-setup",
+    "archiveIntegrity": "community setup reference only; resolve and pin exact ARM64 Dart/Flutter source artifacts and checksums before provisioning; no official Linux ARM64 stable archive is assumed"
   },
   "java": {
     "major": 17,
@@ -15,14 +15,20 @@
     "archiveIntegrity": "must-be-resolved-from-vendor-checksum-and-signature"
   },
   "androidSdk": {
-    "platformApi": 36,
-    "buildToolsVersion": "36.0.0",
+    "platformApi": 35,
+    "buildToolsVersion": "35.0.1",
     "commandLineTools": "latest-pinned-release-required",
     "licenses": "must-be-accepted-and-stored-during-online-provisioning",
     "hostTools": {
       "requiredAbi": "linux-aarch64",
-      "required": ["aapt2", "aidl", "zipalign", "split-select", "apksigner"],
-      "status": "official-google-linux-host-tools-are-not-assumed-to-be-aarch64-compatible"
+      "required": [
+        "aapt2",
+        "aidl",
+        "zipalign",
+        "split-select",
+        "apksigner"
+      ],
+      "status": "ARM64 replacements are community-sourced; exact release, checksums, license, and in-rootfs execution must be pinned before packaging"
     }
   },
   "offlineCaches": [
@@ -39,6 +45,6 @@
   },
   "releaseAot": {
     "enabled": false,
-    "reason": "Do not enable until an Android-target AOT gen_snapshot executable is present and a real Release build passes on the target phone."
+    "reason": "Keep disabled until an Android-target Linux ARM64 gen_snapshot is available and a real Release APK passes on-device."
   }
 }
