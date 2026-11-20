@@ -213,7 +213,11 @@ jobs:
           mkdir -p out
           git -C upstream-proot rev-parse HEAD > out/UPSTREAM_COMMIT.txt
           printf 'Upstream: https://github.com/proot-me/proot\nTag: v5.5.0\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
-          sha256sum out/proot > out/SHA256SUMS
+          (
+            cd out
+            sha256sum proot > SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
           cp upstream-proot/COPYING out/UPSTREAM_COPYING 2>/dev/null || true
       - name: Upload build artifact
         uses: actions/upload-artifact@v4.6.2
