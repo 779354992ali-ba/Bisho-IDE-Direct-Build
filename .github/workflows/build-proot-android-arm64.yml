@@ -1,6 +1,8 @@
 name: Build upstream PRoot for Android ARM64
 
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
