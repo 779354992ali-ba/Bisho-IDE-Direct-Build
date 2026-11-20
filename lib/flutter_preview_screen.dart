@@ -1131,7 +1131,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   _localBuildInfoRow('دعم الجهاز', _localBuildEnvironment!.deviceSupported
                       ? 'يحقق المتطلبات الأولية' : 'لا يحقق المتطلبات الأولية'),
                   _localBuildInfoRow('المساحة المطلوبة', _localBuildEnvironment!.requiredStorageLabel),
-                  _localBuildInfoRow('نظام Alpine ARM64', _localBuildEnvironment!.alpineRootfsInstalled
+                  _localBuildInfoRow('Alpine bootstrap الاختياري', _localBuildEnvironment!.alpineRootfsInstalled
                       ? 'مثبّت وموجود' : 'غير مثبّت'),
                   _localBuildInfoRow('ملفات المحرك', _localBuildEnvironment!.engineInstalled
                       ? 'موجودة بنيويًا' : 'غير مكتملة'),
@@ -1168,6 +1168,13 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                         ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.archive_outlined),
                     label: Text(_alpineInstalling ? 'جارٍ تنزيل واستخراج Alpine...' : 'تثبيت Alpine ARM64 داخل التطبيق'),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text(
+                    'ملاحظة: Alpine نظام أساسي اختياري فقط؛ تثبيته لا يوفّر Flutter أو Java أو Android SDK ولا يفعّل البناء المحلي بمفرده.',
+                    style: TextStyle(color: _muted, fontSize: 11, height: 1.4),
                   ),
                 ),
                 if (_alpineInstalling)
