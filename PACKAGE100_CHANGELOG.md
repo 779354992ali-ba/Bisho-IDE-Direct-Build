@@ -15,3 +15,6 @@
 - The Android PRoot binary still requires real-device ptrace/rootfs/bind-mount validation.
 - SDK license acceptance must be performed by the publisher/user under applicable terms.
 - Release/AOT remains disabled until a real Release build passes.
+
+6. Moved the separately downloaded Alpine bootstrap rootfs outside the engine install directory. Previously, replacing the engine directory could silently delete Alpine; status reporting now checks the independent location.
+7. Tightened packer host validation to reject an Android-linked PRoot being passed as the Linux host runner.
