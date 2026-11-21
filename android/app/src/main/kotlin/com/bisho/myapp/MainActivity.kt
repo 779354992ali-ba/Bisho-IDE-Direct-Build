@@ -500,8 +500,8 @@ class MainActivity : FlutterActivity() {
             if (backup.exists()) backup.deleteRecursively()
             File(engineRoot, "local-build-verification.json").delete()
             File(engineRoot, "local-build-debug-verification.json").delete()
-            emitBuildEvent("تم تثبيت حزمة المحرك بعد التحقق من سلامتها؛ لا يزال اختبار إنتاج APK مطلوبًا.")
-            return mapOf("success" to true, "message" to "تم تثبيت ملفات المحرك والتحقق من البصمة والبنية.", "bytes" to extractedBytes)
+            emitBuildEvent("تم تجهيز ملفات المحرك والتحقق من manifest وSHA-256؛ لم يُفعّل للبناء المحلي بعد. يلزم نجاح اختبار الهاتف أولًا.")
+            return mapOf("success" to true, "activated" to false, "message" to "تم تجهيز ملفات المحرك والتحقق من سلامتها. لم يُفعّل للبناء المحلي؛ شغّل اختبار الهاتف أولًا.", "bytes" to extractedBytes)
         } catch (error: Exception) {
             if (staging.exists()) staging.deleteRecursively()
             throw error
@@ -1279,7 +1279,7 @@ class MainActivity : FlutterActivity() {
             !engineInstalled ->
                 "الجهاز يحقق متطلبات العتاد الأولية، لكن بيئة Flutter/JDK/Android SDK غير مكتملة داخل التطبيق. ${missing.joinToString(" ")}"
             !debugBuildVerified ->
-                "ملفات المحرك موجودة؛ يلزم تنفيذ Debug APK فعلي والتحقق من توقيعه ومحاذاته على هذا الجهاز."
+                "المحرك غير مفعّل للبناء بعد؛ يلزم بناء Debug APK حقيقي عبر PRoot والتحقق من التوقيع والمحاذاة وaapt2 ثم تثبيته وتشغيله على هذا الهاتف."
             !releaseBuildVerified ->
                 "بناء Debug المحلي اجتاز الاختبار. لم ينجح بعد بناء Release/AOT؛ لا تعتبر نسخة الإنتاج جاهزة."
             else -> "اجتاز المحرك اختباري Debug وRelease وإثبات APK على هذا الجهاز."
@@ -1293,6 +1293,7 @@ class MainActivity : FlutterActivity() {
             "engineInstallStorageBytes" to engineInstallStorageBytes,
             "deviceSupported" to deviceSupported,
             "engineInstalled" to engineInstalled,
+            "engineActivated" to canBuildLocally,
             "alpineRootfsInstalled" to File(engineDirectory, "rootfs/alpine-aarch64/etc/alpine-release").let { it.isFile && it.readText().trim().startsWith("3.24.4") },
             "runtimeVerified" to runtimeVerified,
             "debugBuildVerified" to debugBuildVerified,
