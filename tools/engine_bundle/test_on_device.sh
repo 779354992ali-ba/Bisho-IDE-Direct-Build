@@ -71,6 +71,7 @@ if [ ! -x "$ROOTFS/opt/flutter/bin/flutter" ] ||
 fi
 
 mkdir -p "$TEST_HOME" "$PROJECT"
+export BISHO_PROOT_TMPDIR="$TEST_HOME"
 run_host_stage "PRoot --version" env -u LD_PRELOAD "$PROOT" --version
 run_guest_stage "RootFS shell and echo" 'set -eu; echo ROOTFS_OK; test -x /bin/sh'
 
