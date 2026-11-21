@@ -1270,9 +1270,19 @@ class MainActivity : FlutterActivity() {
         // Release/AOT proof flag. Both currently require the retained Release
         // APK proof, but callers must consume releaseBuildVerified for release
         // readiness and must never infer it from Debug verification.
-        val releaseBuildVerified = verificationMatches("local-build-verification.json", "release")
+        val releaseProofPresent = verificationMatches("local-build-verification.json", "release")
+        val debugProofPresent = verificationMatches("local-build-debug-verification.json", "debug")
+        val integrityError = if (releaseProofPresent || debugProofPresent) {
+            try {
+                verifyCriticalFileHashes(engineDirectory, JSONObject(manifest.readText()))
+            } catch (error: Exception) {
+                error.message ?: "تعذر إعادة التحقق من سلامة ملفات المحرك."
+            }
+        } else null
+        if (integrityError != null) missing.add(integrityError)
+        val releaseBuildVerified = releaseProofPresent && integrityError == null
         val runtimeVerified = releaseBuildVerified
-        val debugBuildVerified = verificationMatches("local-build-debug-verification.json", "debug")
+        val debugBuildVerified = debugProofPresent && integrityError == null
         val canBuildLocally = deviceSupported && engineInstalled && debugBuildVerified
         val message = when {
             !deviceSupported ->
