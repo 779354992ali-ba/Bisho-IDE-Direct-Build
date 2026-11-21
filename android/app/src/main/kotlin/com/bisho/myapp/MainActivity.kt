@@ -1380,7 +1380,7 @@ class MainActivity : FlutterActivity() {
         val flutterRoot = flutter.substringBeforeLast("/bin/flutter", "")
         val buildTools = json.optString("androidBuildToolsVersion")
         if (rootfs.isBlank() || sdk.isBlank() || flutterRoot.isBlank() ||
-            !buildTools.matches(Regex("^[0-9]+(\\\\.[0-9]+)*$"))) {
+            !buildTools.matches(Regex("^[0-9]+(\\.[0-9]+)*$"))) {
             return "مسارات أو إصدار Build Tools في بيان المحرك غير صالح للتحقق من البصمات."
         }
         val required = listOf(
