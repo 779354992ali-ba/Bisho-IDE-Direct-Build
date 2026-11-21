@@ -181,7 +181,7 @@ jobs:
           s = s.replace(old_macro, new_macro, 1)
 
           old_socket_macro = '#define ANDROID_SHMEM_SOCKNAME "/dev/shm/%08x"'
-          new_socket_macro = old_socket_macro + '\\n#define ANDROID_SHMEM_FILE_SOCKNAME ".bisho_shmem_%08x-%d"'
+          new_socket_macro = old_socket_macro + '\n#define ANDROID_SHMEM_FILE_SOCKNAME ".bisho_shmem_%08x-%d"'
           if s.count(old_socket_macro) != 1:
               raise SystemExit("ERROR: libandroid-shmem socket-path macro mismatch.")
           s = s.replace(old_socket_macro, new_socket_macro, 1)
