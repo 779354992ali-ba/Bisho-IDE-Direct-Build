@@ -60,6 +60,8 @@ jobs:
           (
             cd "$RUNNER_TEMP/proot-artifact"
             sha256sum -c SHA256SUMS
+            grep -Fxq "25dc6a3134891f98a79f57ce1c2c1b23ff15cad1" UPSTREAM_COMMIT.txt
+            grep -Fq "Commit: 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1" BUILD_PROVENANCE.txt
           )
           echo "PROOT_ARTIFACT_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
 
