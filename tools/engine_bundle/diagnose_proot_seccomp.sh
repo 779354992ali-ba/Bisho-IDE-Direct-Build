@@ -38,7 +38,7 @@ if [ ! -d "$ROOTFS" ] || [ ! -x "$ROOTFS/bin/sh" ]; then
   echo "ERROR: RootFS shell is missing."
   exit 1
 fi
-BUNDLE_TMP="$ENGINE_DIR/.proot-diagnostic-tmp"
+BUNDLE_TMP="${PREFIX:-/data/data/com.termux/files/usr}/tmp/bisho-proot-diagnostic-tmp"
 mkdir -p "$BUNDLE_TMP"
 chmod 700 "$BUNDLE_TMP"
 
