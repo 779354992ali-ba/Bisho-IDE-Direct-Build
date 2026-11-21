@@ -292,6 +292,7 @@ jobs:
             "PKG_CONFIG=pkg-config"
             "WITHOUT_PYTHON=1"
             "PROOT_WITH_LIBANDROID_SHMEM=true"
+            "LDFLAGS=-L$TALLOC_PREFIX/lib -L$SHMEM_PREFIX/lib -ltalloc -Wl,-z,noexecstack -landroid-shmem -llog -landroid"
           )
 
           make -C "$PROOT_SRC/src" -j2 "${MAKE_ARGS[@]}" build.h V=1
