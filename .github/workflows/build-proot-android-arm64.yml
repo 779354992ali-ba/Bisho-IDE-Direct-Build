@@ -252,7 +252,7 @@ jobs:
           test -s "$PROOT_SRC/src/tracee/seccomp.c"
 
           # The provisioned guest rootfs is ARM64-only; do not build a 32-bit loader.
-          python3 - "$PROOT_SRC/src/arch.h" "$PROOT_SRC/src/GNUmakefile" <<'PATCH_PY'
+          python3 - "$PROOT_SRC/src/arch.h" "$PROOT_SRC/src/GNUmakefile" "$PROOT_SRC/src/extension/ashmem_memfd/ashmem_memfd.c" <<'PATCH_PY'
           import sys
           from pathlib import Path
 
@@ -271,7 +271,15 @@ jobs:
           if s.count(old) != 1:
               raise SystemExit("ERROR: Android shared-memory linker anchor mismatch.")
           makefile.write_text(s.replace(old, new, 1))
-          print("OK: pinned Termux SIGSYS/seccomp source, static Android shmem, ARM64-only loader.")
+
+          extension = Path(sys.argv[3])
+          s = extension.read_text()
+          old = "#include <stdlib.h>\\n"
+          new = "#include <stdlib.h>\\n#include <string.h>\\n"
+          if s.count(old) != 1:
+              raise SystemExit("ERROR: ashmem_memfd string.h include anchor mismatch.")
+          extension.write_text(s.replace(old, new, 1))
+          print("OK: pinned Termux SIGSYS/seccomp source, static Android shmem, ARM64-only loader, NDK29 header fix.")
           PATCH_PY
 
           MAKE_ARGS=(
