@@ -1405,6 +1405,7 @@ class MainActivity : FlutterActivity() {
         if (!apk.isFile || apk.length() <= 0L) throw IllegalArgumentException("ملف APK التجريبي غير صالح.")
         if (expectedActivityName.isBlank()) throw IllegalArgumentException("اسم نشاط APK التجريبي غير صالح.")
         if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            emitBuildEvent("يلزم السماح لـBisho IDE بتثبيت تطبيق الاختبار؛ ستُفتح إعدادات Android لهذا المصدر.")
             val settingsIntent = Intent(
                 Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                 Uri.parse("package:$packageName")
@@ -1444,6 +1445,7 @@ class MainActivity : FlutterActivity() {
                         statusMessage.set("لم يُرجع Android شاشة تأكيد تثبيت APK.")
                         statusLatch.countDown()
                     } else {
+                        emitBuildEvent("بانتظار موافقتك على تثبيت تطبيق الاختبار في شاشة Android.")
                         runOnUiThread { startActivity(confirmation) }
                     }
                 } else {
