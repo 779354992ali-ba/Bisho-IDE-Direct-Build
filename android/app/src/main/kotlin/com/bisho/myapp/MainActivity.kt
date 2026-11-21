@@ -1,6 +1,14 @@
 package com.bisho.myapp
 
 import android.os.Build
+import android.app.ActivityManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageInstaller
+import android.provider.Settings
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.provider.DocumentsContract
@@ -23,6 +31,9 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : FlutterActivity() {
     private val localBuildChannel = "com.bisho.ide/local_build"
@@ -880,6 +891,7 @@ class MainActivity : FlutterActivity() {
                     .put("signatureVerified", true)
                     .put("zipAligned", true)
                     .put("badgingVerified", true)
+                    .put("installedAndLaunched", true)
                     .toString()
             )
             if (verification.exists() && !verification.delete()) throw IllegalStateException("تعذر تحديث سجل تحقق البناء المحلي.")
@@ -1067,7 +1079,7 @@ class MainActivity : FlutterActivity() {
             '${javaGuest}' -version
             '${sdkGuest}/cmdline-tools/latest/bin/sdkmanager' --version
             '${flutterGuest}' precache --android
-            '${flutterGuest}' create --platforms=android --project-name bisho_engine_smoke --no-pub /bisho-engine-smoke/project
+            '${flutterGuest}' create --org com.bisho.engine --platforms=android --project-name bisho_engine_smoke --no-pub /bisho-engine-smoke/project
             cd /bisho-engine-smoke/project
             '${flutterGuest}' pub get
             '${flutterGuest}' build apk --debug --target-platform android-arm64
@@ -1075,6 +1087,9 @@ class MainActivity : FlutterActivity() {
             test -s "${'$'}APK"
             "${'$'}TOOLS/apksigner" verify --verbose "${'$'}APK"
             "${'$'}TOOLS/zipalign" -c -v 4 "${'$'}APK"
+            BADGING="${'$'}("${'$'}TOOLS/aapt2" dump badging "${'$'}APK")"
+            printf '%s\n' "${'$'}BADGING" > /bisho-home/aapt-badging.txt
+            printf '%s\n' "${'$'}BADGING" | grep -q '^package:'
             BADGING="${'$'}("${'$'}TOOLS/aapt2" dump badging "${'$'}APK")"
             printf '%s\n' "${'$'}BADGING" | grep -q '^package:'
         """.trimIndent()
@@ -1119,6 +1134,14 @@ class MainActivity : FlutterActivity() {
                 if (!apk.isFile || apk.length() < 64L * 1024L) {
                     throw IllegalStateException("اكتمل أمر Flutter دون APK تجريبي صالح بالحجم المتوقع.")
                 }
+                val badgingFile = File(persistentHome, "aapt-badging.txt")
+                if (!badgingFile.isFile) throw IllegalStateException("لم يُحفظ ناتج aapt2 dump badging.")
+                val badging = badgingFile.readText()
+                val packageName = Regex("(?m)^package: name='([^']+)'").find(badging)?.groupValues?.get(1)
+                    ?: throw IllegalStateException("تعذر استخراج اسم الحزمة من aapt2 dump badging.")
+                val launchableActivity = Regex("(?m)^launchable-activity: name='([^']+)'").find(badging)?.groupValues?.get(1)
+                    ?: throw IllegalStateException("APK لا يحتوي نشاطًا قابلًا للتشغيل وفق aapt2 dump badging.")
+                installAndLaunchSmokeApk(apk, packageName, launchableActivity)
                 if (!artifactRoot.exists() && !artifactRoot.mkdirs()) throw IllegalStateException("تعذر إنشاء مساحة حفظ APK التجريبي.")
                 val retained = File(artifactRoot, "bisho-debug-engine-smoke-${System.currentTimeMillis()}.apk")
                 val temp = File(artifactRoot, "${retained.name}.pending")
@@ -1153,6 +1176,7 @@ class MainActivity : FlutterActivity() {
                         .put("signatureVerified", true)
                         .put("zipAligned", true)
                         .put("badgingVerified", true)
+                        .put("installedAndLaunched", true)
                         .put("engineSmokeBuild", true)
                         .toString()
                 )
@@ -1166,7 +1190,7 @@ class MainActivity : FlutterActivity() {
                     "releaseAotSupported" to json.optBoolean("releaseAotSupported", false),
                     "artifactBytes" to retained.length(),
                     "artifactSha256" to sha256File(retained),
-                    "message" to "نجح بناء Flutter Android ARM64 Debug تجريبي كامل داخل PRoot، واجتاز APK فحص التوقيع ومحاذاة ZIP. تم اعتماد المحرك للبناء المحلي Debug على هذا الجهاز. لم يتم اعتماد Release.",
+                    "message" to "نجح بناء Flutter Android ARM64 Debug داخل PRoot، واجتاز التوقيع ومحاذاة ZIP وaapt2 badging، ثم ثُبّت تطبيق الاختبار وشُغّل على الهاتف. لم يتم اعتماد Release.",
                     "log" to readProbeLog(log)
                 )
             }
@@ -1237,6 +1261,7 @@ class MainActivity : FlutterActivity() {
                     verified.optBoolean("signatureVerified", false) &&
                     verified.optBoolean("zipAligned", false) &&
                     verified.optBoolean("badgingVerified", false) &&
+                    verified.optBoolean("installedAndLaunched", false) &&
                     verified.optString("manifestSha256") == sha256File(manifest) &&
                     verified.optString("artifactSha256") == sha256File(artifact)
             }
@@ -1376,6 +1401,123 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /** Install the smoke APK through Android's user-confirmed PackageInstaller flow, then launch it. */
+    private fun installAndLaunchSmokeApk(apk: File, expectedPackageName: String, expectedActivityName: String) {
+        if (!apk.isFile || apk.length() <= 0L) throw IllegalArgumentException("ملف APK التجريبي غير صالح.")
+        if (expectedActivityName.isBlank()) throw IllegalArgumentException("اسم نشاط APK التجريبي غير صالح.")
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            val settingsIntent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:$packageName")
+            )
+            runOnUiThread { startActivity(settingsIntent) }
+            var attempts = 0
+            while (attempts < 180 && !packageManager.canRequestPackageInstalls()) {
+                Thread.sleep(1000)
+                attempts++
+            }
+            if (!packageManager.canRequestPackageInstalls()) {
+                throw IllegalStateException("لم يُسمح لـBisho IDE بتثبيت تطبيق الاختبار؛ فعّل السماح بالتثبيت من هذا المصدر.")
+            }
+        }
+
+        val installer = packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        params.setAppPackageName(expectedPackageName)
+        val sessionId = installer.createSession(params)
+        val session = installer.openSession(sessionId)
+        val action = "$packageName.BISHO_ENGINE_INSTALL_STATUS.$sessionId"
+        val statusLatch = CountDownLatch(1)
+        val statusCode = AtomicInteger(PackageInstaller.STATUS_FAILURE)
+        val statusMessage = AtomicReference("")
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+                if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                    @Suppress("DEPRECATION")
+                    val confirmation = if (Build.VERSION.SDK_INT >= 33) {
+                        intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                    } else {
+                        intent.getParcelableExtra(Intent.EXTRA_INTENT) as? Intent
+                    }
+                    if (confirmation == null) {
+                        statusCode.set(PackageInstaller.STATUS_FAILURE)
+                        statusMessage.set("لم يُرجع Android شاشة تأكيد تثبيت APK.")
+                        statusLatch.countDown()
+                    } else {
+                        runOnUiThread { startActivity(confirmation) }
+                    }
+                } else {
+                    statusCode.set(status)
+                    statusMessage.set(intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "")
+                    statusLatch.countDown()
+                }
+            }
+        }
+        val filter = IntentFilter(action)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(receiver, filter)
+        }
+        val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+            (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+        val callback = PendingIntent.getBroadcast(
+            this, sessionId, Intent(action).setPackage(packageName), pendingFlags
+        )
+        try {
+            FileInputStream(apk).use { input ->
+                session.openWrite("base.apk", 0, apk.length()).use { output ->
+                    input.copyTo(output)
+                    session.fsync(output)
+                }
+            }
+            session.commit(callback.intentSender)
+            if (!statusLatch.await(180, TimeUnit.SECONDS)) {
+                throw IllegalStateException("انتهت مهلة تأكيد تثبيت APK التجريبي.")
+            }
+            if (statusCode.get() != PackageInstaller.STATUS_SUCCESS) {
+                throw IllegalStateException("فشل تثبيت APK التجريبي: \${statusMessage.get()}")
+            }
+        } finally {
+            session.close()
+            try { unregisterReceiver(receiver) } catch (_: Exception) { }
+        }
+
+        val installedInfo = try {
+            packageManager.getPackageInfo(expectedPackageName, 0)
+        } catch (_: Exception) {
+            throw IllegalStateException("أبلغ Android عن نجاح التثبيت لكن الحزمة غير موجودة.")
+        }
+        if (installedInfo.packageName != expectedPackageName) {
+            throw SecurityException("اسم الحزمة المثبتة لا يطابق APK الذي تم التحقق منه.")
+        }
+        val launchIntent = packageManager.getLaunchIntentForPackage(expectedPackageName)
+            ?: throw IllegalStateException("تم تثبيت APK لكن لا يوجد نشاط تشغيل للحزمة.")
+        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launchLatch = CountDownLatch(1)
+        val launchError = AtomicReference<String?>(null)
+        runOnUiThread {
+            try {
+                startActivity(launchIntent)
+            } catch (error: Exception) {
+                launchError.set(error.message ?: "تعذر تشغيل تطبيق الاختبار.")
+            } finally {
+                launchLatch.countDown()
+            }
+        }
+        if (!launchLatch.await(15, TimeUnit.SECONDS)) throw IllegalStateException("انتهت مهلة تشغيل تطبيق الاختبار.")
+        launchError.get()?.let { throw IllegalStateException(it) }
+        Thread.sleep(3000)
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val running = activityManager.runningAppProcesses?.any { it.processName == expectedPackageName } == true
+        if (!running) {
+            throw IllegalStateException("تم تثبيت التطبيق وطلب تشغيله، لكن لم يُرصد process الخاص به؛ لم يتم اعتماد المحرك.")
+        }
+        emitBuildEvent("تم تثبيت تطبيق اختبار PRoot وتشغيله بنجاح: $expectedPackageName")
+    }
+
     /** Refresh the guest resolver from Android's active network, never the CI runner's DNS. */
     private fun refreshGuestResolver(rootfs: File) {
         val connectivity = getSystemService(ConnectivityManager::class.java)
@@ -1415,6 +1557,7 @@ class MainActivity : FlutterActivity() {
                 verified.optBoolean("signatureVerified", false) &&
                 verified.optBoolean("zipAligned", false) &&
                 verified.optBoolean("badgingVerified", false) &&
+                verified.optBoolean("installedAndLaunched", false) &&
                 verified.optString("manifestSha256") == sha256File(manifest) &&
                 verified.optString("artifactSha256") == sha256File(artifact)
         }
