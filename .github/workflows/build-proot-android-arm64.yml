@@ -180,20 +180,33 @@ jobs:
               raise SystemExit("ERROR: libandroid-shmem temp-path macro mismatch.")
           s = s.replace(old_macro, new_macro, 1)
 
-          old_call = '\t\tsprintf(symlink_path, ASHV_KEY_SYMLINK_PATH, key);'
-          new_call = '''        const char *tmp_dir = getenv("BISHO_PROOT_TMPDIR");
+          old_socket_macro = '#define ANDROID_SHMEM_SOCKNAME "/dev/shm/%08x"'
+          new_socket_macro = '#define ANDROID_SHMEM_SOCKET_NAME ".bisho_shmem_%08x-%d"'
+          if s.count(old_socket_macro) != 1:
+              raise SystemExit("ERROR: libandroid-shmem socket-path macro mismatch.")
+          s = s.replace(old_socket_macro, new_socket_macro, 1)
+
+          old_setup = '\tpthread_mutex_lock(&mutex);\n\tchar symlink_path[256];'
+          new_setup = '''        pthread_mutex_lock(&mutex);
+                  const char *tmp_dir = getenv("BISHO_PROOT_TMPDIR");
                   if (tmp_dir == NULL || tmp_dir[0] != '/')
                       tmp_dir = getenv("TMPDIR");
                   if (tmp_dir == NULL || tmp_dir[0] != '/')
                       tmp_dir = "/tmp";
-                  size_t tmp_dir_len = strlen(tmp_dir);
                   if (access(tmp_dir, W_OK | X_OK) != 0) {
                       pthread_mutex_unlock(&mutex);
                       return -1;
                   }
-                  int path_len = snprintf(symlink_path, sizeof(symlink_path),
-                      "%s%s" ASHV_KEY_SYMLINK_NAME, tmp_dir,
-                      tmp_dir_len > 0 && tmp_dir[tmp_dir_len - 1] == '/' ? "" : "/", key);
+                  size_t tmp_dir_len = strlen(tmp_dir);
+                  char symlink_path[256];'''
+          if s.count(old_setup) != 1:
+              raise SystemExit("ERROR: libandroid-shmem temp directory setup mismatch.")
+          s = s.replace(old_setup, new_setup, 1)
+
+          old_call = '\t\tsprintf(symlink_path, ASHV_KEY_SYMLINK_PATH, key);'
+          new_call = '''        int path_len = snprintf(symlink_path, sizeof(symlink_path),
+                  "%s%s" ASHV_KEY_SYMLINK_NAME, tmp_dir,
+                  tmp_dir_len > 0 && tmp_dir[tmp_dir_len - 1] == '/' ? "" : "/", key);
                   if (path_len < 0 || (size_t)path_len >= sizeof(symlink_path)) {
                       pthread_mutex_unlock(&mutex);
                       errno = ENAMETOOLONG;
@@ -201,7 +214,22 @@ jobs:
                   }'''
           if s.count(old_call) != 1:
               raise SystemExit("ERROR: libandroid-shmem symlink path call mismatch.")
-          p.write_text(s.replace(old_call, new_call, 1))
+          s = s.replace(old_call, new_call, 1)
+
+          old_socket_call = '\tsprintf(buf, ANDROID_SHMEM_SOCKNAME "-%d", ashv_local_socket_id, idx);'
+          new_socket_call = '''        int socket_path_len = snprintf(buf, sizeof(buf),
+                  "%s%s" ANDROID_SHMEM_SOCKET_NAME, tmp_dir,
+                  tmp_dir_len > 0 && tmp_dir[tmp_dir_len - 1] == '/' ? "" : "/",
+                  ashv_local_socket_id, idx);
+                  if (socket_path_len < 0 || (size_t)socket_path_len >= sizeof(buf)) {
+                      pthread_mutex_unlock(&mutex);
+                      errno = ENAMETOOLONG;
+                      return -1;
+                  }'''
+          if s.count(old_socket_call) != 1:
+              raise SystemExit("ERROR: libandroid-shmem socket path call mismatch.")
+          s = s.replace(old_socket_call, new_socket_call, 1)
+          p.write_text(s)
           PATCH_SHMEM
           grep -q 'BISHO_PROOT_TMPDIR' "$SHMEM_SRC/shmem.c"
 
