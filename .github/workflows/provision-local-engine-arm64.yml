@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y debootstrap proot file binutils curl git unzip xz-utils zip
+          sudo apt-get install -y debootstrap file binutils curl git unzip xz-utils zip
 
       - name: Download the latest successful Android PRoot artifact from this branch
         shell: bash
@@ -175,15 +175,8 @@ jobs:
           # Do not recurse into rootfs: /dev and /proc are mounted there and must retain kernel ownership.
           sudo chown "$(id -u):$(id -g)" "$RUNTIME" "$RUNTIME/runtime"
           sudo chown "$(id -u):$(id -g)" "$RUNTIME/runtime/proot"
-          HOST_PROOT="$(command -v proot)"
-          "$HOST_PROOT" --version
-          # The guest mounts are needed during apt/sdkmanager provisioning, but
-          # must be detached before packaging so host /proc and /dev are not copied.
-          if mountpoint -q "$RUNTIME/rootfs/proc"; then sudo umount "$RUNTIME/rootfs/proc"; fi
-          if mountpoint -q "$RUNTIME/rootfs/dev"; then sudo umount "$RUNTIME/rootfs/dev"; fi
-          # Prove the native ARM64 host PRoot can enter the guest before the full build.
-          sudo "$HOST_PROOT" -0 -r "$RUNTIME/rootfs" -w / -b /dev -b /proc /bin/sh -lc 'echo HOST_PROOT_GUEST_OK; /bin/true'
-          sudo env BISHO_HOST_PROOT="$HOST_PROOT" bash "$RUNNER_TEMP/validate_and_pack.sh" "$RUNTIME" "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
+          # Keep /dev and /proc mounted for native ARM64 chroot smoke tests.
+          sudo env BISHO_GUEST_RUNNER=chroot bash "$RUNNER_TEMP/validate_and_pack.sh" "$RUNTIME" "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
           unzip -t "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
           sha256sum "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip" | tee "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip.sha256"
 
