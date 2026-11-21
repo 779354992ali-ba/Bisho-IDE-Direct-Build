@@ -1185,6 +1185,7 @@ class MainActivity : FlutterActivity() {
                     ?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
                 mapOf(
                     "success" to true,
+                    "activated" to true,
                     "debugBuildSupported" to true,
                     "releaseAotSupported" to json.optBoolean("releaseAotSupported", false),
                     "artifactBytes" to retained.length(),
