@@ -100,7 +100,7 @@ else
   fail "Refresh Android DNS"
 fi
 
-BASE='export HOME=/bisho-home; export PUB_CACHE=/bisho-home/.pub-cache; export GRADLE_USER_HOME=/bisho-home/.gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export FLUTTER_SUPPRESS_ANALYTICS=true; export CI=true; export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin;'
+BASE='set -eu; export HOME=/bisho-home; export PUB_CACHE=/bisho-home/.pub-cache; export GRADLE_USER_HOME=/bisho-home/.gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export FLUTTER_SUPPRESS_ANALYTICS=true; export CI=true; export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin;'
 
 run_guest_stage "Flutter --version" "$BASE /opt/flutter/bin/flutter --version"
 run_guest_stage "Java --version" "$BASE /usr/lib/jvm/java-17/bin/java -version"
