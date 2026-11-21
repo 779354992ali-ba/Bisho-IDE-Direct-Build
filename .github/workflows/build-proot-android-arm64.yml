@@ -220,8 +220,8 @@ jobs:
           UPSTREAM_COMMIT="25dc6a3134891f98a79f57ce1c2c1b23ff15cad1"
           ACTUAL_UPSTREAM_COMMIT="$(git -C upstream-proot rev-parse HEAD)"
           test "$ACTUAL_UPSTREAM_COMMIT" = "$UPSTREAM_COMMIT"
-          printf '%s\\n' "$ACTUAL_UPSTREAM_COMMIT" > out/UPSTREAM_COMMIT.txt
-          printf 'Upstream: https://github.com/proot-me/proot\\nTag: v5.5.0\\nCommit: %s\\nNDK: 29.0.14206865\\nTarget: aarch64-linux-android24\\n' "$ACTUAL_UPSTREAM_COMMIT"
+          printf '%s\n' "$ACTUAL_UPSTREAM_COMMIT" > out/UPSTREAM_COMMIT.txt
+          printf 'Upstream: https://github.com/proot-me/proot\nTag: v5.5.0\nCommit: %s\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' "$ACTUAL_UPSTREAM_COMMIT"
           (
             cd out
             sha256sum proot > SHA256SUMS
