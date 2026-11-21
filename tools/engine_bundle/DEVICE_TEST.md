@@ -28,6 +28,8 @@ The script tests, in order:
 
 The Package Installer step requires a human confirmation. If Android asks, allow Termux to install unknown apps and tap **Install**. The script does not bypass Android's confirmation.
 
+The in-app engine probe separately requires **Bisho IDE** to be allowed to install unknown apps. It opens Android's source-install settings when needed, then uses Android's Package Installer confirmation; the user must approve it.
+
 A full log is saved under \`$HOME/bisho-engine-device-test-*.log\`. If \`termux-clipboard-set\` is installed, the latest log is copied to the clipboard automatically.
 
 A successful Termux test is evidence for that exact engine bundle on that device. The app's own engine probe performs its own on-device test and keeps local builds disabled until its verification record is present.
