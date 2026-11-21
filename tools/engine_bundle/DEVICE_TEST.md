@@ -5,7 +5,13 @@ The CI packer runs a native ARM64 \`chroot\` smoke build. That does **not** cert
 ## Run from Termux
 
 1. Extract the engine ZIP into \`$HOME/bisho-engine\` so the directory contains \`runtime/proot\` and \`rootfs/\`.
-2. From the repository root, run:
+2. To collect the read-only PRoot/seccomp-order comparison log, run:
+
+   ```bash
+   bash tools/engine_bundle/diagnose_proot_seccomp.sh "$HOME/bisho-engine"
+   ```
+
+3. From the repository root, run:
 
    \`\`\`bash
    bash tools/engine_bundle/test_on_device.sh "$HOME/bisho-engine"
