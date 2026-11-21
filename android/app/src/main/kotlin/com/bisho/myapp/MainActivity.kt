@@ -1425,6 +1425,14 @@ class MainActivity : FlutterActivity() {
             ?: return "بيان المحرك يفتقد بصمات SHA-256 للملفات التنفيذية الحرجة."
         val rootfs = json.optString("rootfsDirectory").trimEnd('/')
         val sdk = json.optString("androidSdkDirectory").trimEnd('/')
+        val prootCommit = json.optString("prootSourceCommit")
+        val prootCommitFile = resolveInside(engineDirectory, "runtime/PROOT_UPSTREAM_COMMIT.txt")
+        val prootLicense = resolveInside(engineDirectory, "runtime/PROOT_COPYING")
+        if (!prootCommit.matches(Regex("^[a-fA-F0-9]{40}$")) || prootCommitFile == null ||
+            !prootCommitFile.isFile || prootCommitFile.readText().trim() != prootCommit ||
+            prootLicense == null || !prootLicense.isFile || prootLicense.length() == 0L) {
+            return "بصمة مصدر PRoot أو ملف الترخيص غير موجود أو لا يطابق بيان المحرك."
+        }
         val flutter = json.optString("flutterExecutable")
         val flutterRoot = flutter.substringBeforeLast("/bin/flutter", "")
         val buildTools = json.optString("androidBuildToolsVersion")
@@ -1434,6 +1442,8 @@ class MainActivity : FlutterActivity() {
         }
         val required = listOf(
             json.optString("runtimeLauncher"),
+            "runtime/PROOT_UPSTREAM_COMMIT.txt",
+            "runtime/PROOT_BUILD_PROVENANCE.txt",
             "$rootfs/bin/sh",
             flutter,
             "$flutterRoot/bin/cache/dart-sdk/bin/dart",
@@ -1444,7 +1454,7 @@ class MainActivity : FlutterActivity() {
             "$sdk/build-tools/$buildTools/zipalign",
             "$sdk/build-tools/$buildTools/apksigner"
         ).distinct()
-        if (required.size != 10 || hashes.length() != required.size) {
+        if (required.size != 12 || hashes.length() != required.size) {
             return "قائمة بصمات المحرك لا تطابق الملفات الحرجة المطلوبة."
         }
         for (relative in required) {
