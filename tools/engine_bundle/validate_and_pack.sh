@@ -85,6 +85,9 @@ command -v zip >/dev/null || { echo "the 'zip' utility is required to create the
 
 required=(
   runtime/proot
+  runtime/PROOT_BUILD_PROVENANCE.txt
+  runtime/PROOT_UPSTREAM_COMMIT.txt
+  runtime/PROOT_COPYING
   rootfs/bin/sh
   rootfs/opt/flutter/bin/flutter
   rootfs/usr/lib/jvm/java-17/bin/java
@@ -195,6 +198,8 @@ cp -aL "$source_dir/runtime/." "$stage/runtime/"
 cp -aL "$source_dir/rootfs/." "$stage/rootfs/"
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 PROOT_SHA=$(sha256_of "$stage/runtime/proot")
+PROOT_SOURCE_COMMIT=$(cat "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
+[[ "$PROOT_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid PRoot source commit provenance." >&2; exit 4; }
 SHELL_SHA=$(sha256_of "$stage/rootfs/bin/sh")
 FLUTTER_SHA=$(sha256_of "$stage/rootfs/opt/flutter/bin/flutter")
 DART_SHA=$(sha256_of "$stage/rootfs/opt/flutter/bin/cache/dart-sdk/bin/dart")
@@ -209,6 +214,7 @@ cat > "$stage/engine-manifest.json" <<EOF
   "schemaVersion": 1,
   "abi": "arm64-v8a",
   "runtimeLauncher": "runtime/proot",
+  "prootSourceCommit": "$PROOT_SOURCE_COMMIT",
   "rootfsDirectory": "rootfs",
   "flutterExecutable": "rootfs/opt/flutter/bin/flutter",
   "javaExecutable": "rootfs/usr/lib/jvm/java-17/bin/java",
