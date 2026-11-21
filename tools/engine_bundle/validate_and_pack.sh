@@ -30,21 +30,28 @@ smoke_mounted=false
 guest_exec() { chroot "$rootfs" /bin/sh -lc "$1"; }
 
 stop_guest_processes() {
-  local proc_dir target pid
+  local proc_dir target pid attempt signal
   local -a pids=()
+  for attempt in 1 2; do
+    pids=()
+    for proc_dir in /proc/[0-9]*; do
+      target=$(readlink -f "$proc_dir/root" 2>/dev/null || true)
+      [[ "$target" == "$rootfs" ]] && pids+=("${proc_dir##*/}")
+    done
+    (("${#pids[@]}" == 0)) && return 0
+    signal=TERM
+    [[ "$attempt" == 1 ]] || signal=KILL
+    for pid in "${pids[@]}"; do kill -"$signal" "$pid" 2>/dev/null || true; done
+    sleep 2
+  done
   for proc_dir in /proc/[0-9]*; do
     target=$(readlink -f "$proc_dir/root" 2>/dev/null || true)
-    [[ "$target" == "$rootfs" ]] || continue
-    pids+=("${proc_dir##*/}")
+    if [[ "$target" == "$rootfs" ]]; then
+      echo "ERROR: guest process ${proc_dir##*/} remains after TERM/KILL; refusing to treat cleanup as successful." >&2
+      return 1
+    fi
   done
-  (("${#pids[@]}" == 0)) && return 0
-  for pid in "${pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
-  sleep 3
-  for pid in "${pids[@]}"; do
-    [[ -d "/proc/$pid" ]] || continue
-    target=$(readlink -f "/proc/$pid/root" 2>/dev/null || true)
-    [[ "$target" == "$rootfs" ]] && kill -KILL "$pid" 2>/dev/null || true
-  done
+  return 0
 }
 
 umount_checked() {
@@ -60,7 +67,7 @@ cleanup() {
   local status=$?
   trap - EXIT
   set +e
-  stop_guest_processes
+  stop_guest_processes || { echo "ERROR: guest processes remain during cleanup." >&2; [[ $status -ne 0 ]] || status=1; }
   if [[ -n "$rootfs" ]]; then
     umount_checked "$rootfs/tmp/bisho-engine-smoke" || { [[ $status -ne 0 ]] || status=1; }
     umount_checked "$rootfs/proc" || { [[ $status -ne 0 ]] || status=1; }
