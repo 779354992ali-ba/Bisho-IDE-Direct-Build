@@ -797,8 +797,6 @@ class MainActivity : FlutterActivity() {
                     "sed -i \"s|^android.aapt2FromMavenOverride=.*|android.aapt2FromMavenOverride=\$TOOLS/aapt2|\" /bisho-home/.gradle/gradle.properties; " +
                     "else printf 'android.aapt2FromMavenOverride=%s\n' \"\$TOOLS/aapt2\" >> /bisho-home/.gradle/gradle.properties; fi; " +
                     "${shellQuote(flutterGuest)} --version; ${shellQuote(javaGuest)} -version; " +
-            sed -i '/^org.gradle.daemon=/d; /^kotlin.compiler.execution.strategy=/d; /^org.gradle.workers.max=/d; /^org.gradle.parallel=/d' /bisho-home/.gradle/gradle.properties
-            printf 'org.gradle.daemon=false\nkotlin.compiler.execution.strategy=in-process\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> /bisho-home/.gradle/gradle.properties
                     "${shellQuote(flutterGuest)} precache --android; " +
                     aotPreflight +
                     "rm -f /workspace/project/${apkRelativePath}; " +
@@ -1078,6 +1076,8 @@ class MainActivity : FlutterActivity() {
             '${flutterGuest}' --version
             '${javaGuest}' -version
             '${sdkGuest}/cmdline-tools/latest/bin/sdkmanager' --version
+            sed -i '/^org.gradle.daemon=/d; /^kotlin.compiler.execution.strategy=/d; /^org.gradle.workers.max=/d; /^org.gradle.parallel=/d' /bisho-home/.gradle/gradle.properties
+            printf 'org.gradle.daemon=false\nkotlin.compiler.execution.strategy=in-process\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> /bisho-home/.gradle/gradle.properties
             '${flutterGuest}' precache --android
             '${flutterGuest}' create --org com.bisho.engine --platforms=android --project-name bisho_engine_smoke --no-pub /bisho-engine-smoke/project
             cd /bisho-engine-smoke/project
@@ -1089,8 +1089,6 @@ class MainActivity : FlutterActivity() {
             "${'$'}TOOLS/zipalign" -c -v 4 "${'$'}APK"
             BADGING="${'$'}("${'$'}TOOLS/aapt2" dump badging "${'$'}APK")"
             printf '%s\n' "${'$'}BADGING" > /bisho-home/aapt-badging.txt
-            printf '%s\n' "${'$'}BADGING" | grep -q '^package:'
-            BADGING="${'$'}("${'$'}TOOLS/aapt2" dump badging "${'$'}APK")"
             printf '%s\n' "${'$'}BADGING" | grep -q '^package:'
         """.trimIndent()
         val command = mutableListOf(
@@ -1478,7 +1476,7 @@ class MainActivity : FlutterActivity() {
                 throw IllegalStateException("انتهت مهلة تأكيد تثبيت APK التجريبي.")
             }
             if (statusCode.get() != PackageInstaller.STATUS_SUCCESS) {
-                throw IllegalStateException("فشل تثبيت APK التجريبي: \${statusMessage.get()}")
+                throw IllegalStateException("فشل تثبيت APK التجريبي: " + statusMessage.get())
             }
         } finally {
             session.close()
