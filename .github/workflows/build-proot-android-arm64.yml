@@ -283,8 +283,8 @@ jobs:
           PATCH_PY
 
           MAKE_ARGS=(
-            "CC=$CLANG"
-            "LD=$CLANG"
+            "CC=$CLANG26"
+            "LD=$CLANG26"
             "LD_CMD=$LD_CMD"
             "STRIP=$LLVM_STRIP"
             "OBJCOPY=$LLVM_OBJCOPY"
@@ -294,7 +294,7 @@ jobs:
             "PROOT_WITH_LIBANDROID_SHMEM=true"
           )
 
-          make -C "$PROOT_SRC/src" -j2 "${MAKE_ARGS[@]}" build.h
+          make -C "$PROOT_SRC/src" -j2 "${MAKE_ARGS[@]}" build.h V=1
           grep -Fxq '#define HAVE_SECCOMP_FILTER' "$PROOT_SRC/src/build.h" || {
             echo "ERROR: Refusing PRoot artifact without compiled seccomp-filter support." >&2
             exit 1
@@ -324,7 +324,7 @@ jobs:
         run: |
           mkdir -p out
           git -C termux-proot rev-parse HEAD > out/UPSTREAM_COMMIT.txt
-          printf 'Source: https://github.com/termux/proot\nTag: v5.1.107.80\nCommit: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2\nShared memory: termux/libandroid-shmem 7f0bd7e25dbdd146265aff7c6a890029e374622d (statically linked; BISHO_PROOT_TMPDIR app-sandbox patch)\nGuest ABI: ARM64 only\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
+          printf 'Source: https://github.com/termux/proot\nTag: v5.1.107.80\nCommit: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2\nShared memory: termux/libandroid-shmem 7f0bd7e25dbdd146265aff7c6a890029e374622d (statically linked; BISHO_PROOT_TMPDIR app-sandbox patch)\nGuest ABI: ARM64 only\nNDK: 29.0.14206865\nTarget: aarch64-linux-android26\n' > out/BUILD_PROVENANCE.txt
           sha256sum out/proot > out/SHA256SUMS
           cp termux-proot/COPYING out/UPSTREAM_COPYING
           cp libandroid-shmem/LICENSE out/LIBANDROID_SHMEM_LICENSE
