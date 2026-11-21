@@ -295,6 +295,10 @@ jobs:
           )
 
           make -C "$PROOT_SRC/src" -j2 "${MAKE_ARGS[@]}" build.h
+          grep -Fxq '#define HAVE_SECCOMP_FILTER' "$PROOT_SRC/src/build.h" || {
+            echo "ERROR: Refusing PRoot artifact without compiled seccomp-filter support." >&2
+            exit 1
+          }
           make -C "$PROOT_SRC/src" -j2 "${MAKE_ARGS[@]}" proot V=1
 
           PROOT="$GITHUB_WORKSPACE/out/proot"
