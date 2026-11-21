@@ -40,6 +40,7 @@ fi
 run_case() {
   local label="$1"
   local proot_path="$2"
+  local strip_termux_preload="$3"
   local status
   printf '\n===== %s =====\n' "$label"
   if [ ! -x "$proot_path" ]; then
@@ -47,25 +48,29 @@ run_case() {
     return 0
   fi
   printf 'Binary: %s\n' "$proot_path"
-  "$proot_path" --version
+  if [ "$strip_termux_preload" = true ]; then env -u LD_PRELOAD "$proot_path" --version; else "$proot_path" --version; fi
   status=$?
   echo "VERSION_EXIT=$status"
   if command -v timeout >/dev/null 2>&1; then
-    timeout 30s "$proot_path" -v 4 -0 -r "$ROOTFS" \
-      -b /dev -b /proc \
-      /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+    if [ "$strip_termux_preload" = true ]; then
+      timeout 30s env -u LD_PRELOAD "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+    else
+      timeout 30s "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+    fi
   else
-    "$proot_path" -v 4 -0 -r "$ROOTFS" \
-      -b /dev -b /proc \
-      /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+    if [ "$strip_termux_preload" = true ]; then
+      env -u LD_PRELOAD "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+    else
+      "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+    fi
   fi
   status=$?
   echo "ROOTFS_COMMAND_EXIT=$status"
 }
 
-run_case "Bundled PRoot (engine)" "$BUNDLE_PROOT"
+run_case "Bundled PRoot (engine)" "$BUNDLE_PROOT" true
 if [ -n "$TERMUX_PROOT" ] && [ "$TERMUX_PROOT" != "$BUNDLE_PROOT" ]; then
-  run_case "Termux PRoot (known-good comparison)" "$TERMUX_PROOT"
+  run_case "Termux PRoot (known-good comparison)" "$TERMUX_PROOT" false
 else
   echo "Termux PRoot comparison skipped: command not found or same path."
 fi
