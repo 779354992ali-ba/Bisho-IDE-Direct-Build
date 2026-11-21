@@ -32,6 +32,7 @@ printf 'Kernel: %s\n' "$(uname -a)"
 printf 'PROOT_ASSUME_NEW_SECCOMP=%s\n' "$(printenv PROOT_ASSUME_NEW_SECCOMP 2>/dev/null || echo unset)"
 printf 'LD_PRELOAD=%s\n' "$(printenv LD_PRELOAD 2>/dev/null || echo unset)"
 printf 'TMPDIR=%s\n' "$(printenv TMPDIR 2>/dev/null || echo unset)"
+printf 'BISHO_PROOT_TMPDIR=%s\n' "$(printenv BISHO_PROOT_TMPDIR 2>/dev/null || echo unset)"
 printf 'RootFS: %s\nLog: %s\n' "$ROOTFS" "$LOG_FILE"
 
 if [ ! -d "$ROOTFS" ] || [ ! -x "$ROOTFS/bin/sh" ]; then
