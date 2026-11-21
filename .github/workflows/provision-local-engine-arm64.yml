@@ -55,7 +55,7 @@ jobs:
       - name: Download Android PRoot artifact built in this workflow run
         uses: actions/download-artifact@v4.3.0
         with:
-          name: bisho-proot-android-arm64-v5.5.0
+          name: bisho-proot-android-arm64-termux-v5.1.107.80
           path: ${{ runner.temp }}/proot-artifact
 
       - name: Verify pinned PRoot artifact provenance
@@ -66,8 +66,10 @@ jobs:
           (
             cd "$RUNNER_TEMP/proot-artifact"
             sha256sum -c SHA256SUMS
-            grep -Fxq "25dc6a3134891f98a79f57ce1c2c1b23ff15cad1" UPSTREAM_COMMIT.txt
-            grep -Fq "Commit: 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1" BUILD_PROVENANCE.txt
+            grep -Fxq "cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2" UPSTREAM_COMMIT.txt
+            grep -Fq "Source: https://github.com/termux/proot" BUILD_PROVENANCE.txt
+            grep -Fq "Tag: v5.1.107.80" BUILD_PROVENANCE.txt
+            grep -Fq "Commit: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2" BUILD_PROVENANCE.txt
             test -s UPSTREAM_COPYING
           )
 
