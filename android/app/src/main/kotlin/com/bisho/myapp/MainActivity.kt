@@ -771,12 +771,13 @@ class MainActivity : FlutterActivity() {
             val persistentHome = File(filesDir, "bisho-local-build-home").apply {
                 if (!exists() && !mkdirs()) throw IllegalStateException("تعذر إنشاء مساحة ذاكرة البناء المحلية.")
             }.canonicalFile
+            val prootTmpDirectory = ensureProotTmpDirectory()
             val command = mutableListOf(
                 launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
                 "-b", "${project.absolutePath}:/workspace/project",
                 "-b", "${persistentHome.absolutePath}:/bisho-home",
                 "-w", "/workspace/project", "/bin/sh", "-lc",
-                "set -eu; export HOME=/bisho-home; export PUB_CACHE=/bisho-home/.pub-cache; export GRADLE_USER_HOME=/bisho-home/.gradle; " +
+                "set -eu; export HOME=/bisho-home; export TMPDIR=/tmp; export PUB_CACHE=/bisho-home/.pub-cache; export GRADLE_USER_HOME=/bisho-home/.gradle; " +
                     "export JAVA_HOME=${shellQuote(javaHome)}; export ANDROID_HOME=${shellQuote(sdkPath)}; " +
                     "export ANDROID_SDK_ROOT=${shellQuote(sdkPath)}; export PATH=${shellQuote("$flutterBin:$javaBin:$sdkTools:$sdkPlatformTools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")}; " +
                     "test -x ${shellQuote(flutterGuest)}; test -x ${shellQuote(javaGuest)}; " +
@@ -815,7 +816,8 @@ class MainActivity : FlutterActivity() {
             emitBuildEvent("تم تجهيز المشروع. فحص Flutter وJava وAndroid SDK ثم بدء البناء...")
             val runningBuild = ProcessBuilder(command).redirectErrorStream(true).apply {
                 environment()["HOME"] = persistentHome.absolutePath
-                environment()["BISHO_PROOT_TMPDIR"] = cacheDir.absolutePath
+                environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
+                environment()["TMPDIR"] = prootTmpDirectory.absolutePath
             }.start()
             process = runningBuild
             activeBuildProcess = runningBuild
@@ -827,7 +829,7 @@ class MainActivity : FlutterActivity() {
             }
             // Verify the actual artifact, not only the Flutter process exit code.
             val verifyScript =
-                "set -eu; export JAVA_HOME=${shellQuote(javaHome)}; export PATH=${shellQuote("$javaBin:$sdkTools:$sdkPlatformTools:/usr/local/bin:/usr/bin:/bin")}; " +
+                "set -eu; export TMPDIR=/tmp; export JAVA_HOME=${shellQuote(javaHome)}; export PATH=${shellQuote("$javaBin:$sdkTools:$sdkPlatformTools:/usr/local/bin:/usr/bin:/bin")}; " +
                 "TOOLS=; for candidate in $(printf '%s\n' ${shellQuote(sdkPath)}/build-tools/* | sort -Vr); do " +
                 "if [ -x \"\$candidate/aapt2\" ] && [ -x \"\$candidate/aidl\" ] && [ -x \"\$candidate/zipalign\" ] && [ -x \"\$candidate/split-select\" ] && [ -x \"\$candidate/apksigner\" ]; then TOOLS=\"\$candidate\"; break; fi; done; " +
                 "test -n \"\$TOOLS\"; \"\$TOOLS/apksigner\" verify --verbose /workspace/project/${apkRelativePath}; \"\$TOOLS/zipalign\" -c -v 4 /workspace/project/${apkRelativePath}; " +
@@ -842,7 +844,8 @@ class MainActivity : FlutterActivity() {
             }
             emitBuildEvent("تم إنتاج APK. جارٍ التحقق من التوقيع ومحاذاة ZIP...")
             val verifyProcess = ProcessBuilder(verifyCommand).redirectErrorStream(true).apply {
-                environment()["BISHO_PROOT_TMPDIR"] = cacheDir.absolutePath
+                environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
+                environment()["TMPDIR"] = prootTmpDirectory.absolutePath
             }.start()
             activeBuildProcess = verifyProcess
             val verifyExit = waitForBuildProcess(verifyProcess, 3, TimeUnit.MINUTES, "التحقق من APK")
@@ -1051,6 +1054,7 @@ class MainActivity : FlutterActivity() {
         val script = """
             set -eu
             export HOME=/bisho-home
+            export TMPDIR=/tmp
             export PUB_CACHE=/bisho-home/.pub-cache
             export GRADLE_USER_HOME=/bisho-home/.gradle
             export JAVA_HOME='${javaHome}'
@@ -1095,6 +1099,7 @@ class MainActivity : FlutterActivity() {
             printf '%s\n' "${'$'}BADGING" > /bisho-home/aapt-badging.txt
             printf '%s\n' "${'$'}BADGING" | grep -q '^package:'
         """.trimIndent()
+        val prootTmpDirectory = ensureProotTmpDirectory()
         val command = mutableListOf(
             launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
             "-b", "${smokeRoot.absolutePath}:/bisho-engine-smoke",
@@ -1108,7 +1113,8 @@ class MainActivity : FlutterActivity() {
         return try {
             emitBuildEvent("بدأ اختبار البناء الحقيقي: إنشاء مشروع Flutter تجريبي داخل المحرك...")
             val process = ProcessBuilder(command).redirectErrorStream(true).apply {
-                environment()["BISHO_PROOT_TMPDIR"] = cacheDir.absolutePath
+                environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
+                environment()["TMPDIR"] = prootTmpDirectory.absolutePath
             }.start()
             activeBuildProcess = process
             val outputThread = Thread {
@@ -1535,6 +1541,17 @@ class MainActivity : FlutterActivity() {
             throw IllegalStateException("تم تثبيت التطبيق وطلب تشغيله، لكن لم يُرصد process الخاص به؛ لم يتم اعتماد المحرك.")
         }
         emitBuildEvent("تم تثبيت تطبيق اختبار PRoot وتشغيله بنجاح: $expectedPackageName")
+    }
+
+    private fun ensureProotTmpDirectory(): File {
+        val directory = File(cacheDir, "bisho-proot-tmp").canonicalFile
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IllegalStateException("تعذر إنشاء مجلد الملفات المؤقتة الخاص بـPRoot.")
+        }
+        if (!directory.isDirectory || !directory.canWrite()) {
+            throw IllegalStateException("مجلد الملفات المؤقتة الخاص بـPRoot غير قابل للكتابة.")
+        }
+        return directory
     }
 
     /** Refresh the guest resolver from Android's active network, never the CI runner's DNS. */
