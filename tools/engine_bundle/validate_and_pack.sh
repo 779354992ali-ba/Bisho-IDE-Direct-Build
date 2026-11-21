@@ -207,7 +207,9 @@ cp -aL "$source_dir/rootfs/." "$stage/rootfs/"
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 PROOT_SHA=$(sha256_of "$stage/runtime/proot")
 PROOT_SOURCE_COMMIT=$(cat "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
-[[ "$PROOT_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid PRoot source commit provenance." >&2; exit 4; }
+[[ "$PROOT_SOURCE_COMMIT" == "cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2" ]] || { echo "PRoot source is not the pinned Termux v5.1.107.80 commit." >&2; exit 4; }
+grep -Fq "Source: https://github.com/termux/proot" "$stage/runtime/PROOT_BUILD_PROVENANCE.txt"
+grep -Fq "Tag: v5.1.107.80" "$stage/runtime/PROOT_BUILD_PROVENANCE.txt"
 PROOT_COMMIT_SHA=$(sha256_of "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
 PROOT_PROVENANCE_SHA=$(sha256_of "$stage/runtime/PROOT_BUILD_PROVENANCE.txt")
 SHELL_SHA=$(sha256_of "$stage/rootfs/bin/sh")
@@ -224,6 +226,8 @@ cat > "$stage/engine-manifest.json" <<EOF
   "schemaVersion": 1,
   "abi": "arm64-v8a",
   "runtimeLauncher": "runtime/proot",
+  "prootSource": "termux/proot",
+  "prootVersion": "5.1.107.80",
   "prootSourceCommit": "$PROOT_SOURCE_COMMIT",
   "rootfsDirectory": "rootfs",
   "flutterExecutable": "rootfs/opt/flutter/bin/flutter",
