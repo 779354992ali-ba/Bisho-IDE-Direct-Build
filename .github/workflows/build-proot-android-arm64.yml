@@ -274,8 +274,8 @@ jobs:
 
           extension = Path(sys.argv[3])
           s = extension.read_text()
-          old = "#include <stdlib.h>\\n"
-          new = "#include <stdlib.h>\\n#include <string.h>\\n"
+          old = "#include <stdlib.h>\n"
+          new = "#include <stdlib.h>\n#include <string.h>\n"
           if s.count(old) != 1:
               raise SystemExit("ERROR: ashmem_memfd string.h include anchor mismatch.")
           extension.write_text(s.replace(old, new, 1))
