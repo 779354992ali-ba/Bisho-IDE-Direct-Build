@@ -1607,10 +1607,12 @@ class MainActivity : FlutterActivity() {
         val prootCommit = json.optString("prootSourceCommit")
         val prootCommitFile = resolveInside(engineDirectory, "runtime/PROOT_UPSTREAM_COMMIT.txt")
         val prootLicense = resolveInside(engineDirectory, "runtime/PROOT_COPYING")
+        val shmemLicense = resolveInside(engineDirectory, "runtime/PROOT_SHMEM_LICENSE")
         if (!prootCommit.matches(Regex("^[a-fA-F0-9]{40}$")) || prootCommitFile == null ||
             !prootCommitFile.isFile || prootCommitFile.readText().trim() != prootCommit ||
-            prootLicense == null || !prootLicense.isFile || prootLicense.length() == 0L) {
-            return "بصمة مصدر PRoot أو ملف الترخيص غير موجود أو لا يطابق بيان المحرك."
+            prootLicense == null || !prootLicense.isFile || prootLicense.length() == 0L ||
+            shmemLicense == null || !shmemLicense.isFile || shmemLicense.length() == 0L) {
+            return "بصمة مصدر PRoot أو أحد ملفات الترخيص غير موجود أو لا يطابق بيان المحرك."
         }
         val flutter = json.optString("flutterExecutable")
         val flutterRoot = flutter.substringBeforeLast("/bin/flutter", "")
