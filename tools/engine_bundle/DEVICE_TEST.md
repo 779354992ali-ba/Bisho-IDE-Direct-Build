@@ -32,4 +32,6 @@ The in-app engine probe separately requires **Bisho IDE** to be allowed to insta
 
 A full log is saved under \`$HOME/bisho-engine-device-test-*.log\`. If \`termux-clipboard-set\` is installed, the latest log is copied to the clipboard automatically.
 
+The bundled Android PRoot source is pinned to `termux/proot` tag `v5.1.107.80` (commit `cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2`). The test invokes the bundled binary without Termux's `LD_PRELOAD`, matching the Bisho app process, while the known-good Termux PRoot comparison keeps its normal environment. The shared-memory helper uses the writable `BISHO_PROOT_TMPDIR` / `TMPDIR`; seccomp is not disabled.
+
 A successful Termux test is evidence for that exact engine bundle on that device. The app's own engine probe performs its own on-device test and keeps local builds disabled until its verification record is present.
