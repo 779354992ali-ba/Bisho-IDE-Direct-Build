@@ -95,6 +95,7 @@ required=(
   runtime/PROOT_BUILD_PROVENANCE.txt
   runtime/PROOT_UPSTREAM_COMMIT.txt
   runtime/PROOT_COPYING
+  runtime/PROOT_SHMEM_LICENSE
   rootfs/bin/sh
   rootfs/opt/flutter/bin/flutter
   rootfs/usr/lib/jvm/java-17/bin/java
