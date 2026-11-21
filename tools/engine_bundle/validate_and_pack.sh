@@ -27,7 +27,7 @@ stage=""
 smoke_mounted=false
 
 [[ -x "$rootfs/bin/sh" ]] || { echo "guest rootfs shell is missing" >&2; exit 2; }
-guest_exec() { chroot "$rootfs" /bin/sh -lc "$1"; }
+guest_exec() { chroot "$rootfs" /usr/bin/env JAVA_HOME=/usr/lib/jvm/java-17 PATH=/usr/lib/jvm/java-17/bin:/usr/bin:/bin /bin/sh -lc "$1"; }
 
 stop_guest_processes() {
   local proc_dir target pid attempt signal
