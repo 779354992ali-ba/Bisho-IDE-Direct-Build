@@ -107,13 +107,19 @@ jobs:
           import sys, xml.etree.ElementTree as ET
           root = ET.parse(sys.argv[1]).getroot()
           wanted = "commandlinetools-linux-14742923_latest.zip"
+          def local(tag):
+              return tag.rsplit("}", 1)[-1]
           found = []
-          for node in root.iter():
-              for archive in node.findall(".//archive"):
-                  url = archive.findtext("complete/url")
-                  checksum = archive.find("complete/checksum")
-                  if url == wanted and checksum is not None and checksum.attrib.get("type") == "sha1":
-                      found.append(checksum.text.strip())
+          for archive in root.iter():
+              if local(archive.tag) != "archive":
+                  continue
+              complete = next((x for x in archive if local(x.tag) == "complete"), None)
+              if complete is None:
+                  continue
+              url = next((x for x in complete if local(x.tag) == "url"), None)
+              checksum = next((x for x in complete if local(x.tag) == "checksum"), None)
+              if url is not None and url.text == wanted and checksum is not None and checksum.attrib.get("type") == "sha1":
+                  found.append(checksum.text.strip())
           if len(set(found)) != 1:
               raise SystemExit("Google repository metadata did not provide one unambiguous SHA-1 for the pinned command-line-tools archive")
           print(found[0])
