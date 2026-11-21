@@ -158,6 +158,9 @@ jobs:
             /opt/flutter/bin/flutter config --android-sdk /opt/android-sdk
           sudo test -s "$SDK/licenses/android-sdk-license"
           sudo test -x "$ROOTFS/usr/lib/jvm/java-17-openjdk-arm64/bin/java"
+          # Normalize the JDK path expected by the engine packer and runtime manifest.
+          sudo ln -sfn java-17-openjdk-arm64 "$ROOTFS/usr/lib/jvm/java-17"
+          sudo test -x "$ROOTFS/usr/lib/jvm/java-17/bin/java"
           sudo test -x "$FLUTTER/bin/cache/dart-sdk/bin/dart"
           file "$FLUTTER/bin/cache/dart-sdk/bin/dart" | grep -Eqi 'ARM aarch64|ARM64'
 
