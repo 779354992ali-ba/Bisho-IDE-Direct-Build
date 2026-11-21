@@ -139,11 +139,7 @@ jobs:
             PATH=/opt/android-sdk/cmdline-tools/latest/bin:/usr/bin:/bin \
             sdkmanager --sdk_root=/opt/android-sdk platform-tools 'platforms;android-35' 'build-tools;35.0.1'
 
-          curl -fL --retry 3 "$BUILD_TOOLS_URL" -o "$RUNNER_TEMP/android-arm-build-tools.tar.xz"
-          echo "$BUILD_TOOLS_SHA256  $RUNNER_TEMP/android-arm-build-tools.tar.xz" | sha256sum -c -
-          mkdir -p "$RUNNER_TEMP/arm-tools"
-          tar -xJf "$RUNNER_TEMP          # Download the individual ARM64 executables from the pinned release.
-          # Their SHA-256 values are also published as GitHub release asset digests.
+          # Download individually pinned Android ARM64 build-tools executables.
           TOOLS_URL="https://github.com/Commit451/android-arm-build-tools/releases/download/platform-tools-35.0.1"
           mkdir -p "$RUNNER_TEMP/arm-tools"
           declare -A TOOL_SHA256=(
@@ -156,7 +152,8 @@ jobs:
             curl -fL --retry 3 "$TOOLS_URL/$tool" -o "$RUNNER_TEMP/arm-tools/$tool"
             echo "${TOOL_SHA256[$tool]}  $RUNNER_TEMP/arm-tools/$tool" | sha256sum -c -
             sudo install -m 0755 "$RUNNER_TEMP/arm-tools/$tool" "$SDK/build-tools/35.0.1/$tool"
-          doneME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
+          done
+          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64 ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
             PATH=/opt/flutter/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/lib/jvm/java-17-openjdk-arm64/bin:/usr/bin:/bin \
             /opt/flutter/bin/flutter config --android-sdk /opt/android-sdk
           sudo test -s "$SDK/licenses/android-sdk-license"
