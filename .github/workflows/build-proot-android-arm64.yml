@@ -174,7 +174,7 @@ jobs:
 
           p = Path(sys.argv[1])
           s = p.read_text()
-          old_paths_include = "#include <paths.h>\\n"
+          old_paths_include = "#include <paths.h>\n"
           if s.count(old_paths_include) != 1:
               raise SystemExit("ERROR: libandroid-shmem paths.h include mismatch.")
           s = s.replace(old_paths_include, "", 1)
