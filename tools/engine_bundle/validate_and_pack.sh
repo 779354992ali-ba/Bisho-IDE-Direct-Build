@@ -22,8 +22,57 @@ EOF
 source_dir=$(realpath "$1")
 output_zip=$(realpath -m "$2")
 rootfs="$source_dir/rootfs"
+smoke_dir=""
+stage=""
+smoke_mounted=false
+
 [[ -x "$rootfs/bin/sh" ]] || { echo "guest rootfs shell is missing" >&2; exit 2; }
 guest_exec() { chroot "$rootfs" /bin/sh -lc "$1"; }
+
+stop_guest_processes() {
+  local proc_dir target pid
+  local -a pids=()
+  for proc_dir in /proc/[0-9]*; do
+    target=$(readlink -f "$proc_dir/root" 2>/dev/null || true)
+    [[ "$target" == "$rootfs" ]] || continue
+    pids+=("${proc_dir##*/}")
+  done
+  (("${#pids[@]}" == 0)) && return 0
+  for pid in "${pids[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
+  sleep 3
+  for pid in "${pids[@]}"; do
+    [[ -d "/proc/$pid" ]] || continue
+    target=$(readlink -f "/proc/$pid/root" 2>/dev/null || true)
+    [[ "$target" == "$rootfs" ]] && kill -KILL "$pid" 2>/dev/null || true
+  done
+}
+
+umount_checked() {
+  local target=$1
+  mountpoint -q "$target" || return 0
+  if ! umount "$target"; then
+    echo "ERROR: cannot unmount $target; a guest process may still be using it." >&2
+    return 1
+  fi
+}
+
+cleanup() {
+  local status=$?
+  trap - EXIT
+  set +e
+  stop_guest_processes
+  if [[ -n "$rootfs" ]]; then
+    umount_checked "$rootfs/tmp/bisho-engine-smoke" || { [[ $status -ne 0 ]] || status=1; }
+    umount_checked "$rootfs/proc" || { [[ $status -ne 0 ]] || status=1; }
+    umount_checked "$rootfs/dev" || { [[ $status -ne 0 ]] || status=1; }
+  fi
+  [[ -z "$stage" ]] || rm -rf "$stage"
+  if [[ -n "$smoke_dir" ]] && ! mountpoint -q "$rootfs/tmp/bisho-engine-smoke"; then
+    rm -rf "$smoke_dir"
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
 [[ -d "$source_dir" ]] || { echo "runtime directory not found" >&2; exit 2; }
 [[ "$(uname -m)" == aarch64 || "$(uname -m)" == arm64 ]] || {
   echo "must run on Linux ARM64; host is $(uname -m)" >&2; exit 2;
@@ -94,13 +143,16 @@ done
 
 # Do not package a merely extractable runtime: build a fresh Flutter app in
 # the guest and verify its APK before accepting the Debug toolchain.
+for mount_name in dev proc; do
+  mountpoint -q "$rootfs/$mount_name" || {
+    echo "required guest mount is missing: $rootfs/$mount_name" >&2; exit 2;
+  }
+done
 smoke_dir=$(mktemp -d)
-stage=""
-smoke_mounted=false
-trap '[[ "$smoke_mounted" != true ]] || umount "$rootfs/tmp/bisho-engine-smoke"; [[ -z "$stage" ]] || rm -rf "$stage"; rm -rf "$smoke_dir"' EXIT
 mkdir -p "$source_dir/rootfs/tmp/bisho-engine-smoke" "$smoke_dir/project" "$smoke_dir/home" "$smoke_dir/pub-cache" "$smoke_dir/gradle"
-smoke_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; export FLUTTER_SUPPRESS_ANALYTICS=true; printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/$selected_build_tools/aapt2\n' > /tmp/bisho-engine-smoke/gradle/gradle.properties; /opt/flutter/bin/flutter precache --android; /opt/flutter/bin/flutter create --platforms=android --project-name bisho_engine_smoke /tmp/bisho-engine-smoke/project; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter pub get; /opt/flutter/bin/flutter build apk --debug --target-platform android-arm64; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose build/app/outputs/flutter-apk/app-debug.apk; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 build/app/outputs/flutter-apk/app-debug.apk"
-echo "Running real ARM64 Flutter Debug smoke build (up to 60 minutes)..."
+smoke_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export GRADLE_OPTS=-Dorg.gradle.daemon=false; export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; export FLUTTER_SUPPRESS_ANALYTICS=true; printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/$selected_build_tools/aapt2\\norg.gradle.daemon=false\\nkotlin.compiler.execution.strategy=in-process\\norg.gradle.workers.max=2\\norg.gradle.parallel=false\\n' > /tmp/bisho-engine-smoke/gradle/gradle.properties; /opt/flutter/bin/flutter precache --android; /opt/flutter/bin/flutter create --platforms=android --project-name bisho_engine_smoke /tmp/bisho-engine-smoke/project; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter pub get; /opt/flutter/bin/flutter build apk --debug --target-platform android-arm64; APK=build/app/outputs/flutter-apk/app-debug.apk; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose \\$APK; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 \\$APK; /opt/android-sdk/build-tools/$selected_build_tools/aapt2 dump badging \\$APK | grep -q '^package:'"
+echo "Running native Linux ARM64 chroot Debug smoke build (up to 60 minutes); this does not certify Android PRoot..."
+mkdir -p "$rootfs/tmp/bisho-engine-smoke"
 mount --bind "$smoke_dir" "$rootfs/tmp/bisho-engine-smoke"
 smoke_mounted=true
 timeout 60m chroot "$rootfs" /bin/sh -lc "$smoke_script"
@@ -114,7 +166,7 @@ echo "Debug smoke build, APK signature and ZIP alignment: PASS"
 aot="$source_dir/rootfs/opt/flutter/bin/cache/artifacts/engine/android-arm64-release/linux-arm64/gen_snapshot"
 release_supported=false
 if [[ -x "$aot" ]]; then
-  release_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter build apk --release --target-platform android-arm64; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose build/app/outputs/flutter-apk/app-release.apk; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 build/app/outputs/flutter-apk/app-release.apk"
+  release_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export GRADLE_OPTS=-Dorg.gradle.daemon=false; export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter build apk --release --target-platform android-arm64; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose build/app/outputs/flutter-apk/app-release.apk; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 build/app/outputs/flutter-apk/app-release.apk; /opt/android-sdk/build-tools/$selected_build_tools/aapt2 dump badging build/app/outputs/flutter-apk/app-release.apk | grep -q '^package:'"
   if timeout 60m chroot "$rootfs" /bin/sh -lc "$release_script"; then
     [[ -s "$smoke_dir/project/build/app/outputs/flutter-apk/app-release.apk" ]] && release_supported=true
   fi
@@ -125,10 +177,11 @@ else
   echo "WARNING: Release/AOT is not certified by this engine bundle; Debug remains available."
 fi
 
-umount "$rootfs/tmp/bisho-engine-smoke"
+stop_guest_processes
+umount_checked "$rootfs/tmp/bisho-engine-smoke"
 smoke_mounted=false
-umount "$rootfs/proc"
-umount "$rootfs/dev"
+umount_checked "$rootfs/proc"
+umount_checked "$rootfs/dev"
 
 stage=$(mktemp -d)
 mkdir -p "$stage/runtime" "$stage/rootfs"
@@ -146,7 +199,8 @@ cat > "$stage/engine-manifest.json" <<EOF
   "androidSdkDirectory": "rootfs/opt/android-sdk",
   "androidBuildToolsVersion": "$selected_build_tools",
   "debugBuildSupported": true,
-  "releaseAotSupported": $release_supported
+  "releaseAotSupported": $release_supported,
+  "deviceRuntimeTestRequired": true
 }
 EOF
 
