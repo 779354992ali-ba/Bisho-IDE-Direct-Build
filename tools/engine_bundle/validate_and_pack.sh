@@ -15,7 +15,7 @@ RUNTIME_DIR must contain:
   rootfs/usr/lib/jvm/java-17/bin/java (or edit the manifest below)
   rootfs/opt/android-sdk/{platforms,build-tools,platform-tools,licenses,cmdline-tools/latest/bin}
 
-Run this on a Linux ARM64 host where PRoot and every bundled command can actually execute.
+Run this on a native Linux ARM64 host; guest validation uses chroot, while the bundled Android PRoot is retained for the device runtime.
 EOF
 }
 [[ $# -eq 2 ]] || { usage >&2; exit 2; }
@@ -104,8 +104,6 @@ echo "Running real ARM64 Flutter Debug smoke build (up to 60 minutes)..."
 mount --bind "$smoke_dir" "$rootfs/tmp/bisho-engine-smoke"
 smoke_mounted=true
 timeout 60m chroot "$rootfs" /bin/sh -lc "$smoke_script"
-umount "$rootfs/tmp/bisho-engine-smoke"
-smoke_mounted=false
 [[ -s "$smoke_dir/project/build/app/outputs/flutter-apk/app-debug.apk" ]] || {
   echo "Debug smoke build did not produce a non-empty APK" >&2; exit 5;
 }
@@ -127,6 +125,8 @@ else
   echo "WARNING: Release/AOT is not certified by this engine bundle; Debug remains available."
 fi
 
+umount "$rootfs/tmp/bisho-engine-smoke"
+smoke_mounted=false
 umount "$rootfs/proc"
 umount "$rootfs/dev"
 
