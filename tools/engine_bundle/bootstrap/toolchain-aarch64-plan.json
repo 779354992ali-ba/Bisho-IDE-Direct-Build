@@ -1,12 +1,16 @@
 {
   "schemaVersion": 1,
-  "status": "reference-only-not-provisioned",
+  "status": "source-pins-improved-runtime-not-provisioned",
   "targetAbi": "arm64-v8a",
   "deviceAndroidMinimumApi": 29,
   "flutter": {
     "version": "3.27.4",
     "source": "https://github.com/0xR0/arm64-flutter-setup",
-    "archiveIntegrity": "community setup reference only; resolve and pin exact ARM64 Dart/Flutter source artifacts and checksums before provisioning; no official Linux ARM64 stable archive is assumed"
+    "archiveIntegrity": "Flutter source tag resolves to the exact commit above; Dart SDK and engine artifacts downloaded during Flutter bootstrap still require per-file SHA-256 capture before a distributable runtime can be published.",
+    "gitTag": "3.27.4",
+    "gitCommit": "d8a9f9a52e5af486f80d932e838ee93861ffd863",
+    "communitySetupRepository": "https://github.com/0xR0/arm64-flutter-setup",
+    "communitySetupCommit": "6a6eb5e13ce99d99e5604b6be83ecb46b3098e02"
   },
   "java": {
     "major": 17,
@@ -37,7 +41,14 @@
         "splitSelect": "172ecf6c4e93cc6f80a544f48b9a8fe770dd67f83b2f277504291cb4d1b82e3e",
         "archive": "a6a8d0fbc40bf42dddd88ebd336c4f5c71d638dbd760e239fff93c15445ecc84"
       }
-    }
+    },
+    "commandLineToolsArchive": {
+      "buildId": "14742923",
+      "url": "https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip",
+      "sha256": "not-yet-verified",
+      "note": "Observed in the pinned community setup installer; do not package until the archive checksum and ARM64 sdkmanager execution are independently verified."
+    },
+    "licenseAcceptancePolicy": "Never synthesize or silently accept licenses. The user/publisher must review and explicitly accept the Android SDK terms; only then may the accepted license files be included in a runtime bundle."
   },
   "offlineCaches": [
     "flutter/bin/cache/artifacts/engine/android-arm64",
