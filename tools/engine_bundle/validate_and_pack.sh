@@ -38,7 +38,7 @@ stop_guest_processes() {
       target=$(readlink -f "$proc_dir/root" 2>/dev/null || true)
       [[ "$target" == "$rootfs" ]] && pids+=("${proc_dir##*/}")
     done
-    (("${#pids[@]}" == 0)) && return 0
+    [[ ${#pids[@]} -eq 0 ]] && return 0
     signal=TERM
     [[ "$attempt" == 1 ]] || signal=KILL
     for pid in "${pids[@]}"; do kill -"$signal" "$pid" 2>/dev/null || true; done
