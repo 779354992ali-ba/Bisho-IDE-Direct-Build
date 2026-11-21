@@ -23,7 +23,7 @@ BUNDLE_PROOT="$ENGINE_DIR/runtime/proot"
 TERMUX_PROOT="$(command -v proot 2>/dev/null || true)"
 
 mkdir -p "$(dirname "$LOG_FILE")"
-exec > >(tee -a "$LOG_FILE") 2>&1
+exec > >(tee "$LOG_FILE") 2>&1
 
 printf 'Bisho PRoot seccomp diagnostic (read-only)\n'
 printf 'Device: %s\n' "$(getprop ro.product.model 2>/dev/null || echo Android)"
