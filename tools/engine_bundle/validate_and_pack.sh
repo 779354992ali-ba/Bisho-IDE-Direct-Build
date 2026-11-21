@@ -186,7 +186,7 @@ umount_checked "$rootfs/dev"
 # Never ship the runner's resolver address. Android writes current DNS servers
 # from ConnectivityManager before each PRoot invocation.
 rm -f "$rootfs/etc/resolv.conf"
-printf '# Generated from Android LinkProperties at runtime by Bisho IDE.\\n' > "$rootfs/etc/resolv.conf"
+printf '# Generated from Android LinkProperties at runtime by Bisho IDE.\n' > "$rootfs/etc/resolv.conf"
 
 stage=$(mktemp -d)
 mkdir -p "$stage/runtime" "$stage/rootfs"
