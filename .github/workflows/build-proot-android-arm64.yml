@@ -1,4 +1,4 @@
-name: Build upstream PRoot for Android ARM64
+name: Build Termux-compatible PRoot for Android ARM64
 
 on:
   workflow_dispatch:
@@ -14,10 +14,18 @@ jobs:
       - name: Checkout pinned upstream source
         uses: actions/checkout@v4.4.0
         with:
-          repository: proot-me/proot
-          ref: 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1
-          path: upstream-proot
+          repository: termux/proot
+          ref: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2
+          path: termux-proot
+          fetch-depth: 0
+      - name: Checkout pinned Android shared-memory helper
+        uses: actions/checkout@v4.4.0
+        with:
+          repository: termux/libandroid-shmem
+          ref: 7f0bd7e25dbdd146265aff7c6a890029e374622d
+          path: libandroid-shmem
           fetch-depth: 1
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
@@ -152,23 +160,46 @@ jobs:
           pkg-config --modversion talloc
           pkg-config --cflags --libs talloc
 
-          PROOT_SRC="$GITHUB_WORKSPACE/upstream-proot"
+          PROOT_SRC="$GITHUB_WORKSPACE/termux-proot"
+          SHMEM_SRC="$GITHUB_WORKSPACE/libandroid-shmem"
+          SHMEM_PREFIX="$RUNNER_TEMP/android-shmem-prefix"
+          mkdir -p "$SHMEM_PREFIX/lib" "$SHMEM_PREFIX/include/sys"
 
-          python3 - "$PROOT_SRC/src/GNUmakefile" <<'PATCH_PY'
+          # Build the Termux shared-memory helper as a static archive.
+          "$CLANG" -O2 -fPIC -std=c11 -Wall -Wextra \
+            -c "$SHMEM_SRC/shmem.c" -o "$SHMEM_PREFIX/shmem.o"
+          "$LLVM_AR" rcs "$SHMEM_PREFIX/lib/libandroid-shmem.a" "$SHMEM_PREFIX/shmem.o"
+          cp "$SHMEM_SRC/shm.h" "$SHMEM_PREFIX/include/sys/shm.h"
+
+          export C_INCLUDE_PATH="$TALLOC_PREFIX/include:$SHMEM_PREFIX/include${C_INCLUDE_PATH:+:$C_INCLUDE_PATH}"
+          export LIBRARY_PATH="$TALLOC_PREFIX/lib:$SHMEM_PREFIX/lib${LIBRARY_PATH:+:$LIBRARY_PATH}"
+          export CPPFLAGS="-DARG_MAX=131072${CPPFLAGS:+ $CPPFLAGS}"
+
+          test "$(git -C "$PROOT_SRC" rev-parse HEAD)" = "cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2"
+          grep -q 'case SIGSYS:' "$PROOT_SRC/src/tracee/event.c"
+          test -s "$PROOT_SRC/src/tracee/seccomp.c"
+
+          # The provisioned guest rootfs is ARM64-only; do not build a 32-bit loader.
+          python3 - "$PROOT_SRC/src/arch.h" "$PROOT_SRC/src/GNUmakefile" <<'PATCH_PY'
           import sys
           from pathlib import Path
 
-          p = Path(sys.argv[1])
-          s = p.read_text()
-
-          old = "LOADER_LDFLAGS$1 += -static -nostdlib -Wl$(BUILD_ID_NONE),-Ttext=$(LOADER_ADDRESS$1),-z,noexecstack"
-          new = "LOADER_LDFLAGS$1 += -static -nostdlib -Wl$(BUILD_ID_NONE),-Ttext=$(LOADER_ADDRESS$1),--rosegment,-z,noexecstack"
-
+          arch = Path(sys.argv[1])
+          s = arch.read_text()
+          old = "    #define HAS_POKEDATA_WORKAROUND true\n\n    #define HAS_LOADER_32BIT true\n"
+          new = "    #define HAS_POKEDATA_WORKAROUND true\n\n    /* Bisho packages an ARM64-only Linux guest rootfs. */\n    #undef HAS_LOADER_32BIT\n"
           if s.count(old) != 1:
-              raise SystemExit("ERROR: Expected loader linker flags not found exactly once.")
+              raise SystemExit("ERROR: ARM64 loader capability anchor mismatch.")
+          arch.write_text(s.replace(old, new, 1))
 
-          p.write_text(s.replace(old, new, 1))
-          print("OK: Applied NDK r29 --rosegment workaround.")
+          makefile = Path(sys.argv[2])
+          s = makefile.read_text()
+          old = "  LDFLAGS += -landroid-shmem"
+          new = "  LDFLAGS += -landroid-shmem -llog -landroid"
+          if s.count(old) != 1:
+              raise SystemExit("ERROR: Android shared-memory linker anchor mismatch.")
+          makefile.write_text(s.replace(old, new, 1))
+          print("OK: pinned Termux SIGSYS/seccomp source, static Android shmem, ARM64-only loader.")
           PATCH_PY
 
           MAKE_ARGS=(
@@ -180,13 +211,11 @@ jobs:
             "OBJDUMP=$LLVM_OBJDUMP"
             "PKG_CONFIG=pkg-config"
             "WITHOUT_PYTHON=1"
+            "PROOT_WITH_LIBANDROID_SHMEM=true"
           )
 
-          make -C "$PROOT_SRC/src" -j2 \
-            "${MAKE_ARGS[@]}" loader.elf build.h
-
-          make -C "$PROOT_SRC/src" -j2 \
-            "${MAKE_ARGS[@]}" proot V=1
+          make -C "$PROOT_SRC/src" -j2 "${MAKE_ARGS[@]}" build.h
+          make -C "$PROOT_SRC/src" -j2 "${MAKE_ARGS[@]}" proot V=1
 
           PROOT="$GITHUB_WORKSPACE/out/proot"
           install -D -m 0755 "$PROOT_SRC/src/proot" "$PROOT"
@@ -200,8 +229,8 @@ jobs:
           echo "Checking Android dynamic linker..."
           readelf -lW "$PROOT" | grep -F '/system/bin/linker64'
 
-          if readelf -d "$PROOT" | grep -q 'libtalloc.so'; then
-            echo "ERROR: PRoot unexpectedly depends on shared libtalloc."
+          if readelf -d "$PROOT" | grep -Eq 'libtalloc|libandroid-shmem'; then
+            echo "ERROR: PRoot unexpectedly depends on Termux-only shared libraries."
             exit 1
           fi
 
@@ -210,13 +239,13 @@ jobs:
       - name: Record provenance and checksum
         run: |
           mkdir -p out
-          git -C upstream-proot rev-parse HEAD > out/UPSTREAM_COMMIT.txt
-          printf 'Upstream: https://github.com/proot-me/proot\nTag: v5.5.0\nCommit: 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
+          git -C termux-proot rev-parse HEAD > out/UPSTREAM_COMMIT.txt
+          printf 'Source: https://github.com/termux/proot\nTag: v5.1.107.80\nCommit: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2\nShared memory: termux/libandroid-shmem 7f0bd7e25dbdd146265aff7c6a890029e374622d (statically linked)\nGuest ABI: ARM64 only\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
           sha256sum out/proot > out/SHA256SUMS
           cp upstream-proot/COPYING out/UPSTREAM_COPYING 2>/dev/null || true
       - name: Upload build artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: bisho-proot-android-arm64-v5.5.0
+          name: bisho-proot-android-arm64-termux-v5.1.107.80
           path: out/
           if-no-files-found: error
