@@ -226,7 +226,7 @@ jobs:
           TALLOC_SHA256="912afa237510ae542a7733998eb18a12bcda35ab6729c8e2ddb43e8d0ebab007"
           NDK_VERSION="29.0.14206865"
           ANDROID_TARGET="aarch64-linux-android24"
-          BUILD_COMMIT="$(git rev-parse HEAD)"
+          BUILD_COMMIT="${GITHUB_SHA:?GITHUB_SHA is required for artifact provenance}"
           ACTUAL_UPSTREAM_COMMIT="$(git -C upstream-proot rev-parse HEAD)"
           test "$ACTUAL_UPSTREAM_COMMIT" = "$UPSTREAM_COMMIT"
           PROOT_SHA256="$(sha256sum out/proot | awk '{print $1}')"
