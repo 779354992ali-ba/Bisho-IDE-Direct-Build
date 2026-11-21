@@ -21,6 +21,8 @@ EOF
 [[ $# -eq 2 ]] || { usage >&2; exit 2; }
 source_dir=$(realpath "$1")
 output_zip=$(realpath -m "$2")
+host_proot=${BISHO_HOST_PROOT:?set BISHO_HOST_PROOT to a native Linux host PRoot executable}
+[[ -x "$host_proot" ]] || { echo "host PRoot is not executable: $host_proot" >&2; exit 2; }
 [[ -d "$source_dir" ]] || { echo "runtime directory not found" >&2; exit 2; }
 [[ "$(uname -m)" == aarch64 || "$(uname -m)" == arm64 ]] || {
   echo "must run on Linux ARM64; host is $(uname -m)" >&2; exit 2;
