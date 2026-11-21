@@ -3,6 +3,7 @@ name: Local Engine PR Validation
 on:
   push:
     branches: [fix/local-engine-runtime-hardening]
+  workflow_dispatch:
 
 permissions:
   contents: read
