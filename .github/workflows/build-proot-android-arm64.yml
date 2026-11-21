@@ -214,20 +214,46 @@ jobs:
 
           echo "Android ARM64 PRoot build verification: PASS"
           sha256sum "$PROOT"
-      - name: Record provenance and checksum
+      - name: Record pinned source provenance and checksums
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p out
+          UPSTREAM_REPOSITORY="https://github.com/proot-me/proot"
+          UPSTREAM_TAG="v5.5.0"
           UPSTREAM_COMMIT="25dc6a3134891f98a79f57ce1c2c1b23ff15cad1"
+          TALLOC_VERSION="2.5.0"
+          TALLOC_SHA256="912afa237510ae542a7733998eb18a12bcda35ab6729c8e2ddb43e8d0ebab007"
+          NDK_VERSION="29.0.14206865"
+          ANDROID_TARGET="aarch64-linux-android24"
+          BUILD_COMMIT="$(git rev-parse HEAD)"
           ACTUAL_UPSTREAM_COMMIT="$(git -C upstream-proot rev-parse HEAD)"
           test "$ACTUAL_UPSTREAM_COMMIT" = "$UPSTREAM_COMMIT"
-          printf '%s\n' "$ACTUAL_UPSTREAM_COMMIT" > out/UPSTREAM_COMMIT.txt
-          printf 'Upstream: https://github.com/proot-me/proot\nTag: v5.5.0\nCommit: %s\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' "$ACTUAL_UPSTREAM_COMMIT" > out/BUILD_PROVENANCE.txt
+          PROOT_SHA256="$(sha256sum out/proot | awk '{print $1}')"
+          printf '%s\\n' "$ACTUAL_UPSTREAM_COMMIT" > out/UPSTREAM_COMMIT.txt
+          cat > out/BUILD_PROVENANCE.txt <<EOF
+          Artifact: bisho-proot-android-arm64
+          Build repository: https://github.com/779354992ali-ba/Bisho-IDE-Direct-Build
+          Build commit: $BUILD_COMMIT
+          Workflow: .github/workflows/build-proot-android-arm64.yml
+          Upstream repository: $UPSTREAM_REPOSITORY
+          Upstream tag: $UPSTREAM_TAG
+          Upstream commit: $ACTUAL_UPSTREAM_COMMIT
+          Talloc source: https://www.samba.org/ftp/talloc/talloc-$TALLOC_VERSION.tar.gz
+          Talloc version: $TALLOC_VERSION
+          Talloc source archive SHA-256: $TALLOC_SHA256
+          Android NDK: $NDK_VERSION
+          Target triple/API: $ANDROID_TARGET
+          Android ELF interpreter: /system/bin/linker64
+          Linker workaround: --rosegment (NDK r29 loader compatibility)
+          PRoot binary SHA-256: $PROOT_SHA256
+          EOF
+          cp upstream-proot/COPYING out/UPSTREAM_COPYING
           (
             cd out
-            sha256sum proot > SHA256SUMS
+            sha256sum proot UPSTREAM_COMMIT.txt BUILD_PROVENANCE.txt UPSTREAM_COPYING > SHA256SUMS
             sha256sum -c SHA256SUMS
           )
-          cp upstream-proot/COPYING out/UPSTREAM_COPYING 2>/dev/null || true
       - name: Upload build artifact
         uses: actions/upload-artifact@v4.6.2
         with:
