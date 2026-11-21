@@ -134,10 +134,10 @@ jobs:
 
           # This workflow can accept licenses only because the dispatcher explicitly
           # checked the required boolean input above; it never fabricates license files.
-          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
+          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64 ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
             PATH=/opt/android-sdk/cmdline-tools/latest/bin:/usr/bin:/bin bash -lc \
             'yes | sdkmanager --sdk_root=/opt/android-sdk --licenses'
-          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
+          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root JAVA_HOME=/usr/lib/jvm/java-17-openjdk-arm64 ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
             PATH=/opt/android-sdk/cmdline-tools/latest/bin:/usr/bin:/bin \
             sdkmanager --sdk_root=/opt/android-sdk platform-tools 'platforms;android-35' 'build-tools;35.0.1'
 
