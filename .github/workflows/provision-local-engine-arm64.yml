@@ -75,6 +75,8 @@ jobs:
           sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl git unzip xz-utils zip file binutils python3 \
             openjdk-17-jdk libc6 libstdc++6 bash coreutils findutils grep sed
+          # Stable JAVA_HOME expected by the engine packer.
+          sudo ln -sfn /usr/lib/jvm/java-17-openjdk-arm64 "$ROOTFS/usr/lib/jvm/java-17"
 
       - name: Install pinned Flutter, Dart, Android SDK and ARM64 build tools
         shell: bash
