@@ -71,6 +71,7 @@ jobs:
             grep -Fq "Tag: v5.1.107.80" BUILD_PROVENANCE.txt
             grep -Fq "Commit: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2" BUILD_PROVENANCE.txt
             test -s UPSTREAM_COPYING
+            test -s LIBANDROID_SHMEM_LICENSE
           )
 
       - name: Bootstrap Ubuntu 24.04 ARM64 guest rootfs
@@ -196,6 +197,7 @@ jobs:
           sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/BUILD_PROVENANCE.txt" "$RUNTIME/runtime/PROOT_BUILD_PROVENANCE.txt"
           sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/UPSTREAM_COMMIT.txt" "$RUNTIME/runtime/PROOT_UPSTREAM_COMMIT.txt"
           sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/UPSTREAM_COPYING" "$RUNTIME/runtime/PROOT_COPYING"
+          sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/LIBANDROID_SHMEM_LICENSE" "$RUNTIME/runtime/PROOT_SHMEM_LICENSE"
           sudo install -m 0755 tools/engine_bundle/validate_and_pack.sh "$RUNNER_TEMP/validate_and_pack.sh"
           # Do not recurse into rootfs: /dev and /proc are mounted there and must retain kernel ownership.
           sudo chown "$(id -u):$(id -g)" "$RUNTIME" "$RUNTIME/runtime"
