@@ -12,6 +12,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-proot:
+    uses: ./.github/workflows/build-proot-android-arm64.yml
+    permissions:
+      contents: read
+
   validate:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
