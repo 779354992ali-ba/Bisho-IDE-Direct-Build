@@ -815,6 +815,7 @@ class MainActivity : FlutterActivity() {
             emitBuildEvent("تم تجهيز المشروع. فحص Flutter وJava وAndroid SDK ثم بدء البناء...")
             val runningBuild = ProcessBuilder(command).redirectErrorStream(true).apply {
                 environment()["HOME"] = persistentHome.absolutePath
+                environment()["BISHO_PROOT_TMPDIR"] = cacheDir.absolutePath
             }.start()
             process = runningBuild
             activeBuildProcess = runningBuild
@@ -840,7 +841,9 @@ class MainActivity : FlutterActivity() {
                 if (File(hostPath).exists()) verifyCommand.addAll(4, listOf("-b", hostPath))
             }
             emitBuildEvent("تم إنتاج APK. جارٍ التحقق من التوقيع ومحاذاة ZIP...")
-            val verifyProcess = ProcessBuilder(verifyCommand).redirectErrorStream(true).start()
+            val verifyProcess = ProcessBuilder(verifyCommand).redirectErrorStream(true).apply {
+                environment()["BISHO_PROOT_TMPDIR"] = cacheDir.absolutePath
+            }.start()
             activeBuildProcess = verifyProcess
             val verifyExit = waitForBuildProcess(verifyProcess, 3, TimeUnit.MINUTES, "التحقق من APK")
             if (verifyExit != 0) throw IllegalStateException("تم إنتاج APK لكن فشل التحقق من توقيعه أو محاذاته (رمز $verifyExit).")
@@ -1104,7 +1107,9 @@ class MainActivity : FlutterActivity() {
         val log = File(cacheDir, "bisho-engine-probe-${System.currentTimeMillis()}.log")
         return try {
             emitBuildEvent("بدأ اختبار البناء الحقيقي: إنشاء مشروع Flutter تجريبي داخل المحرك...")
-            val process = ProcessBuilder(command).redirectErrorStream(true).start()
+            val process = ProcessBuilder(command).redirectErrorStream(true).apply {
+                environment()["BISHO_PROOT_TMPDIR"] = cacheDir.absolutePath
+            }.start()
             activeBuildProcess = process
             val outputThread = Thread {
                 try {
