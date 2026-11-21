@@ -200,6 +200,8 @@ sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 PROOT_SHA=$(sha256_of "$stage/runtime/proot")
 PROOT_SOURCE_COMMIT=$(cat "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
 [[ "$PROOT_SOURCE_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid PRoot source commit provenance." >&2; exit 4; }
+PROOT_COMMIT_SHA=$(sha256_of "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
+PROOT_PROVENANCE_SHA=$(sha256_of "$stage/runtime/PROOT_BUILD_PROVENANCE.txt")
 SHELL_SHA=$(sha256_of "$stage/rootfs/bin/sh")
 FLUTTER_SHA=$(sha256_of "$stage/rootfs/opt/flutter/bin/flutter")
 DART_SHA=$(sha256_of "$stage/rootfs/opt/flutter/bin/cache/dart-sdk/bin/dart")
@@ -225,6 +227,8 @@ cat > "$stage/engine-manifest.json" <<EOF
   "deviceRuntimeTestRequired": true,
   "criticalFileSha256": {
     "runtime/proot": "$PROOT_SHA",
+    "runtime/PROOT_UPSTREAM_COMMIT.txt": "$PROOT_COMMIT_SHA",
+    "runtime/PROOT_BUILD_PROVENANCE.txt": "$PROOT_PROVENANCE_SHA",
     "rootfs/bin/sh": "$SHELL_SHA",
     "rootfs/opt/flutter/bin/flutter": "$FLUTTER_SHA",
     "rootfs/opt/flutter/bin/cache/dart-sdk/bin/dart": "$DART_SHA",
