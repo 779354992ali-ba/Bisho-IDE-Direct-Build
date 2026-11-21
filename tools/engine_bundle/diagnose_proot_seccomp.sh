@@ -30,12 +30,17 @@ printf 'Device: %s\n' "$(getprop ro.product.model 2>/dev/null || echo Android)"
 printf 'Android: %s / SDK %s\n' "$(getprop ro.build.version.release 2>/dev/null || echo unknown)" "$(getprop ro.build.version.sdk 2>/dev/null || echo unknown)"
 printf 'Kernel: %s\n' "$(uname -a)"
 printf 'PROOT_ASSUME_NEW_SECCOMP=%s\n' "$(printenv PROOT_ASSUME_NEW_SECCOMP 2>/dev/null || echo unset)"
+printf 'LD_PRELOAD=%s\n' "$(printenv LD_PRELOAD 2>/dev/null || echo unset)"
+printf 'TMPDIR=%s\n' "$(printenv TMPDIR 2>/dev/null || echo unset)"
 printf 'RootFS: %s\nLog: %s\n' "$ROOTFS" "$LOG_FILE"
 
 if [ ! -d "$ROOTFS" ] || [ ! -x "$ROOTFS/bin/sh" ]; then
   echo "ERROR: RootFS shell is missing."
   exit 1
 fi
+BUNDLE_TMP="$ENGINE_DIR/.proot-diagnostic-tmp"
+mkdir -p "$BUNDLE_TMP"
+chmod 700 "$BUNDLE_TMP"
 
 run_case() {
   local label="$1"
@@ -48,20 +53,24 @@ run_case() {
     return 0
   fi
   printf 'Binary: %s\n' "$proot_path"
-  if [ "$strip_termux_preload" = true ]; then env -u LD_PRELOAD "$proot_path" --version; else "$proot_path" --version; fi
+  if [ "$strip_termux_preload" = true ]; then
+    env -u LD_PRELOAD BISHO_PROOT_TMPDIR="$BUNDLE_TMP" TMPDIR="$BUNDLE_TMP" "$proot_path" --version
+  else
+    "$proot_path" --version
+  fi
   status=$?
   echo "VERSION_EXIT=$status"
   if command -v timeout >/dev/null 2>&1; then
     if [ "$strip_termux_preload" = true ]; then
-      timeout 30s env -u LD_PRELOAD "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+      timeout 30s env -u LD_PRELOAD BISHO_PROOT_TMPDIR="$BUNDLE_TMP" TMPDIR="$BUNDLE_TMP" "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'export TMPDIR=/tmp; pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
     else
-      timeout 30s "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+      timeout 30s "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'export TMPDIR=/tmp; pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
     fi
   else
     if [ "$strip_termux_preload" = true ]; then
-      env -u LD_PRELOAD "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+      env -u LD_PRELOAD BISHO_PROOT_TMPDIR="$BUNDLE_TMP" TMPDIR="$BUNDLE_TMP" "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'export TMPDIR=/tmp; pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
     else
-      "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
+      "$proot_path" -v 4 -0 -r "$ROOTFS" -b /dev -b /proc /bin/sh -c 'export TMPDIR=/tmp; pwd; if [ -x /bin/busybox ]; then /bin/busybox echo BISHO_PROOT_DIAG_OK; else echo BISHO_PROOT_DIAG_OK; fi'
     fi
   fi
   status=$?
