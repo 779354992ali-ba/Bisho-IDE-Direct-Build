@@ -187,6 +187,24 @@ jobs:
           sudo test -x "$FLUTTER/bin/cache/dart-sdk/bin/dart"
           file "$FLUTTER/bin/cache/dart-sdk/bin/dart" | grep -Eqi 'ARM aarch64|ARM64'
 
+      - name: Free provisioning caches before engine smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOTFS="$RUNNER_TEMP/bisho-engine/rootfs"
+          # Remove only disposable package/download caches. Keep Flutter, Dart,
+          # the Android SDK, accepted license files and all runtime dependencies.
+          sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get clean
+          sudo rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/var/cache/apt/archives/"*.deb
+          sudo rm -rf "$ROOTFS/var/tmp/"*
+          sudo rm -rf "$RUNNER_TEMP/sdk-tools-extract" "$RUNNER_TEMP/arm-tools"
+          rm -f "$RUNNER_TEMP/commandlinetools.zip" "$RUNNER_TEMP/repository2-3.xml" "$RUNNER_TEMP/sdk-tools.sha1"
+          sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+          echo "Disk space after safe cache cleanup:"
+          df -h "$RUNNER_TEMP"
+          echo "Largest retained engine components:"
+          sudo du -sh "$ROOTFS/opt/flutter" "$ROOTFS/opt/android-sdk" "$ROOTFS/usr/lib/jvm" "$ROOTFS/var" 2>/dev/null || true
+
       - name: Assemble and smoke-test the complete local engine
         shell: bash
         run: |
