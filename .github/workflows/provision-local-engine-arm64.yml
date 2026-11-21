@@ -169,7 +169,9 @@ jobs:
           sudo mkdir -p "$RUNTIME/runtime"
           sudo install -m 0755 "$RUNNER_TEMP/proot-artifact/proot" "$RUNTIME/runtime/proot"
           sudo install -m 0755 tools/engine_bundle/validate_and_pack.sh "$RUNNER_TEMP/validate_and_pack.sh"
-          sudo chown -R "$(id -u):$(id -g)" "$RUNTIME"
+          # Do not recurse into rootfs: /dev and /proc are mounted there and must retain kernel ownership.
+          sudo chown "$(id -u):$(id -g)" "$RUNTIME" "$RUNTIME/runtime"
+          sudo chown "$(id -u):$(id -g)" "$RUNTIME/runtime/proot"
           BISHO_HOST_PROOT="$(command -v proot)" bash "$RUNNER_TEMP/validate_and_pack.sh" "$RUNTIME" "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
           unzip -t "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
           sha256sum "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip" | tee "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip.sha256"
