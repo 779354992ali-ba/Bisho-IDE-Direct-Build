@@ -89,8 +89,6 @@ jobs:
           SDK_URL="https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip"
           SDK_META="$RUNNER_TEMP/repository2-3.xml"
           SDK_ZIP="$RUNNER_TEMP/commandlinetools.zip"
-          BUILD_TOOLS_URL="https://github.com/Commit451/android-arm-build-tools/releases/download/platform-tools-35.0.1/android-build-tools-35.0.1-linux-arm64-20260521.tar.xz"
-          BUILD_TOOLS_SHA256="a6a8d0fbc40bf42dddd88ebd336c4f5c71d638dbd760e239fff93c15445ecc84"
           SDK="$ROOTFS/opt/android-sdk"
           FLUTTER="$ROOTFS/opt/flutter"
 
@@ -144,23 +142,21 @@ jobs:
           curl -fL --retry 3 "$BUILD_TOOLS_URL" -o "$RUNNER_TEMP/android-arm-build-tools.tar.xz"
           echo "$BUILD_TOOLS_SHA256  $RUNNER_TEMP/android-arm-build-tools.tar.xz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/arm-tools"
-          tar -xJf "$RUNNER_TEMP/android-arm-build-tools.tar.xz" -C "$RUNNER_TEMP/arm-tools"
+          tar -xJf "$RUNNER_TEMP          # Download the individual ARM64 executables from the pinned release.
+          # Their SHA-256 values are also published as GitHub release asset digests.
+          TOOLS_URL="https://github.com/Commit451/android-arm-build-tools/releases/download/platform-tools-35.0.1"
+          mkdir -p "$RUNNER_TEMP/arm-tools"
+          declare -A TOOL_SHA256=(
+            [aapt2]="c57d02d2986d7d68147d74525ad8a5fbb105f12723b33f1ce9eab12acd238cf0"
+            [aidl]="9ae2dfac8ff49f34d493c2fd3d96f6153563f2ec0f07d18f6f661d0e8403d6a2"
+            [zipalign]="d0688e26a0960b010c9702c4a4f6e53308d239a618b1dd0e5d0f4c5ad1c84fe6"
+            [split-select]="172ecf6c4e93cc6f80a544f48b9a8fe770dd67f83b2f277504291cb4d1b82e3e"
+          )
           for tool in aapt2 aidl zipalign split-select; do
-            source="$(find "$RUNNER_TEMP/arm-tools" -type f -name "$tool" -print -quit)"
-            test -n "$source"
-            case "$tool" in
-              aapt2) expected="c57d02d2986d7d68147d74525ad8a5fbb105f12723b33f1ce9eab12acd238cf0" ;;
-              aidl) expected="9ae2dfac8ff49f34d493c2fd3d96f6153563f2ec0f07d18f6f661d0e8403d6a2" ;;
-              zipalign) expected="d0688e26a0960b010c9702c4a4f6e53308d239a618b1dd0e5d0f4c5ad1c84fe6" ;;
-              split-select) expected="172ecf6c4e93cc6f80a544f48b9a8fe770dd67f83b2f277504291cb4d1b82e3e" ;;
-            esac
-            echo "$expected  $source" | sha256sum -c -
-            sudo install -m 0755 "$source" "$SDK/build-tools/35.0.1/$tool"
-          done
-
-          sudo mkdir -p "$ROOTFS/root/.gradle"
-          printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/35.0.1/aapt2\n' | sudo tee "$ROOTFS/root/.gradle/gradle.properties" >/dev/null
-          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
+            curl -fL --retry 3 "$TOOLS_URL/$tool" -o "$RUNNER_TEMP/arm-tools/$tool"
+            echo "${TOOL_SHA256[$tool]}  $RUNNER_TEMP/arm-tools/$tool" | sha256sum -c -
+            sudo install -m 0755 "$RUNNER_TEMP/arm-tools/$tool" "$SDK/build-tools/35.0.1/$tool"
+          doneME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
             PATH=/opt/flutter/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/lib/jvm/java-17-openjdk-arm64/bin:/usr/bin:/bin \
             /opt/flutter/bin/flutter config --android-sdk /opt/android-sdk
           sudo test -s "$SDK/licenses/android-sdk-license"
