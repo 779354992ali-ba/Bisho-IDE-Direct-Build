@@ -60,7 +60,13 @@
     "tag": "v5.5.0",
     "ndk": "29.0.14206865",
     "target": "aarch64-linux-android24",
-    "observedSha256": "145b02b5b293c3ed7fdc76de7889b39f167c16d680152188a4ce5384b3dc48f3",
-    "status": "built-and-ELF-validated-by-Package100-CI; still requires on-device ptrace/rootfs smoke test"
+    "observedSha256": "a9dc2a7ab6ce65e2a1f8a832990b07cd097ee9ef57c65ffc7701617c33fa300e",
+    "status": "built-and-ELF-validated-by-Package100-CI; artifact provenance includes pinned PRoot/Talloc/NDK inputs; still requires on-device ptrace/rootfs smoke test",
+    "upstreamCommit": "25dc6a3134891f98a79f57ce1c2c1b23ff15cad1",
+    "tallocVersion": "2.5.0",
+    "tallocSourceSha256": "912afa237510ae542a7733998eb18a12bcda35ab6729c8e2ddb43e8d0ebab007",
+    "observedFrom": "GitHub Actions run 44874583756, commit 5521e9cfb6387420ff600336ab382cea08a115b2",
+    "targetApi": 24,
+    "androidElfInterpreter": "/system/bin/linker64"
   }
 }
