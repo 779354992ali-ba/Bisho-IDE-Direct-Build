@@ -715,8 +715,8 @@ class MainActivity : FlutterActivity() {
                 throw IllegalStateException("مشغل Linux أو نظام الملفات الجذري غير مكتمل.")
             }
             refreshGuestResolver(rootfs)
-            if (buildMode == "debug" && !hasDeviceVerification(engineDirectory, manifest, "debug")) {
-                throw IllegalStateException("يجب نجاح اختبار PRoot وبناء APK والتحقق منه على هذا الهاتف قبل السماح ببناء المشاريع.")
+            if (!hasDeviceVerification(engineDirectory, manifest, "debug")) {
+                throw IllegalStateException("يجب نجاح اختبار PRoot وبناء APK والتحقق منه على هذا الهاتف قبل السماح بالبناء.")
             }
             val rootfsRelative = json.optString("rootfsDirectory").trimEnd('/')
             fun guestPath(key: String): String {
@@ -778,13 +778,16 @@ class MainActivity : FlutterActivity() {
                     "touch /bisho-home/.gradle/gradle.properties; " +
                     "set_gradle_property() { KEY=\$1; VALUE=\$2; if grep -q \"^\$KEY=\" /bisho-home/.gradle/gradle.properties; then sed -i \"s|^\$KEY=.*|\$KEY=\$VALUE|\" /bisho-home/.gradle/gradle.properties; else printf '%s=%s\n' \"\$KEY\" \"\$VALUE\" >> /bisho-home/.gradle/gradle.properties; fi; }; " +
                     "set_gradle_property org.gradle.jvmargs \"-Xmx\$GRADLE_XMX -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8\"; " +
-                    "set_gradle_property org.gradle.workers.max 2; set_gradle_property org.gradle.parallel false; " +
-                    "set_gradle_property org.gradle.caching true; set_gradle_property kotlin.daemon.jvmargs -Xmx512m; " +
+                    "set_gradle_property org.gradle.daemon false; set_gradle_property kotlin.compiler.execution.strategy in-process; " +
+                     "set_gradle_property org.gradle.workers.max 2; set_gradle_property org.gradle.parallel false; " +
+                    "set_gradle_property org.gradle.caching true; " +
                     "export FLUTTER_SUPPRESS_ANALYTICS=true; export CI=true; export PUB_ENVIRONMENT=bisho_ide; export JAVA_TOOL_OPTIONS='-XX:ActiveProcessorCount=2'; " +
                     "if grep -q '^android.aapt2FromMavenOverride=' /bisho-home/.gradle/gradle.properties 2>/dev/null; then " +
                     "sed -i \"s|^android.aapt2FromMavenOverride=.*|android.aapt2FromMavenOverride=\$TOOLS/aapt2|\" /bisho-home/.gradle/gradle.properties; " +
                     "else printf 'android.aapt2FromMavenOverride=%s\n' \"\$TOOLS/aapt2\" >> /bisho-home/.gradle/gradle.properties; fi; " +
                     "${shellQuote(flutterGuest)} --version; ${shellQuote(javaGuest)} -version; " +
+            sed -i '/^org.gradle.daemon=/d; /^kotlin.compiler.execution.strategy=/d; /^org.gradle.workers.max=/d; /^org.gradle.parallel=/d' /bisho-home/.gradle/gradle.properties
+            printf 'org.gradle.daemon=false\nkotlin.compiler.execution.strategy=in-process\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> /bisho-home/.gradle/gradle.properties
                     "${shellQuote(flutterGuest)} precache --android; " +
                     aotPreflight +
                     "rm -f /workspace/project/${apkRelativePath}; " +
