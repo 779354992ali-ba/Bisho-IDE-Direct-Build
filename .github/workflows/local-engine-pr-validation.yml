@@ -40,6 +40,7 @@ jobs:
           set -euo pipefail
           bash -n tools/engine_bundle/validate_and_pack.sh
           bash -n tools/engine_bundle/test_on_device.sh
+          bash -n tools/engine_bundle/diagnose_proot_seccomp.sh
           python3 -m pip install --quiet pyyaml
           python3 - <<'PY'
           import yaml
