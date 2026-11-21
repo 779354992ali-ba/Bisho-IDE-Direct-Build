@@ -71,6 +71,8 @@ jobs:
           sudo mkdir -p "$ROOTFS"
           sudo debootstrap --arch=arm64 --variant=minbase noble "$ROOTFS" http://ports.ubuntu.com/ubuntu-ports
           sudo cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+          sudo mount --bind /dev "$ROOTFS/dev"
+          sudo mount -t proc proc "$ROOTFS/proc"
           sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get update
           sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates curl git unzip xz-utils zip file binutils python3 \
