@@ -3,9 +3,6 @@
 # Usage: bash test_on_device.sh /path/to/engine [log-file]
 set -uo pipefail
 
-# Prevent Termux's exec preload from interposing on the bundled PRoot process.
-unset LD_PRELOAD
-
 ENGINE_DIR="$HOME/bisho-engine"
 if [ "$#" -ge 1 ]; then ENGINE_DIR="$1"; fi
 LOG_FILE="$HOME/bisho-engine-device-test-$(date +%Y%m%d-%H%M%S).log"
@@ -42,7 +39,7 @@ run_host_stage() {
 }
 
 guest() {
-  "$PROOT" -0 -r "$ROOTFS" \
+  env -u LD_PRELOAD "$PROOT" -0 -r "$ROOTFS" \
     -b /dev -b /proc \
     -b "$TEST_HOME:/bisho-home" \
     -b "$PROJECT:/workspace/project" \
@@ -74,7 +71,7 @@ if [ ! -x "$ROOTFS/opt/flutter/bin/flutter" ] ||
 fi
 
 mkdir -p "$TEST_HOME" "$PROJECT"
-run_host_stage "PRoot --version" "$PROOT" --version
+run_host_stage "PRoot --version" env -u LD_PRELOAD "$PROOT" --version
 run_guest_stage "RootFS shell and echo" 'set -eu; echo ROOTFS_OK; test -x /bin/sh'
 
 # Android DNS is device-specific. Never reuse the CI runner's resolv.conf.
