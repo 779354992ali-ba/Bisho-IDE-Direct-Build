@@ -3,6 +3,8 @@ name: Local Engine PR Validation
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [fix/local-engine-runtime-hardening]
 
 permissions:
   contents: read
