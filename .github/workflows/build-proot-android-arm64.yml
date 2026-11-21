@@ -1,6 +1,8 @@
 name: Build upstream PRoot for Android ARM64
 
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -14,7 +16,8 @@ jobs:
         uses: actions/checkout@v4.4.0
         with:
           repository: proot-me/proot
-          ref: v5.5.0
+          # Immutable commit resolved from upstream v5.5.0.
+          ref: 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1
           path: upstream-proot
           fetch-depth: 1
       - name: Install build dependencies
@@ -194,25 +197,63 @@ jobs:
 
           echo "Checking Android ARM64 ELF architecture..."
           file "$PROOT" | grep -Eqi 'ARM aarch64|ARM64'
+          readelf -h "$PROOT" | grep -F 'Class:                             ELF64'
+          readelf -h "$PROOT" | grep -F "Data:                              2's complement, little endian"
           readelf -h "$PROOT" | grep -E 'Machine:.*AArch64'
 
           echo "Checking Android dynamic linker..."
           readelf -lW "$PROOT" | grep -F '/system/bin/linker64'
 
-          if readelf -d "$PROOT" | grep -q 'libtalloc.so'; then
-            echo "ERROR: PRoot unexpectedly depends on shared libtalloc."
+          echo "Checking dynamic dependencies and embedded host paths..."
+          readelf -dW "$PROOT" > "$RUNNER_TEMP/proot.dynamic"
+          cat "$RUNNER_TEMP/proot.dynamic"
+          if grep -Eq 'NEEDED.*libtalloc\.so|\((RPATH|RUNPATH)\)' "$RUNNER_TEMP/proot.dynamic"; then
+            echo "ERROR: PRoot has a shared Talloc dependency or embedded RPATH/RUNPATH."
             exit 1
           fi
 
           echo "Android ARM64 PRoot build verification: PASS"
           sha256sum "$PROOT"
-      - name: Record provenance and checksum
+      - name: Record pinned source provenance and checksums
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p out
-          git -C upstream-proot rev-parse HEAD > out/UPSTREAM_COMMIT.txt
-          printf 'Upstream: https://github.com/proot-me/proot\nTag: v5.5.0\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
-          sha256sum out/proot > out/SHA256SUMS
-          cp upstream-proot/COPYING out/UPSTREAM_COPYING 2>/dev/null || true
+          UPSTREAM_REPOSITORY="https://github.com/proot-me/proot"
+          UPSTREAM_TAG="v5.5.0"
+          UPSTREAM_COMMIT="25dc6a3134891f98a79f57ce1c2c1b23ff15cad1"
+          TALLOC_VERSION="2.5.0"
+          TALLOC_SHA256="912afa237510ae542a7733998eb18a12bcda35ab6729c8e2ddb43e8d0ebab007"
+          NDK_VERSION="29.0.14206865"
+          ANDROID_TARGET="aarch64-linux-android24"
+          BUILD_COMMIT="${GITHUB_SHA:?GITHUB_SHA is required for artifact provenance}"
+          ACTUAL_UPSTREAM_COMMIT="$(git -C upstream-proot rev-parse HEAD)"
+          test "$ACTUAL_UPSTREAM_COMMIT" = "$UPSTREAM_COMMIT"
+          PROOT_SHA256="$(sha256sum out/proot | awk '{print $1}')"
+          printf '%s\n' "$ACTUAL_UPSTREAM_COMMIT" > out/UPSTREAM_COMMIT.txt
+          cat > out/BUILD_PROVENANCE.txt <<EOF
+          Artifact: bisho-proot-android-arm64
+          Build repository: https://github.com/779354992ali-ba/Bisho-IDE-Direct-Build
+          Build commit: $BUILD_COMMIT
+          Workflow: .github/workflows/build-proot-android-arm64.yml
+          Upstream repository: $UPSTREAM_REPOSITORY
+          Upstream tag: $UPSTREAM_TAG
+          Upstream commit: $ACTUAL_UPSTREAM_COMMIT
+          Talloc source: https://www.samba.org/ftp/talloc/talloc-$TALLOC_VERSION.tar.gz
+          Talloc version: $TALLOC_VERSION
+          Talloc source archive SHA-256: $TALLOC_SHA256
+          Android NDK: $NDK_VERSION
+          Target triple/API: $ANDROID_TARGET
+          Android ELF interpreter: /system/bin/linker64
+          Linker workaround: --rosegment (NDK r29 loader compatibility)
+          PRoot binary SHA-256: $PROOT_SHA256
+          EOF
+          cp upstream-proot/COPYING out/UPSTREAM_COPYING
+          (
+            cd out
+            sha256sum proot UPSTREAM_COMMIT.txt BUILD_PROVENANCE.txt UPSTREAM_COPYING > SHA256SUMS
+            sha256sum -c SHA256SUMS
+          )
       - name: Upload build artifact
         uses: actions/upload-artifact@v4.6.2
         with:

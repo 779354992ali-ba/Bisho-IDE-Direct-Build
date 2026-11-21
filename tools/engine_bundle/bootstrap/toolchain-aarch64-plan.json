@@ -1,12 +1,16 @@
 {
   "schemaVersion": 1,
-  "status": "provisioning-not-implemented",
+  "status": "source-pins-improved-runtime-not-provisioned",
   "targetAbi": "arm64-v8a",
   "deviceAndroidMinimumApi": 29,
   "flutter": {
-    "version": "3.47.9",
-    "source": "https://docs.flutter.dev/install/archive",
-    "archiveIntegrity": "must-be-resolved-from-official-release-metadata-at-download-time"
+    "version": "3.27.4",
+    "source": "https://github.com/0xR0/arm64-flutter-setup",
+    "archiveIntegrity": "Flutter source tag resolves to the exact commit above; Dart SDK and engine artifacts downloaded during Flutter bootstrap still require per-file SHA-256 capture before a distributable runtime can be published.",
+    "gitTag": "3.27.4",
+    "gitCommit": "d8a9f9a52e5af486f80d932e838ee93861ffd863",
+    "communitySetupRepository": "https://github.com/0xR0/arm64-flutter-setup",
+    "communitySetupCommit": "6a6eb5e13ce99d99e5604b6be83ecb46b3098e02"
   },
   "java": {
     "major": 17,
@@ -15,15 +19,36 @@
     "archiveIntegrity": "must-be-resolved-from-vendor-checksum-and-signature"
   },
   "androidSdk": {
-    "platformApi": 36,
-    "buildToolsVersion": "36.0.0",
+    "platformApi": 35,
+    "buildToolsVersion": "35.0.1",
     "commandLineTools": "latest-pinned-release-required",
     "licenses": "must-be-accepted-and-stored-during-online-provisioning",
     "hostTools": {
       "requiredAbi": "linux-aarch64",
-      "required": ["aapt2", "aidl", "zipalign", "split-select", "apksigner"],
-      "status": "official-google-linux-host-tools-are-not-assumed-to-be-aarch64-compatible"
-    }
+      "required": [
+        "aapt2",
+        "aidl",
+        "zipalign",
+        "split-select",
+        "apksigner"
+      ],
+      "status": "ARM64 replacements are community-sourced; exact release, checksums, license, and in-rootfs execution must be pinned before packaging",
+      "release": "https://github.com/Commit451/android-arm-build-tools/releases/tag/platform-tools-35.0.1",
+      "publishedSha256": {
+        "aapt2": "c57d02d2986d7d68147d74525ad8a5fbb105f12723b33f1ce9eab12acd238cf0",
+        "aidl": "9ae2dfac8ff49f34d493c2fd3d96f6153563f2ec0f07d18f6f661d0e8403d6a2",
+        "zipalign": "d0688e26a0960b010c9702c4a4f6e53308d239a618b1dd0e5d0f4c5ad1c84fe6",
+        "splitSelect": "172ecf6c4e93cc6f80a544f48b9a8fe770dd67f83b2f277504291cb4d1b82e3e",
+        "archive": "a6a8d0fbc40bf42dddd88ebd336c4f5c71d638dbd760e239fff93c15445ecc84"
+      }
+    },
+    "commandLineToolsArchive": {
+      "buildId": "14742923",
+      "url": "https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip",
+      "sha256": "not-yet-verified",
+      "note": "Observed in the pinned community setup installer; do not package until the archive checksum and ARM64 sdkmanager execution are independently verified."
+    },
+    "licenseAcceptancePolicy": "Never synthesize or silently accept licenses. The user/publisher must review and explicitly accept the Android SDK terms; only then may the accepted license files be included in a runtime bundle."
   },
   "offlineCaches": [
     "flutter/bin/cache/artifacts/engine/android-arm64",
@@ -39,6 +64,20 @@
   },
   "releaseAot": {
     "enabled": false,
-    "reason": "Do not enable until an Android-target AOT gen_snapshot executable is present and a real Release build passes on the target phone."
+    "reason": "Keep disabled until an Android-target Linux ARM64 gen_snapshot is available and a real Release APK passes on-device."
+  },
+  "proot": {
+    "source": "https://github.com/proot-me/proot",
+    "tag": "v5.5.0",
+    "ndk": "29.0.14206865",
+    "target": "aarch64-linux-android24",
+    "observedSha256": "a9dc2a7ab6ce65e2a1f8a832990b07cd097ee9ef57c65ffc7701617c33fa300e",
+    "status": "built-and-ELF-validated-by-Package100-CI; artifact provenance includes pinned PRoot/Talloc/NDK inputs; still requires on-device ptrace/rootfs smoke test",
+    "upstreamCommit": "25dc6a3134891f98a79f57ce1c2c1b23ff15cad1",
+    "tallocVersion": "2.5.0",
+    "tallocSourceSha256": "912afa237510ae542a7733998eb18a12bcda35ab6729c8e2ddb43e8d0ebab007",
+    "observedFrom": "GitHub Actions run 44874583756, commit 5521e9cfb6387420ff600336ab382cea08a115b2",
+    "targetApi": 24,
+    "androidElfInterpreter": "/system/bin/linker64"
   }
 }

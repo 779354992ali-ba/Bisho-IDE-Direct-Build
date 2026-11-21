@@ -176,8 +176,12 @@ class MainActivity : FlutterActivity() {
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
         if (!actual.equals(expectedSha256, true)) throw SecurityException("فشلت مطابقة SHA-256 لأرشيف Alpine.")
 
-        val root = File(filesDir, "bisho-local-build-engine/rootfs/alpine-aarch64").canonicalFile
-        val staging = File(filesDir, "bisho-local-build-engine/rootfs/alpine-aarch64.installing").canonicalFile
+        // Keep the optional Alpine bootstrap rootfs outside the engine directory.
+        // Installing/upgrading the Flutter engine atomically replaces that directory;
+        // nesting Alpine beneath it silently deleted Alpine during engine upgrades.
+        val alpineRoot = File(filesDir, "bisho-alpine-rootfs").canonicalFile
+        val root = File(alpineRoot, "alpine-aarch64").canonicalFile
+        val staging = File(alpineRoot, "alpine-aarch64.installing").canonicalFile
         if (staging.exists()) staging.deleteRecursively()
         if (!staging.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد Alpine المؤقت.")
         val rootPath = staging.toPath().normalize()
@@ -1245,7 +1249,7 @@ class MainActivity : FlutterActivity() {
             "engineInstallStorageBytes" to engineInstallStorageBytes,
             "deviceSupported" to deviceSupported,
             "engineInstalled" to engineInstalled,
-            "alpineRootfsInstalled" to File(engineDirectory, "rootfs/alpine-aarch64/etc/alpine-release").let { it.isFile && it.readText().trim().startsWith("3.24.4") },
+            "alpineRootfsInstalled" to File(filesDir, "bisho-alpine-rootfs/alpine-aarch64/etc/alpine-release").let { it.isFile && it.readText().trim().startsWith("3.24.4") },
             "runtimeVerified" to runtimeVerified,
             "debugBuildVerified" to debugBuildVerified,
             "releaseBuildVerified" to releaseBuildVerified,
