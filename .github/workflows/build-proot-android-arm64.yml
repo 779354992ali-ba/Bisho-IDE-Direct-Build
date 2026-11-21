@@ -46,6 +46,7 @@ jobs:
           TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
 
           CLANG="$TOOLCHAIN/aarch64-linux-android24-clang"
+          CLANG26="$TOOLCHAIN/aarch64-linux-android26-clang"
           LLVM_AR="$TOOLCHAIN/llvm-ar"
           LLVM_RANLIB="$TOOLCHAIN/llvm-ranlib"
           LLVM_STRIP="$TOOLCHAIN/llvm-strip"
@@ -53,7 +54,7 @@ jobs:
           LLVM_OBJDUMP="$TOOLCHAIN/llvm-objdump"
           LD_CMD="$TOOLCHAIN/ld.lld"
 
-          for tool in "$CLANG" "$LLVM_AR" "$LLVM_RANLIB" \
+          for tool in "$CLANG" "$CLANG26" "$LLVM_AR" "$LLVM_RANLIB" \
                       "$LLVM_STRIP" "$LLVM_OBJCOPY" \
                       "$LLVM_OBJDUMP" "$LD_CMD"; do
             test -x "$tool" || {
@@ -166,7 +167,7 @@ jobs:
           mkdir -p "$SHMEM_PREFIX/lib" "$SHMEM_PREFIX/include/sys"
 
           # Build the Termux shared-memory helper as a static archive.
-          "$CLANG" -O2 -fPIC -std=c11 -Wall -Wextra \
+          "$CLANG26" -O2 -fPIC -std=c11 -Wall -Wextra \
             -c "$SHMEM_SRC/shmem.c" -o "$SHMEM_PREFIX/shmem.o"
           "$LLVM_AR" rcs "$SHMEM_PREFIX/lib/libandroid-shmem.a" "$SHMEM_PREFIX/shmem.o"
           cp "$SHMEM_SRC/shm.h" "$SHMEM_PREFIX/include/sys/shm.h"
