@@ -4,7 +4,18 @@
 set -uo pipefail
 
 ENGINE_DIR="$HOME/bisho-engine"
-if [ "$#" -ge 1 ]; then ENGINE_DIR="$1"; fi
+if [ "$#" -ge 1 ]; then
+  ENGINE_DIR="$1"
+else
+  mapfile -t ENGINE_CANDIDATES < <(find "$HOME" -type f -path '*/runtime/proot' -print 2>/dev/null)
+  if [ "${#ENGINE_CANDIDATES[@]}" -eq 1 ]; then
+    ENGINE_DIR="$(dirname "$(dirname "${ENGINE_CANDIDATES[0]}")")"
+  elif [ "${#ENGINE_CANDIDATES[@]}" -gt 1 ]; then
+    echo "Multiple engine bundles found; pass the exact engine directory as argument 1."
+    printf '%s\n' "${ENGINE_CANDIDATES[@]}"
+    exit 2
+  fi
+fi
 LOG_FILE="$HOME/bisho-proot-seccomp-diagnostic.log"
 if [ "$#" -ge 2 ]; then LOG_FILE="$2"; fi
 ROOTFS="$ENGINE_DIR/rootfs"
