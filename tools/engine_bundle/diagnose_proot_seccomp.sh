@@ -70,6 +70,26 @@ else
   echo "Termux PRoot comparison skipped: command not found or same path."
 fi
 
+SOURCE_ROOT="$(printenv PROOT_SOURCE_DIR 2>/dev/null || true)"
+if [ -z "$SOURCE_ROOT" ]; then
+  SOURCE_EVENT="$(find "$HOME" -type f -path '*/src/tracee/event.c' -print -quit 2>/dev/null)"
+  if [ -n "$SOURCE_EVENT" ]; then
+    SOURCE_ROOT="$(dirname "$(dirname "$(dirname "$SOURCE_EVENT")")")"
+  fi
+fi
+printf '\n===== LOCAL PRoot SOURCE EXCERPTS (read-only) =====\n'
+if [ -n "$SOURCE_ROOT" ] && [ -f "$SOURCE_ROOT/src/tracee/event.c" ]; then
+  printf 'SOURCE_ROOT=%s\n' "$SOURCE_ROOT"
+  echo '--- event.c: seccomp events and SIGSYS ---'
+  grep -n -C 8 -E 'PTRACE_EVENT_SECCOMP|SIGSYS|seccomp_after_ptrace_enter|skip_next_seccomp_signal|SYSCALL_AVOIDER' "$SOURCE_ROOT/src/tracee/event.c" || true
+  echo '--- reg.c: register-set access ---'
+  grep -n -C 5 -E 'fetch_regs|NT_PRSTATUS|NT_ARM_SYSTEM_CALL' "$SOURCE_ROOT/src/tracee/reg.c" || true
+  echo '--- arch.h: syscall avoider value ---'
+  grep -n -C 3 'SYSCALL_AVOIDER' "$SOURCE_ROOT/src/arch.h" || true
+else
+  echo 'No local PRoot source checkout found under HOME. Pinned upstream and Termux sources were compared from GitHub.'
+fi
+
 printf '\n===== END =====\n'
 printf 'LOG_FILE=%s\n' "$LOG_FILE"
 if command -v termux-clipboard-set >/dev/null 2>&1; then
