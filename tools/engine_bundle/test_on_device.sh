@@ -3,6 +3,9 @@
 # Usage: bash test_on_device.sh /path/to/engine [log-file]
 set -uo pipefail
 
+# Prevent Termux's exec preload from interposing on the bundled PRoot process.
+unset LD_PRELOAD
+
 ENGINE_DIR="$HOME/bisho-engine"
 if [ "$#" -ge 1 ]; then ENGINE_DIR="$1"; fi
 LOG_FILE="$HOME/bisho-engine-device-test-$(date +%Y%m%d-%H%M%S).log"
