@@ -150,7 +150,7 @@ for mount_name in dev proc; do
 done
 smoke_dir=$(mktemp -d)
 mkdir -p "$source_dir/rootfs/tmp/bisho-engine-smoke" "$smoke_dir/project" "$smoke_dir/home" "$smoke_dir/pub-cache" "$smoke_dir/gradle"
-smoke_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export GRADLE_OPTS=-Dorg.gradle.daemon=false; export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; export FLUTTER_SUPPRESS_ANALYTICS=true; printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/$selected_build_tools/aapt2\\norg.gradle.daemon=false\\nkotlin.compiler.execution.strategy=in-process\\norg.gradle.workers.max=2\\norg.gradle.parallel=false\\n' > /tmp/bisho-engine-smoke/gradle/gradle.properties; /opt/flutter/bin/flutter precache --android; /opt/flutter/bin/flutter create --platforms=android --project-name bisho_engine_smoke /tmp/bisho-engine-smoke/project; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter pub get; /opt/flutter/bin/flutter build apk --debug --target-platform android-arm64; APK=build/app/outputs/flutter-apk/app-debug.apk; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose \\$APK; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 \\$APK; /opt/android-sdk/build-tools/$selected_build_tools/aapt2 dump badging \\$APK | grep -q '^package:'"
+smoke_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export GRADLE_OPTS=-Dorg.gradle.daemon=false; export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; export FLUTTER_SUPPRESS_ANALYTICS=true; printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/$selected_build_tools/aapt2\\norg.gradle.daemon=false\\nkotlin.compiler.execution.strategy=in-process\\norg.gradle.workers.max=2\\norg.gradle.parallel=false\\n' > /tmp/bisho-engine-smoke/gradle/gradle.properties; /opt/flutter/bin/flutter precache --android; /opt/flutter/bin/flutter create --platforms=android --project-name bisho_engine_smoke /tmp/bisho-engine-smoke/project; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter pub get; /opt/flutter/bin/flutter build apk --debug --target-platform android-arm64; APK=build/app/outputs/flutter-apk/app-debug.apk; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose \$APK; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 \$APK; /opt/android-sdk/build-tools/$selected_build_tools/aapt2 dump badging \$APK | grep -q '^package:'"
 echo "Running native Linux ARM64 chroot Debug smoke build (up to 60 minutes); this does not certify Android PRoot..."
 mkdir -p "$rootfs/tmp/bisho-engine-smoke"
 mount --bind "$smoke_dir" "$rootfs/tmp/bisho-engine-smoke"
@@ -159,7 +159,7 @@ timeout 60m chroot "$rootfs" /bin/sh -lc "$smoke_script"
 [[ -s "$smoke_dir/project/build/app/outputs/flutter-apk/app-debug.apk" ]] || {
   echo "Debug smoke build did not produce a non-empty APK" >&2; exit 5;
 }
-echo "Debug smoke build, APK signature and ZIP alignment: PASS"
+echo "Debug smoke build, APK signature, ZIP alignment and badging: PASS"
 
 # Release is accepted only if the exact ARM64 Android AOT host artifact works
 # in a full Release build, not merely because a file with that name exists.
@@ -183,11 +183,27 @@ smoke_mounted=false
 umount_checked "$rootfs/proc"
 umount_checked "$rootfs/dev"
 
+# Never ship the runner's resolver address. Android writes current DNS servers
+# from ConnectivityManager before each PRoot invocation.
+rm -f "$rootfs/etc/resolv.conf"
+printf '# Generated from Android LinkProperties at runtime by Bisho IDE.\\n' > "$rootfs/etc/resolv.conf"
+
 stage=$(mktemp -d)
 mkdir -p "$stage/runtime" "$stage/rootfs"
 # Dereference symlinks: ZIP extraction on Android must not depend on symlink metadata.
 cp -aL "$source_dir/runtime/." "$stage/runtime/"
 cp -aL "$source_dir/rootfs/." "$stage/rootfs/"
+sha256_of() { sha256sum "$1" | awk '{print $1}'; }
+PROOT_SHA=$(sha256_of "$stage/runtime/proot")
+SHELL_SHA=$(sha256_of "$stage/rootfs/bin/sh")
+FLUTTER_SHA=$(sha256_of "$stage/rootfs/opt/flutter/bin/flutter")
+DART_SHA=$(sha256_of "$stage/rootfs/opt/flutter/bin/cache/dart-sdk/bin/dart")
+JAVA_SHA=$(sha256_of "$stage/rootfs/usr/lib/jvm/java-17/bin/java")
+SDKMANAGER_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager")
+AAPT2_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/build-tools/$selected_build_tools/aapt2")
+AIDL_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/build-tools/$selected_build_tools/aidl")
+ZIPALIGN_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/build-tools/$selected_build_tools/zipalign")
+APKSIGNER_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/build-tools/$selected_build_tools/apksigner")
 cat > "$stage/engine-manifest.json" <<EOF
 {
   "schemaVersion": 1,
@@ -200,7 +216,19 @@ cat > "$stage/engine-manifest.json" <<EOF
   "androidBuildToolsVersion": "$selected_build_tools",
   "debugBuildSupported": true,
   "releaseAotSupported": $release_supported,
-  "deviceRuntimeTestRequired": true
+  "deviceRuntimeTestRequired": true,
+  "criticalFileSha256": {
+    "runtime/proot": "$PROOT_SHA",
+    "rootfs/bin/sh": "$SHELL_SHA",
+    "rootfs/opt/flutter/bin/flutter": "$FLUTTER_SHA",
+    "rootfs/opt/flutter/bin/cache/dart-sdk/bin/dart": "$DART_SHA",
+    "rootfs/usr/lib/jvm/java-17/bin/java": "$JAVA_SHA",
+    "rootfs/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager": "$SDKMANAGER_SHA",
+    "rootfs/opt/android-sdk/build-tools/$selected_build_tools/aapt2": "$AAPT2_SHA",
+    "rootfs/opt/android-sdk/build-tools/$selected_build_tools/aidl": "$AIDL_SHA",
+    "rootfs/opt/android-sdk/build-tools/$selected_build_tools/zipalign": "$ZIPALIGN_SHA",
+    "rootfs/opt/android-sdk/build-tools/$selected_build_tools/apksigner": "$APKSIGNER_SHA"
+  }
 }
 EOF
 
