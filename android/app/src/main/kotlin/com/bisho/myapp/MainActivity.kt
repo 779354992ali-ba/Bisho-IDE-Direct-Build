@@ -829,7 +829,7 @@ class MainActivity : FlutterActivity() {
                 "TOOLS=; for candidate in $(printf '%s\n' ${shellQuote(sdkPath)}/build-tools/* | sort -Vr); do " +
                 "if [ -x \"\$candidate/aapt2\" ] && [ -x \"\$candidate/aidl\" ] && [ -x \"\$candidate/zipalign\" ] && [ -x \"\$candidate/split-select\" ] && [ -x \"\$candidate/apksigner\" ]; then TOOLS=\"\$candidate\"; break; fi; done; " +
                 "test -n \"\$TOOLS\"; \"\$TOOLS/apksigner\" verify --verbose /workspace/project/${apkRelativePath}; \"\$TOOLS/zipalign\" -c -v 4 /workspace/project/${apkRelativePath}; " +
-                "BADGING=\$(\"\$TOOLS/aapt2\" dump badging /workspace/project/\${apkRelativePath}); printf '%s\\n' \"\$BADGING\" | grep -q '^package:'"
+                "BADGING=\$(\"\$TOOLS/aapt2\" dump badging /workspace/project/${apkRelativePath}); printf '%s\\n' \"\$BADGING\" | grep -q '^package:'"
             val verifyCommand = mutableListOf(
                 launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
                 "-b", "${project.absolutePath}:/workspace/project",
