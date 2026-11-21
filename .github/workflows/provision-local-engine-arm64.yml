@@ -1,0 +1,182 @@
+name: Provision Bisho Flutter ARM64 Local Engine
+
+on:
+  workflow_dispatch:
+    inputs:
+      accept_android_sdk_licenses:
+        description: "I have reviewed and explicitly accept the applicable Android SDK license terms"
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: bisho-arm64-engine-provision
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    name: Provision and smoke-test Linux ARM64 Flutter runtime
+    # Native ARM64 is required: Flutter/Dart and Android host tools must execute,
+    # not merely pass an ELF architecture check.
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 180
+    steps:
+      - name: Require explicit Android SDK license acceptance
+        shell: bash
+        env:
+          LICENSE_ACCEPTED: ${{ inputs.accept_android_sdk_licenses }}
+        run: |
+          set -euo pipefail
+          if [[ "$LICENSE_ACCEPTED" != "true" ]]; then
+            echo "::error::Review the Android SDK license terms. Re-run manually only after explicitly accepting them."
+            exit 1
+          fi
+
+      - name: Checkout Bisho source
+        uses: actions/checkout@v5.1.0
+
+      - name: Install ARM64 rootfs provisioning tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y debootstrap proot file binutils curl git unzip xz-utils zip
+
+      - name: Download the latest successful Android PRoot artifact from this branch
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          RUN_ID="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build-proot-android-arm64.yml/runs?branch=package100-local-engine-provisioning&per_page=30" --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "package100-local-engine-provisioning")] | .[0].id')"
+          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "No successful Android PRoot workflow run found on the engine branch." >&2; exit 1; }
+          mkdir -p "$RUNNER_TEMP/proot-artifact"
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name bisho-proot-android-arm64-v5.5.0 --dir "$RUNNER_TEMP/proot-artifact"
+          test -s "$RUNNER_TEMP/proot-artifact/proot"
+          (
+            cd "$RUNNER_TEMP/proot-artifact"
+            sha256sum -c SHA256SUMS
+          )
+          echo "PROOT_ARTIFACT_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+
+      - name: Bootstrap Ubuntu 24.04 ARM64 guest rootfs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOTFS="$RUNNER_TEMP/bisho-engine/rootfs"
+          sudo mkdir -p "$ROOTFS"
+          sudo debootstrap --arch=arm64 --variant=minbase noble "$ROOTFS" http://ports.ubuntu.com/ubuntu-ports
+          sudo cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+          sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get update
+          sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git unzip xz-utils zip file binutils python3 \
+            openjdk-17-jdk libc6 libstdc++6 bash coreutils findutils grep sed
+
+      - name: Install pinned Flutter, Dart, Android SDK and ARM64 build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOTFS="$RUNNER_TEMP/bisho-engine/rootfs"
+          FLUTTER_COMMIT="d8a9f9a52e5af486f80d932e838ee93861ffd863"
+          SDK_URL="https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip"
+          SDK_META="$RUNNER_TEMP/repository2-3.xml"
+          SDK_ZIP="$RUNNER_TEMP/commandlinetools.zip"
+          BUILD_TOOLS_URL="https://github.com/Commit451/android-arm-build-tools/releases/download/platform-tools-35.0.1/android-build-tools-35.0.1-linux-arm64-20260521.tar.xz"
+          BUILD_TOOLS_SHA256="a6a8d0fbc40bf42dddd88ebd336c4f5c71d638dbd760e239fff93c15445ecc84"
+          SDK="$ROOTFS/opt/android-sdk"
+          FLUTTER="$ROOTFS/opt/flutter"
+
+          sudo mkdir -p "$ROOTFS/opt" "$SDK" "$ROOTFS/root/.cache"
+          sudo git clone --filter=blob:none https://github.com/flutter/flutter.git "$FLUTTER"
+          sudo git -C "$FLUTTER" fetch --depth 1 origin "$FLUTTER_COMMIT"
+          sudo git -C "$FLUTTER" checkout --detach "$FLUTTER_COMMIT"
+          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /opt/flutter/bin/flutter --version
+          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+            /opt/flutter/bin/flutter precache --android
+
+          # Resolve Google's published checksum for this exact command-line-tools archive.
+          curl -fsSL https://dl.google.com/android/repository/repository2-3.xml -o "$SDK_META"
+          python3 - "$SDK_META" <<'PY' > "$RUNNER_TEMP/sdk-tools.sha1"
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          wanted = "commandlinetools-linux-14742923_latest.zip"
+          found = []
+          for node in root.iter():
+              for archive in node.findall(".//archive"):
+                  url = archive.findtext("complete/url")
+                  checksum = archive.find("complete/checksum")
+                  if url == wanted and checksum is not None and checksum.attrib.get("type") == "sha1":
+                      found.append(checksum.text.strip())
+          if len(set(found)) != 1:
+              raise SystemExit("Google repository metadata did not provide one unambiguous SHA-1 for the pinned command-line-tools archive")
+          print(found[0])
+          PY
+          curl -fL --retry 3 "$SDK_URL" -o "$SDK_ZIP"
+          echo "$(cat "$RUNNER_TEMP/sdk-tools.sha1")  $SDK_ZIP" | sha1sum -c -
+          sudo mkdir -p "$RUNNER_TEMP/sdk-tools-extract" "$SDK/cmdline-tools"
+          sudo unzip -q "$SDK_ZIP" -d "$RUNNER_TEMP/sdk-tools-extract"
+          sudo mv "$RUNNER_TEMP/sdk-tools-extract/cmdline-tools" "$SDK/cmdline-tools/latest"
+
+          # This workflow can accept licenses only because the dispatcher explicitly
+          # checked the required boolean input above; it never fabricates license files.
+          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
+            PATH=/opt/android-sdk/cmdline-tools/latest/bin:/usr/bin:/bin bash -lc \
+            'yes | sdkmanager --sdk_root=/opt/android-sdk --licenses'
+          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
+            PATH=/opt/android-sdk/cmdline-tools/latest/bin:/usr/bin:/bin \
+            sdkmanager --sdk_root=/opt/android-sdk platform-tools 'platforms;android-35' 'build-tools;35.0.1'
+
+          curl -fL --retry 3 "$BUILD_TOOLS_URL" -o "$RUNNER_TEMP/android-arm-build-tools.tar.xz"
+          echo "$BUILD_TOOLS_SHA256  $RUNNER_TEMP/android-arm-build-tools.tar.xz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/arm-tools"
+          tar -xJf "$RUNNER_TEMP/android-arm-build-tools.tar.xz" -C "$RUNNER_TEMP/arm-tools"
+          for tool in aapt2 aidl zipalign split-select; do
+            source="$(find "$RUNNER_TEMP/arm-tools" -type f -name "$tool" -print -quit)"
+            test -n "$source"
+            case "$tool" in
+              aapt2) expected="c57d02d2986d7d68147d74525ad8a5fbb105f12723b33f1ce9eab12acd238cf0" ;;
+              aidl) expected="9ae2dfac8ff49f34d493c2fd3d96f6153563f2ec0f07d18f6f661d0e8403d6a2" ;;
+              zipalign) expected="d0688e26a0960b010c9702c4a4f6e53308d239a618b1dd0e5d0f4c5ad1c84fe6" ;;
+              split-select) expected="172ecf6c4e93cc6f80a544f48b9a8fe770dd67f83b2f277504291cb4d1b82e3e" ;;
+            esac
+            echo "$expected  $source" | sha256sum -c -
+            sudo install -m 0755 "$source" "$SDK/build-tools/35.0.1/$tool"
+          done
+
+          sudo mkdir -p "$ROOTFS/root/.gradle"
+          printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/35.0.1/aapt2\n' | sudo tee "$ROOTFS/root/.gradle/gradle.properties" >/dev/null
+          sudo chroot "$ROOTFS" /usr/bin/env HOME=/root ANDROID_HOME=/opt/android-sdk ANDROID_SDK_ROOT=/opt/android-sdk \
+            PATH=/opt/flutter/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/lib/jvm/java-17-openjdk-arm64/bin:/usr/bin:/bin \
+            /opt/flutter/bin/flutter config --android-sdk /opt/android-sdk
+          sudo test -s "$SDK/licenses/android-sdk-license"
+          sudo test -x "$ROOTFS/usr/lib/jvm/java-17-openjdk-arm64/bin/java"
+          sudo test -x "$FLUTTER/bin/cache/dart-sdk/bin/dart"
+          file "$FLUTTER/bin/cache/dart-sdk/bin/dart" | grep -Eqi 'ARM aarch64|ARM64'
+
+      - name: Assemble and smoke-test the complete local engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUNTIME="$RUNNER_TEMP/bisho-engine"
+          sudo mkdir -p "$RUNTIME/runtime"
+          sudo install -m 0755 "$RUNNER_TEMP/proot-artifact/proot" "$RUNTIME/runtime/proot"
+          sudo install -m 0755 tools/engine_bundle/validate_and_pack.sh "$RUNNER_TEMP/validate_and_pack.sh"
+          sudo chown -R "$(id -u):$(id -g)" "$RUNTIME"
+          BISHO_HOST_PROOT="$(command -v proot)" bash "$RUNNER_TEMP/validate_and_pack.sh" "$RUNTIME" "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
+          unzip -t "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
+          sha256sum "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip" | tee "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip.sha256"
+
+      - name: Upload verified local engine bundle
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: Bisho-Flutter-Local-Engine-ARM64
+          path: |
+            ${{ runner.temp }}/bisho-flutter-engine-arm64.zip
+            ${{ runner.temp }}/bisho-flutter-engine-arm64.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
