@@ -18,7 +18,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-proot:
+    uses: ./.github/workflows/build-proot-android-arm64.yml
+    permissions:
+      contents: read
+
   provision:
+    needs: build-proot
     name: Provision and smoke-test Linux ARM64 Flutter runtime
     # Native ARM64 is required: Flutter/Dart and Android host tools must execute,
     # not merely pass an ELF architecture check.
@@ -46,16 +52,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y debootstrap file binutils curl git unzip xz-utils zip
 
-      - name: Download the latest successful Android PRoot artifact from this branch
+      - name: Download Android PRoot artifact built in this workflow run
+        uses: actions/download-artifact@v4.3.0
+        with:
+          name: bisho-proot-android-arm64-v5.5.0
+          path: ${{ runner.temp }}/proot-artifact
+
+      - name: Verify pinned PRoot artifact provenance
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          RUN_ID="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build-proot-android-arm64.yml/runs?branch=package100-local-engine-provisioning&per_page=30" --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "package100-local-engine-provisioning")] | .[0].id')"
-          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "No successful Android PRoot workflow run found on the engine branch." >&2; exit 1; }
-          mkdir -p "$RUNNER_TEMP/proot-artifact"
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name bisho-proot-android-arm64-v5.5.0 --dir "$RUNNER_TEMP/proot-artifact"
           test -s "$RUNNER_TEMP/proot-artifact/proot"
           (
             cd "$RUNNER_TEMP/proot-artifact"
@@ -63,7 +69,6 @@ jobs:
             grep -Fxq "25dc6a3134891f98a79f57ce1c2c1b23ff15cad1" UPSTREAM_COMMIT.txt
             grep -Fq "Commit: 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1" BUILD_PROVENANCE.txt
           )
-          echo "PROOT_ARTIFACT_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
 
       - name: Bootstrap Ubuntu 24.04 ARM64 guest rootfs
         shell: bash
