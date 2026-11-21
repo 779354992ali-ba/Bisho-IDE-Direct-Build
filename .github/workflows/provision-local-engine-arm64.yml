@@ -68,6 +68,7 @@ jobs:
             sha256sum -c SHA256SUMS
             grep -Fxq "25dc6a3134891f98a79f57ce1c2c1b23ff15cad1" UPSTREAM_COMMIT.txt
             grep -Fq "Commit: 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1" BUILD_PROVENANCE.txt
+            test -s UPSTREAM_COPYING
           )
 
       - name: Bootstrap Ubuntu 24.04 ARM64 guest rootfs
@@ -190,6 +191,9 @@ jobs:
           RUNTIME="$RUNNER_TEMP/bisho-engine"
           sudo mkdir -p "$RUNTIME/runtime"
           sudo install -m 0755 "$RUNNER_TEMP/proot-artifact/proot" "$RUNTIME/runtime/proot"
+          sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/BUILD_PROVENANCE.txt" "$RUNTIME/runtime/PROOT_BUILD_PROVENANCE.txt"
+          sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/UPSTREAM_COMMIT.txt" "$RUNTIME/runtime/PROOT_UPSTREAM_COMMIT.txt"
+          sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/UPSTREAM_COPYING" "$RUNTIME/runtime/PROOT_COPYING"
           sudo install -m 0755 tools/engine_bundle/validate_and_pack.sh "$RUNNER_TEMP/validate_and_pack.sh"
           # Do not recurse into rootfs: /dev and /proc are mounted there and must retain kernel ownership.
           sudo chown "$(id -u):$(id -g)" "$RUNTIME" "$RUNTIME/runtime"
