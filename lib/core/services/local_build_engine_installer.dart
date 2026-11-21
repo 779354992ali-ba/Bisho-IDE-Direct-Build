@@ -15,6 +15,7 @@ class EngineInstallProgress {
 /// and performs bounded, zip-slip-safe extraction before atomically installing it.
 class LocalBuildEngineInstaller {
   static const _channel = MethodChannel('com.bisho.ide/local_build');
+  static const _maxRedirects = 5;
   final _controller = StreamController<EngineInstallProgress>.broadcast();
   Stream<EngineInstallProgress> get progress => _controller.stream;
   bool _cancelled = false;
@@ -44,6 +45,45 @@ class LocalBuildEngineInstaller {
   }
 
   String _formatBytes(int value) => '${(value / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+
+  Future<HttpClientResponse> _openArchiveResponse(Uri initialUri) async {
+    var currentUri = initialUri;
+    final visited = <Uri>{};
+    for (var redirects = 0; ; redirects++) {
+      if (!visited.add(currentUri)) {
+        throw const HttpException('اكتُشفت حلقة تحويل أثناء تنزيل حزمة المحرك.');
+      }
+      final request = await _client!.getUrl(currentUri);
+      request.followRedirects = false;
+      request.headers.set(HttpHeaders.acceptHeader, 'application/zip, application/octet-stream');
+      final response = await request.close();
+      final status = response.statusCode;
+      final isRedirect = status == HttpStatus.movedPermanently ||
+          status == HttpStatus.found ||
+          status == HttpStatus.seeOther ||
+          status == HttpStatus.temporaryRedirect ||
+          status == HttpStatus.permanentRedirect;
+      if (!isRedirect) return response;
+      if (redirects >= _maxRedirects) {
+        await response.drain<void>();
+        throw const HttpException('تجاوز رابط الحزمة الحد الأقصى لتحويلات HTTPS.');
+      }
+      final location = response.headers.value(HttpHeaders.locationHeader);
+      if (location == null || location.trim().isEmpty) {
+        await response.drain<void>();
+        throw const HttpException('أعاد خادم الحزمة تحويلاً بلا عنوان وجهة.');
+      }
+      final nextUri = currentUri.resolve(location.trim());
+      await response.drain<void>();
+      if (nextUri.scheme.toLowerCase() != 'https' ||
+          nextUri.host.isEmpty ||
+          nextUri.userInfo.isNotEmpty ||
+          nextUri.hasFragment) {
+        throw const HttpException('رُفض تحويل تنزيل الحزمة لأنه لا يستخدم HTTPS آمناً.');
+      }
+      currentUri = nextUri;
+    }
+  }
 
   Future<void> install({required String archiveUrl, required String sha256}) async {
     final uri = Uri.tryParse(archiveUrl.trim());
@@ -80,20 +120,22 @@ class LocalBuildEngineInstaller {
       _downloadActive = true;
       _report(const EngineInstallProgress('جارٍ الاتصال بمصدر حزمة المحرك...'));
       _client = HttpClient()..connectionTimeout = const Duration(seconds: 30);
-      final request = await _client!.getUrl(uri);
-      request.followRedirects = false;
-      request.headers.set(HttpHeaders.acceptHeader, 'application/zip, application/octet-stream');
-      final response = await request.close();
+      // GitHub Releases and object-storage CDNs commonly redirect downloads.
+      // Follow a small, loop-safe chain, but never permit an HTTPS downgrade.
+      final response = await _openArchiveResponse(uri);
       if (response.statusCode != HttpStatus.ok) {
+        await response.drain<void>();
         throw HttpException('استجاب الخادم برمز HTTP ${response.statusCode}.');
       }
       final total = response.contentLength;
       if (total <= 0 || total > 8 * 1024 * 1024 * 1024) {
+        await response.drain<void>();
         throw StateError('حجم الحزمة غير معروف أو يتجاوز الحد المسموح (8 GB).');
       }
       final current = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
       final freeAfterArchive = (current?['availableBytes'] as num?)?.toInt() ?? 0;
       if (freeAfterArchive < total + 1024 * 1024 * 1024) {
+        await response.drain<void>();
         throw StateError('المساحة لا تكفي لهذه الحزمة: يلزم ${_formatBytes(total)} للتنزيل إضافة إلى 1 GB احتياطي. اختر حزمة أصغر أو وفر مساحة.');
       }
       sink = archive.openWrite();
