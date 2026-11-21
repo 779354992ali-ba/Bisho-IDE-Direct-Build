@@ -16,7 +16,8 @@ jobs:
         uses: actions/checkout@v4.4.0
         with:
           repository: proot-me/proot
-          ref: v5.5.0
+          # Immutable commit resolved from upstream v5.5.0.
+          ref: 25dc6a3134891f98a79f57ce1c2c1b23ff15cad1
           path: upstream-proot
           fetch-depth: 1
       - name: Install build dependencies
@@ -196,13 +197,18 @@ jobs:
 
           echo "Checking Android ARM64 ELF architecture..."
           file "$PROOT" | grep -Eqi 'ARM aarch64|ARM64'
+          readelf -h "$PROOT" | grep -F 'Class:                             ELF64'
+          readelf -h "$PROOT" | grep -F "Data:                              2's complement, little endian"
           readelf -h "$PROOT" | grep -E 'Machine:.*AArch64'
 
           echo "Checking Android dynamic linker..."
           readelf -lW "$PROOT" | grep -F '/system/bin/linker64'
 
-          if readelf -d "$PROOT" | grep -q 'libtalloc.so'; then
-            echo "ERROR: PRoot unexpectedly depends on shared libtalloc."
+          echo "Checking dynamic dependencies and embedded host paths..."
+          readelf -dW "$PROOT" > "$RUNNER_TEMP/proot.dynamic"
+          cat "$RUNNER_TEMP/proot.dynamic"
+          if grep -Eq 'NEEDED.*libtalloc\.so|\((RPATH|RUNPATH)\)' "$RUNNER_TEMP/proot.dynamic"; then
+            echo "ERROR: PRoot has a shared Talloc dependency or embedded RPATH/RUNPATH."
             exit 1
           fi
 
@@ -211,8 +217,11 @@ jobs:
       - name: Record provenance and checksum
         run: |
           mkdir -p out
-          git -C upstream-proot rev-parse HEAD > out/UPSTREAM_COMMIT.txt
-          printf 'Upstream: https://github.com/proot-me/proot\nTag: v5.5.0\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
+          UPSTREAM_COMMIT="25dc6a3134891f98a79f57ce1c2c1b23ff15cad1"
+          ACTUAL_UPSTREAM_COMMIT="$(git -C upstream-proot rev-parse HEAD)"
+          test "$ACTUAL_UPSTREAM_COMMIT" = "$UPSTREAM_COMMIT"
+          printf '%s\\n' "$ACTUAL_UPSTREAM_COMMIT" > out/UPSTREAM_COMMIT.txt
+          printf 'Upstream: https://github.com/proot-me/proot\\nTag: v5.5.0\\nCommit: %s\\nNDK: 29.0.14206865\\nTarget: aarch64-linux-android24\\n' "$ACTUAL_UPSTREAM_COMMIT"
           (
             cd out
             sha256sum proot > SHA256SUMS
