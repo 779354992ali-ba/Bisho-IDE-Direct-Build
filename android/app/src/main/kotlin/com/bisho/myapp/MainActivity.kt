@@ -473,6 +473,10 @@ class MainActivity : FlutterActivity() {
                     throw IllegalStateException("تعذر منح صلاحية التنفيذ للملف $key.")
                 }
             }
+            if (json.opt("deviceRuntimeTestRequired") != true) {
+                throw SecurityException("بيان المحرك لا يشترط اختبار PRoot الفعلي على الهاتف قبل التفعيل.")
+            }
+            verifyCriticalFileHashes(staging, json)?.let { throw SecurityException(it) }
 
             if (backup.exists()) backup.deleteRecursively()
             if (engineRoot.exists() && !engineRoot.renameTo(backup)) throw IllegalStateException("تعذر حفظ النسخة السابقة من المحرك.")
@@ -702,6 +706,7 @@ class MainActivity : FlutterActivity() {
                 json.optString("abi") != (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")) {
                 throw IllegalStateException("بيان محرك البناء غير متوافق مع هذا الجهاز.")
             }
+            verifyCriticalFileHashes(engineDirectory, json)?.let { throw SecurityException(it) }
             val launcher = resolveInside(engineDirectory, json.optString("runtimeLauncher"))
             val rootfs = resolveInside(engineDirectory, json.optString("rootfsDirectory"))
             if (launcher == null || !launcher.isFile || !launcher.canExecute() ||
@@ -969,6 +974,9 @@ class MainActivity : FlutterActivity() {
         val json = JSONObject(manifest.readText())
         if (json.optInt("schemaVersion", -1) != 1 || json.optString("abi") != (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")) {
             return mapOf("success" to false, "message" to "بيان المحرك لا يطابق معمارية الهاتف.")
+        }
+        verifyCriticalFileHashes(engineDirectory, json)?.let {
+            return mapOf("success" to false, "message" to it)
         }
         if (!json.optBoolean("debugBuildSupported", false)) {
             return mapOf("success" to false, "message" to "بيان المحرك لا يحمل اعتماد اختبار Debug من أداة تجهيز الحزمة؛ أعد تجهيز المحرك بعد نجاح smoke build على Linux ARM64.")
@@ -1340,6 +1348,7 @@ class MainActivity : FlutterActivity() {
                 if (!hasBuildTools) missing.add("لا توجد أدوات Build Tools كاملة قابلة للتنفيذ (aapt2/aidl/zipalign/apksigner).")
             }
 
+            verifyCriticalFileHashes(engineDirectory, json)?.let { missing.add(it) }
             val valid = missing.isEmpty()
             Pair(valid, missing)
         } catch (_: Exception) {
@@ -1359,6 +1368,50 @@ class MainActivity : FlutterActivity() {
             }
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    /** Verify the immutable toolchain files against hashes embedded by the bundle publisher. */
+    private fun verifyCriticalFileHashes(engineDirectory: File, json: JSONObject): String? {
+        val hashes = json.optJSONObject("criticalFileSha256")
+            ?: return "بيان المحرك يفتقد بصمات SHA-256 للملفات التنفيذية الحرجة."
+        val rootfs = json.optString("rootfsDirectory").trimEnd('/')
+        val sdk = json.optString("androidSdkDirectory").trimEnd('/')
+        val flutter = json.optString("flutterExecutable")
+        val flutterRoot = flutter.substringBeforeLast("/bin/flutter", "")
+        val buildTools = json.optString("androidBuildToolsVersion")
+        if (rootfs.isBlank() || sdk.isBlank() || flutterRoot.isBlank() ||
+            !buildTools.matches(Regex("^[0-9]+(\\\\.[0-9]+)*$"))) {
+            return "مسارات أو إصدار Build Tools في بيان المحرك غير صالح للتحقق من البصمات."
+        }
+        val required = listOf(
+            json.optString("runtimeLauncher"),
+            "$rootfs/bin/sh",
+            flutter,
+            "$flutterRoot/bin/cache/dart-sdk/bin/dart",
+            json.optString("javaExecutable"),
+            "$sdk/cmdline-tools/latest/bin/sdkmanager",
+            "$sdk/build-tools/$buildTools/aapt2",
+            "$sdk/build-tools/$buildTools/aidl",
+            "$sdk/build-tools/$buildTools/zipalign",
+            "$sdk/build-tools/$buildTools/apksigner"
+        ).distinct()
+        if (required.size != 10 || hashes.length() != required.size) {
+            return "قائمة بصمات المحرك لا تطابق الملفات الحرجة المطلوبة."
+        }
+        for (relative in required) {
+            val expected = hashes.optString(relative)
+            if (!expected.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+                return "بصمة SHA-256 مفقودة أو غير صالحة للملف: $relative"
+            }
+            val file = resolveInside(engineDirectory, relative)
+                ?: return "مسار ملف حرج غير آمن في بيان المحرك: $relative"
+            if (!file.isFile) return "الملف الحرج غير موجود: $relative"
+            val actual = sha256File(file)
+            if (!actual.equals(expected, ignoreCase = true)) {
+                return "فشلت مطابقة SHA-256 للملف الحرج: $relative"
+            }
+        }
+        return null
     }
 
     private fun resolveInside(root: File, relativePath: String): File? {
