@@ -230,7 +230,7 @@ jobs:
           ACTUAL_UPSTREAM_COMMIT="$(git -C upstream-proot rev-parse HEAD)"
           test "$ACTUAL_UPSTREAM_COMMIT" = "$UPSTREAM_COMMIT"
           PROOT_SHA256="$(sha256sum out/proot | awk '{print $1}')"
-          printf '%s\\n' "$ACTUAL_UPSTREAM_COMMIT" > out/UPSTREAM_COMMIT.txt
+          printf '%s\n' "$ACTUAL_UPSTREAM_COMMIT" > out/UPSTREAM_COMMIT.txt
           cat > out/BUILD_PROVENANCE.txt <<EOF
           Artifact: bisho-proot-android-arm64
           Build repository: https://github.com/779354992ali-ba/Bisho-IDE-Direct-Build
