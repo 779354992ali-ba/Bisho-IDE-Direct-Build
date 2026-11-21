@@ -86,6 +86,19 @@ jobs:
         run: |
           set -euo pipefail
           bash -n tools/engine_bundle/validate_and_pack.sh
+          ruby -e 'require "yaml"; YAML.load_file(".github/workflows/provision-local-engine-arm64.yml"); puts "ARM64 provisioning workflow YAML: OK"'
+          python3 - <<'PY'
+          from pathlib import Path
+          workflow = Path('.github/workflows/provision-local-engine-arm64.yml').read_text()
+          assert 'runs-on: ubuntu-24.04-arm' in workflow
+          assert 'default: false' in workflow
+          assert 'LICENSE_ACCEPTED' in workflow
+          assert 'd8a9f9a52e5af486f80d932e838ee93861ffd863' in workflow
+          assert 'a6a8d0fbc40bf42dddd88ebd336c4f5c71d638dbd760e239fff93c15445ecc84' in workflow
+          assert 'validate_and_pack.sh' in workflow
+          assert 'Bisho-Flutter-Local-Engine-ARM64' in workflow
+          print('ARM64 provisioning safety and pin checks: PASS')
+          PY
           python3 - <<'PY'
           import json
           from pathlib import Path
