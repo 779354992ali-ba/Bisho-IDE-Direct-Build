@@ -72,7 +72,10 @@ fi
 
 SOURCE_ROOT="$(printenv PROOT_SOURCE_DIR 2>/dev/null || true)"
 if [ -z "$SOURCE_ROOT" ]; then
-  SOURCE_EVENT="$(find "$HOME" -type f -path '*/src/tracee/event.c' -print -quit 2>/dev/null)"
+  SOURCE_EVENT=""
+  for candidate in "$HOME"/proot*/src/tracee/event.c "$HOME"/*/src/tracee/event.c; do
+    if [ -f "$candidate" ]; then SOURCE_EVENT="$candidate"; break; fi
+  done
   if [ -n "$SOURCE_EVENT" ]; then
     SOURCE_ROOT="$(dirname "$(dirname "$(dirname "$SOURCE_EVENT")")")"
   fi
