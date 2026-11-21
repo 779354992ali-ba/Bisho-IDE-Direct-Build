@@ -11,7 +11,7 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout pinned upstream source
+      - name: Checkout pinned Termux PRoot source
         uses: actions/checkout@v4.4.0
         with:
           repository: termux/proot
@@ -166,6 +166,45 @@ jobs:
           SHMEM_PREFIX="$RUNNER_TEMP/android-shmem-prefix"
           mkdir -p "$SHMEM_PREFIX/lib" "$SHMEM_PREFIX/include/sys"
 
+          # NDK bionic does not define Termux's _PATH_TMP. Use an explicit
+          # app-owned writable directory supplied by BISHO_PROOT_TMPDIR.
+          python3 - "$SHMEM_SRC/shmem.c" <<'PATCH_SHMEM'
+          import sys
+          from pathlib import Path
+
+          p = Path(sys.argv[1])
+          s = p.read_text()
+          old_macro = '#define ASHV_KEY_SYMLINK_PATH _PATH_TMP "ashv_key_%d"'
+          new_macro = '#define ASHV_KEY_SYMLINK_NAME "ashv_key_%d"'
+          if s.count(old_macro) != 1:
+              raise SystemExit("ERROR: libandroid-shmem temp-path macro mismatch.")
+          s = s.replace(old_macro, new_macro, 1)
+
+          old_call = '\t\tsprintf(symlink_path, ASHV_KEY_SYMLINK_PATH, key);'
+          new_call = r'''\t\tconst char *tmp_dir = getenv("BISHO_PROOT_TMPDIR");
+          \t\tif (tmp_dir == NULL || tmp_dir[0] != '/')
+          \t\t\ttmp_dir = getenv("TMPDIR");
+          \t\tif (tmp_dir == NULL || tmp_dir[0] != '/')
+          \t\t\ttmp_dir = "/tmp";
+          \t\tsize_t tmp_dir_len = strlen(tmp_dir);
+          \t\tif (access(tmp_dir, W_OK | X_OK) != 0) {
+          \t\t\tpthread_mutex_unlock(&mutex);
+          \t\t\treturn -1;
+          \t\t}
+          \t\tint path_len = snprintf(symlink_path, sizeof(symlink_path),
+          \t\t\t"%s%s" ASHV_KEY_SYMLINK_NAME, tmp_dir,
+          \t\t\ttmp_dir_len > 0 && tmp_dir[tmp_dir_len - 1] == '/' ? "" : "/", key);
+          \t\tif (path_len < 0 || (size_t)path_len >= sizeof(symlink_path)) {
+          \t\t\tpthread_mutex_unlock(&mutex);
+          \t\t\terrno = ENAMETOOLONG;
+          \t\t\treturn -1;
+          \t\t}'''
+          if s.count(old_call) != 1:
+              raise SystemExit("ERROR: libandroid-shmem symlink path call mismatch.")
+          p.write_text(s.replace(old_call, new_call, 1))
+          PATCH_SHMEM
+          grep -q 'BISHO_PROOT_TMPDIR' "$SHMEM_SRC/shmem.c"
+
           # Build the Termux shared-memory helper as a static archive.
           "$CLANG26" -O2 -fPIC -std=c11 -Wall -Wextra \
             -c "$SHMEM_SRC/shmem.c" -o "$SHMEM_PREFIX/shmem.o"
@@ -241,7 +280,7 @@ jobs:
         run: |
           mkdir -p out
           git -C termux-proot rev-parse HEAD > out/UPSTREAM_COMMIT.txt
-          printf 'Source: https://github.com/termux/proot\nTag: v5.1.107.80\nCommit: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2\nShared memory: termux/libandroid-shmem 7f0bd7e25dbdd146265aff7c6a890029e374622d (statically linked)\nGuest ABI: ARM64 only\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
+          printf 'Source: https://github.com/termux/proot\nTag: v5.1.107.80\nCommit: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2\nShared memory: termux/libandroid-shmem 7f0bd7e25dbdd146265aff7c6a890029e374622d (statically linked; BISHO_PROOT_TMPDIR app-sandbox patch)\nGuest ABI: ARM64 only\nNDK: 29.0.14206865\nTarget: aarch64-linux-android24\n' > out/BUILD_PROVENANCE.txt
           sha256sum out/proot > out/SHA256SUMS
           cp upstream-proot/COPYING out/UPSTREAM_COPYING 2>/dev/null || true
       - name: Upload build artifact
