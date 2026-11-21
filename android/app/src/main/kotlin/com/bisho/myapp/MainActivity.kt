@@ -1600,6 +1600,9 @@ class MainActivity : FlutterActivity() {
     } catch (_: Exception) { false }
 
     private fun verifyCriticalFileHashes(engineDirectory: File, json: JSONObject): String? {
+        if (json.optString("prootSource") != "termux/proot" || json.optString("prootVersion") != "5.1.107.80") {
+            return "مصدر أو إصدار PRoot في بيان المحرك غير مطابق للإصدار المعتمد."
+        }
         val hashes = json.optJSONObject("criticalFileSha256")
             ?: return "بيان المحرك يفتقد بصمات SHA-256 للملفات التنفيذية الحرجة."
         val rootfs = json.optString("rootfsDirectory").trimEnd('/')
