@@ -4,6 +4,7 @@ import android.os.Build
 import android.app.ActivityManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -1483,17 +1484,18 @@ class MainActivity : FlutterActivity() {
             try { unregisterReceiver(receiver) } catch (_: Exception) { }
         }
 
-        val installedInfo = try {
-            packageManager.getPackageInfo(expectedPackageName, 0)
-        } catch (_: Exception) {
-            throw IllegalStateException("أبلغ Android عن نجاح التثبيت لكن الحزمة غير موجودة.")
+        val activityClass = when {
+            expectedActivityName.startsWith(".") -> expectedPackageName + expectedActivityName
+            !expectedActivityName.contains(".") -> "$expectedPackageName.$expectedActivityName"
+            else -> expectedActivityName
         }
-        if (installedInfo.packageName != expectedPackageName) {
-            throw SecurityException("اسم الحزمة المثبتة لا يطابق APK الذي تم التحقق منه.")
+        if (!activityClass.startsWith("$expectedPackageName.")) {
+            throw SecurityException("نشاط التشغيل في APK لا يتبع اسم الحزمة الذي تم التحقق منه.")
         }
-        val launchIntent = packageManager.getLaunchIntentForPackage(expectedPackageName)
-            ?: throw IllegalStateException("تم تثبيت APK لكن لا يوجد نشاط تشغيل للحزمة.")
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launchIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setComponent(ComponentName(expectedPackageName, activityClass))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val launchLatch = CountDownLatch(1)
         val launchError = AtomicReference<String?>(null)
         runOnUiThread {
