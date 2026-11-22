@@ -197,21 +197,56 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   Future<void> _installLocalBuildEngine() async {
     _engineUrlController.clear();
     _engineShaController.clear();
+    String? selectedArchiveUri;
     final accepted = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تثبيت محرك البناء المحلي'),
-        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('أدخل رابط HTTPS مباشرًا لحزمة ZIP الرسمية المتوافقة مع arm64-v8a، ثم بصمة SHA-256 المنشورة من مصدر مستقل موثوق. لا تستخدم روابط مجهولة.'),
-          const SizedBox(height: 12),
-          TextField(controller: _engineUrlController, keyboardType: TextInputType.url,
-            decoration: const InputDecoration(labelText: 'رابط الحزمة HTTPS', hintText: 'https://.../engine.zip')),
-          const SizedBox(height: 8),
-          TextField(controller: _engineShaController,
-            decoration: const InputDecoration(labelText: 'SHA-256 (64 خانة)', hintText: 'a1b2...')),
-        ])),
-        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('تنزيل وتثبيت'))],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, updateDialog) => AlertDialog(
+          title: const Text('تثبيت محرك البناء المحلي'),
+          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('يمكنك اختيار ملف المحرك الموجود على الهاتف دون تنزيله مجددًا، أو استخدام رابط HTTPS. اختر ملف ZIP الداخلي bisho-flutter-engine-arm64.zip، وليس ملف GitHub الخارجي Bisho-Flutter-Local-Engine-ARM64.zip.'),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () async {
+                try {
+                  final uri = await _engineInstaller.pickLocalArchive();
+                  if (uri != null && dialogContext.mounted) {
+                    updateDialog(() => selectedArchiveUri = uri);
+                  }
+                } catch (error) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text('تعذر اختيار ملف المحرك: $error')),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.folder_open),
+              label: Text(selectedArchiveUri == null
+                  ? 'اختيار ملف ZIP موجود على الهاتف'
+                  : 'تم اختيار ملف ZIP محلي'),
+            ),
+            if (selectedArchiveUri != null)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text('سيُقرأ الملف مباشرة دون نسخه إلى مساحة التطبيق.',
+                  style: TextStyle(fontSize: 11, color: Colors.greenAccent)),
+              ),
+            const SizedBox(height: 12),
+            TextField(controller: _engineUrlController, keyboardType: TextInputType.url,
+              decoration: const InputDecoration(labelText: 'رابط HTTPS (اختياري عند اختيار ملف محلي)', hintText: 'https://.../engine.zip')),
+            const SizedBox(height: 8),
+            TextField(controller: _engineShaController,
+              decoration: const InputDecoration(labelText: 'SHA-256 للملف الداخلي (64 خانة)', hintText: 'a1b2...')),
+          ])),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(selectedArchiveUri == null ? 'تنزيل وتثبيت' : 'تثبيت الملف المحلي'),
+            ),
+          ],
+        ),
       ),
     );
     if (accepted != true || !mounted) return;
@@ -223,7 +258,17 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       setState(() => _localBuildLog = '${event.message}$progress');
     });
     try {
-      await _engineInstaller.install(archiveUrl: _engineUrlController.text, sha256: _engineShaController.text);
+      if (selectedArchiveUri != null) {
+        await _engineInstaller.installFromUri(
+          archiveUri: selectedArchiveUri!,
+          sha256: _engineShaController.text,
+        );
+      } else {
+        await _engineInstaller.install(
+          archiveUrl: _engineUrlController.text,
+          sha256: _engineShaController.text,
+        );
+      }
       _showMessage('تم تثبيت ملفات المحرك والتحقق من سلامة الحزمة.');
     } catch (error) {
       if (mounted) setState(() => _localBuildLog = 'فشل تثبيت المحرك: $error');
