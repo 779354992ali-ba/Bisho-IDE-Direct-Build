@@ -405,6 +405,7 @@ class MainActivity : FlutterActivity() {
             if (!rootfsDirectory.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد rootfs المؤقت.")
             val rootPath = rootfsDirectory.toPath().normalize()
             val tarNames = HashSet<String>()
+            var rootfsExpandedBytes = 0L
             val tarLinks = ArrayList<Pair<TarArchiveEntry, Path>>()
             var tarEntries = 0
             TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(FileInputStream(rootfsArchive), 256 * 1024))).use { tar ->
@@ -430,9 +431,15 @@ class MainActivity : FlutterActivity() {
                     if (tarEntry.isCharacterDevice || tarEntry.isBlockDevice || tarEntry.isFIFO) continue
                     if (tarEntry.isDirectory) {
                         Files.createDirectories(target)
+                        val directoryMode = tarEntry.mode
+                        target.toFile().setReadable(directoryMode and 0x124 != 0, false)
+                        target.toFile().setWritable(directoryMode and 0x092 != 0, false)
+                        target.toFile().setExecutable(directoryMode and 0x049 != 0, false)
                         continue
                     }
                     if (!tarEntry.isFile || tarEntry.size < 0L) throw SecurityException("نوع عنصر rootfs TAR غير مدعوم: " + raw)
+                    rootfsExpandedBytes += tarEntry.size
+                    if (rootfsExpandedBytes > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم rootfs المفكوك تجاوز 12 GB.")
                     if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف استخراج rootfs لحماية مساحة الهاتف.")
                     Files.createDirectories(target.parent)
                     FileOutputStream(target.toFile()).use { out ->
