@@ -294,7 +294,7 @@ EOF
   [[ -s engine-executables.txt ]]
   mkdir -p "$(dirname "$output_zip")"
   rm -f "$output_zip"
-  zip -X -q "$output_zip" engine-manifest.json engine-executables.txt rootfs-manifest.txt runtime rootfs.tar.gz
+  zip -X -q -r "$output_zip" engine-manifest.json engine-executables.txt rootfs-manifest.txt runtime rootfs.tar.gz
 )
 sha256sum "$output_zip"
 echo "Engine archive created: $output_zip"
