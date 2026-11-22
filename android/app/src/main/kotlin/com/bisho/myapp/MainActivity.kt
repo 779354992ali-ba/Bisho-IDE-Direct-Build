@@ -336,6 +336,7 @@ class MainActivity : FlutterActivity() {
         var entries = 0
         val extractedNames = HashSet<String>()
         val canonicalTargets = HashSet<String>()
+        var rootfsArchiveSeen = false
         try {
             ZipInputStream(BufferedInputStream(FileInputStream(archive), 1024 * 1024)).use { zip ->
                 val buffer = ByteArray(256 * 1024)
@@ -362,7 +363,24 @@ class MainActivity : FlutterActivity() {
                     if (!canonicalTargets.add(output.path)) {
                         throw SecurityException("تحتوي الحزمة على مسارات مختلفة تشير إلى الملف نفسه: $name")
                     }
-                    if (entry.isDirectory) {
+                    if (name == "rootfs.tar.gz") {
+                        if (entry.isDirectory || rootfsArchiveSeen) throw SecurityException("أرشيف rootfs مكرر أو غير صالح.")
+                        rootfsArchiveSeen = true
+                        output.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد أرشيف rootfs.") }
+                        FileOutputStream(output).use { out ->
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                extractedBytes += count
+                                if (extractedBytes > 12L * 1024L * 1024L * 1024L) throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
+                                out.write(buffer, 0, count)
+                            }
+                            out.fd.sync()
+                        }
+                    } else if (name.startsWith("rootfs/")) {
+                        throw SecurityException("صيغة الحزمة تتطلب rootfs.tar.gz ولا تقبل مجلد rootfs مفكوكاً داخل ZIP.")
+                    } else if (entry.isDirectory) {
                         if (!output.exists() && !output.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد من الحزمة.")
                     } else {
                         output.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IllegalStateException("تعذر إنشاء مسار ملف المحرك.") }
@@ -371,12 +389,8 @@ class MainActivity : FlutterActivity() {
                                 val count = zip.read(buffer)
                                 if (count < 0) break
                                 extractedBytes += count
-                                if (extractedBytes > 12L * 1024L * 1024L * 1024L) {
-                                    throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
-                                }
-                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) {
-                                    throw IllegalStateException("توقف فك المحرك قبل امتلاء مساحة الهاتف؛ المتبقي أقل من 512 MB.")
-                                }
+                                if (extractedBytes > 12L * 1024L * 1024L * 1024L) throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
                                 out.write(buffer, 0, count)
                             }
                             out.fd.sync()
@@ -385,6 +399,80 @@ class MainActivity : FlutterActivity() {
                     zip.closeEntry()
                 }
             }
+            if (!rootfsArchiveSeen) throw IllegalStateException("الحزمة لا تحتوي rootfs.tar.gz؛ ارفض تثبيت صيغة ZIP القديمة.")
+            val rootfsArchive = File(staging, "rootfs.tar.gz")
+            val rootfsDirectory = File(staging, "rootfs")
+            if (!rootfsDirectory.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد rootfs المؤقت.")
+            val rootPath = rootfsDirectory.toPath().normalize()
+            val tarNames = HashSet<String>()
+            val tarLinks = ArrayList<Pair<TarArchiveEntry, Path>>()
+            var tarEntries = 0
+            TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(FileInputStream(rootfsArchive), 256 * 1024))).use { tar ->
+                val tarBuffer = ByteArray(256 * 1024)
+                while (true) {
+                    val tarEntry = tar.nextTarEntry ?: break
+                    tarEntries++
+                    if (tarEntries > 100000) throw SecurityException("rootfs TAR يحتوي عدداً مفرطاً من العناصر.")
+                    val raw = tarEntry.name.replace('\\', '/')
+                    var clean = raw.removeSuffix("/")
+                    while (clean.startsWith("./")) clean = clean.removePrefix("./")
+                    if ((clean.isBlank() || clean == ".") && tarEntry.isDirectory) continue
+                    if (clean.isBlank() || clean == "." || clean.startsWith("/") || clean.contains('\u0000') ||
+                        clean.split('/').any { it.isBlank() || it == "." || it == ".." } || Regex("^[A-Za-z]:").containsMatchIn(clean)) {
+                        throw SecurityException("مسار rootfs TAR غير آمن: " + raw)
+                    }
+                    val target = rootPath.resolve(clean).normalize()
+                    if (!target.startsWith(rootPath) || !tarNames.add(target.toString())) throw SecurityException("مسار rootfs TAR مكرر أو خارج الجذر: " + raw)
+                    if (tarEntry.isSymbolicLink || tarEntry.isLink) {
+                        tarLinks.add(tarEntry to target)
+                        continue
+                    }
+                    if (tarEntry.isCharacterDevice || tarEntry.isBlockDevice || tarEntry.isFIFO) continue
+                    if (tarEntry.isDirectory) {
+                        Files.createDirectories(target)
+                        continue
+                    }
+                    if (!tarEntry.isFile || tarEntry.size < 0L) throw SecurityException("نوع عنصر rootfs TAR غير مدعوم: " + raw)
+                    if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف استخراج rootfs لحماية مساحة الهاتف.")
+                    Files.createDirectories(target.parent)
+                    FileOutputStream(target.toFile()).use { out ->
+                        var copied = 0L
+                        while (true) {
+                            val count = tar.read(tarBuffer)
+                            if (count < 0) break
+                            copied += count
+                            if (copied > tarEntry.size) throw SecurityException("بيانات rootfs TAR تجاوزت الحجم المعلن.")
+                            out.write(tarBuffer, 0, count)
+                        }
+                        if (copied != tarEntry.size) throw SecurityException("حجم ملف rootfs TAR غير مطابق للرأس.")
+                        out.fd.sync()
+                    }
+                    val mode = tarEntry.mode
+                    target.toFile().setReadable(mode and 0x124 != 0, false)
+                    target.toFile().setWritable(mode and 0x092 != 0, false)
+                    target.toFile().setExecutable(mode and 0x049 != 0, false)
+                }
+            }
+            // Resolve absolute links inside this guest root, never against Android's host root.
+            for ((tarEntry, linkPath) in tarLinks) {
+                val linkName = tarEntry.linkName.replace('\\', '/')
+                if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
+                val linkTarget = if (tarEntry.isSymbolicLink) {
+                    if (linkName.startsWith("/")) rootPath.resolve(linkName.removePrefix("/")).normalize()
+                    else linkPath.parent.resolve(linkName).normalize()
+                } else {
+                    rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
+                }
+                if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط rootfs TAR يشير خارج الجذر: " + linkName)
+                Files.createDirectories(linkPath.parent)
+                if (tarEntry.isSymbolicLink) {
+                    Files.createSymbolicLink(linkPath, linkPath.parent.relativize(linkTarget))
+                } else {
+                    if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في rootfs TAR يشير إلى ملف غير موجود.")
+                    Files.copy(linkTarget, linkPath)
+                }
+            }
+            rootfsArchive.delete()
             val manifest = File(staging, "engine-manifest.json")
             if (!manifest.isFile || manifest.length() <= 0L || manifest.length() > 1024L * 1024L) {
                 throw IllegalStateException("الحزمة لا تحتوي engine-manifest.json صالحًا أو أن حجمه يتجاوز 1 MB.")
