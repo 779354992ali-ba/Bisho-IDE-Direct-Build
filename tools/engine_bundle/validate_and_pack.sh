@@ -204,9 +204,15 @@ mkdir -p "$stage/runtime" "$stage/rootfs"
 # Virtual mountpoints must be empty in the portable rootfs archive. In
 # particular, /dev/fd can resolve through the runner's procfs and make cp -L
 # recursively walk the host descriptor tree after guest mounts are detached.
-for virtual_dir in dev proc sys run; do
-  mkdir -p "$source_dir/rootfs/$virtual_dir"
-  find "$source_dir/rootfs/$virtual_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+for virtual_dir in dev proc sys run var/run; do
+  # Resolve aliases such as /var/run -> /run before clearing transient host data.
+  resolved_virtual_dir=$(realpath -m "$source_dir/rootfs/$virtual_dir")
+  case "$resolved_virtual_dir" in
+    "$rootfs"/*) ;;
+    *) echo "refusing to clean virtual path outside rootfs: $resolved_virtual_dir" >&2; exit 2 ;;
+  esac
+  mkdir -p "$resolved_virtual_dir"
+  find "$resolved_virtual_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 done
 # These legacy X11 aliases point back into their own parent directories and
 # are not required by a headless Flutter/Android build runtime.
