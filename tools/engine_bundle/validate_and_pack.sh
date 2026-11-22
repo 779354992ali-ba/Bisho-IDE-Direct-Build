@@ -201,7 +201,18 @@ printf '# Generated from Android LinkProperties at runtime by Bisho IDE.\n' > "$
 
 stage=$(mktemp -d)
 mkdir -p "$stage/runtime" "$stage/rootfs"
-# Dereference symlinks: ZIP extraction on Android must not depend on symlink metadata.
+# Drop only dangling or cyclic symlinks before dereferencing the guest tree.
+# Ubuntu packages may contain optional desktop/JDK links whose targets are absent
+# in a minimal rootfs; GNU cp -aL treats those links as a fatal packaging error.
+dangling_links=0
+while IFS= read -r -d '' link; do
+  if ! readlink -e "$link" >/dev/null 2>&1; then
+    rm -f -- "$link"
+    dangling_links=$((dangling_links + 1))
+  fi
+done < <(find "$source_dir/rootfs" -type l -print0)
+echo "Removed $dangling_links dangling/cyclic optional rootfs symlinks before ZIP staging."
+# Dereference remaining valid symlinks so Android extraction does not depend on symlink metadata.
 cp -aL "$source_dir/runtime/." "$stage/runtime/"
 cp -aL "$source_dir/rootfs/." "$stage/rootfs/"
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
