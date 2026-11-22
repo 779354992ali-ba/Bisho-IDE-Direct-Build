@@ -199,20 +199,8 @@ umount_checked "$rootfs/dev"
 rm -f "$rootfs/etc/resolv.conf"
 printf '# Generated from Android LinkProperties at runtime by Bisho IDE.\n' > "$rootfs/etc/resolv.conf"
 
-stage=$(mktemp -d)
-mkdir -p "$stage/runtime" "$stage/rootfs"
-# Virtual mountpoints must be empty in the portable rootfs archive. In
-# particular, /dev/fd can resolve through the runner's procfs and make cp -L
-# recursively walk the host descriptor tree after guest mounts are detached.
-# Clean only real directories inside the guest rootfs. Do not use realpath
-# on /var/run: Ubuntu commonly makes it a symlink to /run, and host-side
-# realpath would follow that absolute guest path into the runner's /run.
-for virtual_dir in dev proc sys run; do
-  target="$rootfs/$virtual_dir"
-  [[ ! -L "$target" ]] || { echo "refusing to clean symlinked virtual directory: $target" >&2; exit 2; }
-  [[ -d "$target" ]] || { echo "required virtual directory is missing: $target" >&2; exit 2; }
-  find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-done
+# Virtual mountpoints must be empty in the portable rootfs archive.
+# Clean only real guest directories after all chroot processes have stopped.
 # Normalize the guest runtime directory without dereferencing it.
 # Keep /var/run -> /run as a guest symlink in the TAR archive.
 var_dir="$rootfs/var"
@@ -230,7 +218,7 @@ write_rootfs_manifest() {
   local tree=$1 output=$2
   (
     cd "$tree"
-    find . -mindepth 1 -printf '%y %m %p %l\\n' | LC_ALL=C sort
+    find . -mindepth 1 -printf '%y %m %p %l\n' | LC_ALL=C sort
     find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
   ) > "$output"
 }
