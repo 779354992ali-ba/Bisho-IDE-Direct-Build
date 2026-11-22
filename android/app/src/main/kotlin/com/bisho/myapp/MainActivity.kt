@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.os.StatFs
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -48,6 +49,8 @@ class MainActivity : FlutterActivity() {
     @Volatile private var activeBuildProcess: Process? = null
     @Volatile private var stagingCancelled: Boolean = false
     @Volatile private var buildEventSink: EventChannel.EventSink? = null
+    private var pendingEngineArchivePicker: MethodChannel.Result? = null
+    private val engineArchivePickerRequestCode = 48127
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -97,6 +100,42 @@ class MainActivity : FlutterActivity() {
                                 runOnUiThread { result.success(installed) }
                             } catch (error: Exception) {
                                 runOnUiThread { result.success(mapOf("success" to false, "message" to (error.message ?: "فشل تثبيت Alpine."))) }
+                            }
+                        }
+                    }
+                    "pickEngineArchive" -> {
+                        if (pendingEngineArchivePicker != null) {
+                            result.error("PICKER_BUSY", "اختيار ملف محرك آخر قيد التنفيذ.", null)
+                        } else {
+                            pendingEngineArchivePicker = result
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "*/*"
+                                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                                    "application/zip", "application/x-zip-compressed", "application/octet-stream"
+                                ))
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                            }
+                            try {
+                                startActivityForResult(intent, engineArchivePickerRequestCode)
+                            } catch (error: Exception) {
+                                pendingEngineArchivePicker = null
+                                result.error("PICKER_FAILED", error.message ?: "تعذر فتح منتقي ملفات ZIP.", null)
+                            }
+                        }
+                    }
+                    "installEngineFromUri" -> {
+                        val archiveUri = call.argument<String>("archiveUri")
+                        val sha256 = call.argument<String>("sha256")
+                        buildExecutor.execute {
+                            try {
+                                if (archiveUri.isNullOrBlank() || sha256.isNullOrBlank()) {
+                                    throw IllegalArgumentException("بيانات ملف المحرك المحلي غير مكتملة.")
+                                }
+                                val installed = installLocalBuildEngineFromUri(archiveUri, sha256)
+                                runOnUiThread { result.success(installed) }
+                            } catch (error: Exception) {
+                                runOnUiThread { result.success(mapOf("success" to false, "message" to (error.message ?: "فشل تثبيت ملف المحرك المحلي."))) }
                             }
                         }
                     }
@@ -172,6 +211,25 @@ class MainActivity : FlutterActivity() {
             }
     }
 
+
+    @Deprecated("Deprecated in Android API; retained for ACTION_OPEN_DOCUMENT compatibility.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != engineArchivePickerRequestCode) return
+        val callback = pendingEngineArchivePicker
+        pendingEngineArchivePicker = null
+        val selected = if (resultCode == RESULT_OK) data?.data else null
+        if (selected == null) {
+            callback?.success(null)
+            return
+        }
+        try {
+            contentResolver.takePersistableUriPermission(selected, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) {
+            // Some document providers grant a temporary read permission only.
+        }
+        callback?.success(selected.toString())
+    }
 
     /** Install the official Alpine minirootfs TAR.GZ after a caller-supplied SHA-256 check. */
     private fun installAlpineRootfs(archivePath: String, expectedSha256: String): Map<String, Any> {
@@ -320,31 +378,61 @@ class MainActivity : FlutterActivity() {
 
     /** Verify the downloaded archive and extract it without loading it into RAM. */
     private fun installLocalBuildEngine(archivePath: String, expectedSha256: String): Map<String, Any> {
-        if (!expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
-            throw IllegalArgumentException("بصمة SHA-256 غير صالحة.")
-        }
         val downloads = File(filesDir, "bisho-engine-downloads").canonicalFile
         val archive = File(archivePath).canonicalFile
         if (!archive.path.startsWith(downloads.path + File.separator) || !archive.isFile || archive.length() <= 0L) {
             throw IllegalArgumentException("ملف الحزمة خارج مجلد التنزيل الآمن أو غير موجود.")
         }
-        if (archive.length() > 8L * 1024L * 1024L * 1024L) {
-            throw IllegalArgumentException("حجم الحزمة يتجاوز 8 GB.")
+        return installLocalBuildEngineFromSource(archive.length(), expectedSha256) { FileInputStream(archive) }
+    }
+
+    /** Install a user-selected ZIP through SAF without copying the 1.27 GB archive into app storage. */
+    private fun installLocalBuildEngineFromUri(archiveUri: String, expectedSha256: String): Map<String, Any> {
+        val uri = Uri.parse(archiveUri)
+        if (uri.scheme != "content") throw SecurityException("يجب اختيار ملف محرك من منتقي ملفات Android الآمن.")
+        var archiveSize = -1L
+        contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            val sizeColumn = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (cursor.moveToFirst() && sizeColumn >= 0 && !cursor.isNull(sizeColumn)) {
+                archiveSize = cursor.getLong(sizeColumn)
+            }
+        }
+        if (archiveSize <= 0L) throw IllegalArgumentException("تعذر تحديد حجم ملف ZIP المحدد.")
+        return installLocalBuildEngineFromSource(archiveSize, expectedSha256) {
+            contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("تعذرت قراءة ملف ZIP المحدد من مزود التخزين.")
+        }
+    }
+
+    /** Verify the selected source, then stream ZIP -> GZIP -> TAR without an intermediate archive file. */
+    private fun installLocalBuildEngineFromSource(
+        archiveSize: Long,
+        expectedSha256: String,
+        openArchive: () -> InputStream
+    ): Map<String, Any> {
+        if (!expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+            throw IllegalArgumentException("بصمة SHA-256 غير صالحة.")
+        }
+        if (archiveSize <= 0L || archiveSize > 8L * 1024L * 1024L * 1024L) {
+            throw IllegalArgumentException("حجم الحزمة غير معروف أو يتجاوز الحد المسموح (8 GB).")
         }
         val freeBytes = StatFs(filesDir.absolutePath).availableBytes
-        // The archive is already downloaded. Keep a live reserve, not a fixed 20 GB budget.
         if (freeBytes < engineInstallStorageBytes) {
-            throw IllegalStateException("المساحة الحرة بعد التنزيل أقل من 1 GB؛ أوقف التثبيت لحماية الهاتف.")
+            throw IllegalStateException("المساحة الحرة أقل من 1 GB؛ أوقف التثبيت لحماية الهاتف.")
         }
         emitBuildEvent("جارٍ حساب SHA-256 لحزمة المحرك...")
         val digest = MessageDigest.getInstance("SHA-256")
-        FileInputStream(archive).use { input ->
+        openArchive().use { input ->
             val buffer = ByteArray(1024 * 1024)
+            var hashedBytes = 0L
             while (true) {
                 val count = input.read(buffer)
                 if (count < 0) break
+                hashedBytes += count
+                if (hashedBytes > archiveSize) throw SecurityException("تجاوز ملف المحرك الحجم المعلن أثناء التحقق.")
                 digest.update(buffer, 0, count)
             }
+            if (hashedBytes != archiveSize) throw SecurityException("حجم ملف المحرك لا يطابق الحجم المعلن من مزود التخزين.")
         }
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
         if (!actual.equals(expectedSha256, ignoreCase = true)) {
@@ -362,7 +450,7 @@ class MainActivity : FlutterActivity() {
         val canonicalTargets = HashSet<String>()
         var rootfsArchiveSeen = false
         try {
-            ZipInputStream(BufferedInputStream(FileInputStream(archive), 1024 * 1024)).use { zip ->
+            ZipInputStream(BufferedInputStream(openArchive(), 1024 * 1024)).use { zip ->
                 val buffer = ByteArray(256 * 1024)
                 while (true) {
                     val entry = zip.nextEntry ?: break
