@@ -4,7 +4,16 @@ The CI packer runs a native ARM64 \`chroot\` smoke build. That does **not** cert
 
 ## Run from Termux
 
-1. Extract the engine ZIP into \`$HOME/bisho-engine\` so the directory contains \`runtime/proot\` and \`rootfs/\`.
+1. Extract the outer engine ZIP and unpack its preserved rootfs TAR archive:
+
+   ```bash
+   mkdir -p "$HOME/bisho-engine"
+   unzip -q /path/to/bisho-flutter-engine-arm64.zip -d "$HOME/bisho-engine"
+   mkdir -p "$HOME/bisho-engine/rootfs"
+   tar --no-same-owner -xzf "$HOME/bisho-engine/rootfs.tar.gz" -C "$HOME/bisho-engine/rootfs"
+   ```
+
+   The directory must then contain `runtime/proot` and `rootfs/bin/sh`. The outer ZIP keeps symlink metadata in `rootfs.tar.gz`; do not unzip that TAR archive with a ZIP utility.
 2. To collect the read-only PRoot/seccomp-order comparison log, run:
 
    ```bash
