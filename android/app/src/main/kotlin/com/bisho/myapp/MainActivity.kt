@@ -397,13 +397,6 @@ class MainActivity : FlutterActivity() {
                         var rootfsExpandedBytes = 0L
                         val tarLinks = ArrayList<Pair<TarArchiveEntry, Path>>()
                         var tarEntries = 0
-                        val rootfsDirectory = File(staging, "rootfs")
-                        if (!rootfsDirectory.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد rootfs المؤقت.")
-                        val rootPath = rootfsDirectory.toPath().normalize()
-                        val tarNames = HashSet<String>()
-                        var rootfsExpandedBytes = 0L
-                        val tarLinks = ArrayList<Pair<TarArchiveEntry, Path>>()
-                        var tarEntries = 0
                         TarArchiveInputStream(
                             GzipCompressorInputStream(
                                 BufferedInputStream(
