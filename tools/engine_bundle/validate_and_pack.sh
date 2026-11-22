@@ -225,12 +225,17 @@ var_run="$var_dir/run"
 }
 rm -rf -- "$var_run"
 ln -s /run "$var_run"
-# /run was emptied above; enforce that invariant immediately before staging.
+# /run was emptied above. Remove the guest /var/run alias before the
+# dereferencing copy: cp -aL otherwise walks volatile udev/systemd entries
+# through that alias, even after they have been cleaned, and races with
+# disappearing device-watch links. Recreate /var/run as an empty directory
+# in the portable staged rootfs below.
 find "$rootfs/run" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 [[ -L "$var_run" && "$(readlink "$var_run")" == "/run" ]] || {
   echo "failed to normalize guest /var/run -> /run" >&2
   exit 2
 }
+rm -f -- "$var_run"
 # These legacy X11 aliases point back into their own parent directories and
 # are not required by a headless Flutter/Android build runtime.
 find "$source_dir/rootfs/bin" "$source_dir/rootfs/usr/bin" -maxdepth 1 -type l -name X11 -delete 2>/dev/null || true
@@ -248,6 +253,9 @@ echo "Removed $dangling_links dangling/cyclic optional rootfs symlinks before ZI
 # Dereference remaining valid symlinks so Android extraction does not depend on symlink metadata.
 cp -aL "$source_dir/runtime/." "$stage/runtime/"
 cp -aL "$source_dir/rootfs/." "$stage/rootfs/"
+# The guest /var/run alias was intentionally removed before dereferencing;
+# ship clean, writable mountpoint directories instead of runner runtime state.
+mkdir -p "$stage/rootfs/run" "$stage/rootfs/var/run"
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 PROOT_SHA=$(sha256_of "$stage/runtime/proot")
 PROOT_SOURCE_COMMIT=$(cat "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
