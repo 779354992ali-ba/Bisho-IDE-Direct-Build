@@ -201,9 +201,19 @@ printf '# Generated from Android LinkProperties at runtime by Bisho IDE.\n' > "$
 
 stage=$(mktemp -d)
 mkdir -p "$stage/runtime" "$stage/rootfs"
-# Drop only dangling or cyclic symlinks before dereferencing the guest tree.
-# Ubuntu packages may contain optional desktop/JDK links whose targets are absent
-# in a minimal rootfs; GNU cp -aL treats those links as a fatal packaging error.
+# Virtual mountpoints must be empty in the portable rootfs archive. In
+# particular, /dev/fd can resolve through the runner's procfs and make cp -L
+# recursively walk the host descriptor tree after guest mounts are detached.
+for virtual_dir in dev proc sys run; do
+  mkdir -p "$source_dir/rootfs/$virtual_dir"
+  find "$source_dir/rootfs/$virtual_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+done
+# These legacy X11 aliases point back into their own parent directories and
+# are not required by a headless Flutter/Android build runtime.
+find "$source_dir/rootfs/bin" "$source_dir/rootfs/usr/bin" -maxdepth 1 -type l -name X11 -delete 2>/dev/null || true
+
+# Drop dangling/cyclic links and directory aliases that would recurse into an
+# ancestor when dereferenced. Preserve the essential root filesystem aliases.
 dangling_links=0
 while IFS= read -r -d '' link; do
   if ! readlink -e "$link" >/dev/null 2>&1; then
