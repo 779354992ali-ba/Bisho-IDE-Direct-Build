@@ -204,16 +204,30 @@ mkdir -p "$stage/runtime" "$stage/rootfs"
 # Virtual mountpoints must be empty in the portable rootfs archive. In
 # particular, /dev/fd can resolve through the runner's procfs and make cp -L
 # recursively walk the host descriptor tree after guest mounts are detached.
-for virtual_dir in dev proc sys run var/run; do
-  # Resolve aliases such as /var/run -> /run before clearing transient host data.
-  resolved_virtual_dir=$(realpath -m "$source_dir/rootfs/$virtual_dir")
-  case "$resolved_virtual_dir" in
-    "$rootfs"/*) ;;
-    *) echo "refusing to clean virtual path outside rootfs: $resolved_virtual_dir" >&2; exit 2 ;;
-  esac
-  mkdir -p "$resolved_virtual_dir"
-  find "$resolved_virtual_dir" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+# Clean only real directories inside the guest rootfs. Do not use realpath
+# on /var/run: Ubuntu commonly makes it a symlink to /run, and host-side
+# realpath would follow that absolute guest path into the runner's /run.
+for virtual_dir in dev proc sys run; do
+  target="$rootfs/$virtual_dir"
+  [[ ! -L "$target" ]] || { echo "refusing to clean symlinked virtual directory: $target" >&2; exit 2; }
+  [[ -d "$target" ]] || { echo "required virtual directory is missing: $target" >&2; exit 2; }
+  find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 done
+var_run="$rootfs/var/run"
+if [[ -L "$var_run" ]]; then
+  var_run_link=$(readlink "$var_run")
+  case "$var_run_link" in
+    /run|../run)
+      echo "Skipping /var/run alias ($var_run_link); guest /run was already cleaned."
+      ;;
+    *)
+      echo "refusing unexpected /var/run symlink: $var_run_link" >&2
+      exit 2
+      ;;
+  esac
+elif [[ -d "$var_run" ]]; then
+  find "$var_run" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+fi
 # These legacy X11 aliases point back into their own parent directories and
 # are not required by a headless Flutter/Android build runtime.
 find "$source_dir/rootfs/bin" "$source_dir/rootfs/usr/bin" -maxdepth 1 -type l -name X11 -delete 2>/dev/null || true
