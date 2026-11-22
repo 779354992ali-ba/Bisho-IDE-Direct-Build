@@ -196,7 +196,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
 
   Future<void> _installLocalBuildEngine() async {
     _engineUrlController.clear();
-    _engineShaController.clear();
+    _engineShaController.text = '8723baddc33fb92f033b142120add25d8ce7c037bd85a4af2b0cb4aba34dc8f8';
     String? selectedArchiveUri;
     final accepted = await showDialog<bool>(
       context: context,
@@ -204,7 +204,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
         builder: (dialogContext, updateDialog) => AlertDialog(
           title: const Text('تثبيت محرك البناء المحلي'),
           content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Text('يمكنك اختيار ملف المحرك الموجود على الهاتف دون تنزيله مجددًا، أو استخدام رابط HTTPS. اختر ملف ZIP الداخلي bisho-flutter-engine-arm64.zip، وليس ملف GitHub الخارجي Bisho-Flutter-Local-Engine-ARM64.zip.'),
+            const Text('يمكنك اختيار ملف GitHub الموجود على الهاتف Bisho-Flutter-Local-Engine-ARM64.zip مباشرة دون تنزيله أو فك الملف الداخلي يدويًا؛ سيقرأ التطبيق المحرك من داخله مباشرة. يمكنك أيضًا اختيار ZIP الداخلي أو استخدام رابط HTTPS مع بصمته الصحيحة.'),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () async {
@@ -237,7 +237,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
               decoration: const InputDecoration(labelText: 'رابط HTTPS (اختياري عند اختيار ملف محلي)', hintText: 'https://.../engine.zip')),
             const SizedBox(height: 8),
             TextField(controller: _engineShaController,
-              decoration: const InputDecoration(labelText: 'SHA-256 للملف الداخلي (64 خانة)', hintText: 'a1b2...')),
+              decoration: const InputDecoration(labelText: 'SHA-256 للحزمة المحددة (64 خانة)', hintText: 'a1b2...')),
           ])),
           actions: [
             TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
