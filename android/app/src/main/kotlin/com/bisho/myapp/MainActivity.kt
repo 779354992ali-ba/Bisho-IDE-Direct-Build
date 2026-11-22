@@ -23,12 +23,14 @@ import java.util.concurrent.Executors
 import org.json.JSONObject
 import java.io.File
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
 import java.io.FilterInputStream
 import java.io.InputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+import java.util.zip.ZipEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
@@ -450,10 +452,22 @@ class MainActivity : FlutterActivity() {
         val canonicalTargets = HashSet<String>()
         var rootfsArchiveSeen = false
         try {
-            ZipInputStream(BufferedInputStream(openArchive(), 1024 * 1024)).use { zip ->
+            ZipInputStream(BufferedInputStream(openArchive(), 1024 * 1024)).use { archiveZip ->
+                val firstEntry = archiveZip.nextEntry
+                    ?: throw IllegalStateException("ملف ZIP فارغ أو غير صالح.")
+                val wrappedArtifact = firstEntry.name == "bisho-flutter-engine-arm64.zip"
+                val zip = if (wrappedArtifact) {
+                    ZipInputStream(BufferedInputStream(
+                        NonClosingCountingInputStream(archiveZip) { }, 1024 * 1024
+                    ))
+                } else {
+                    archiveZip
+                }
+                var pendingEntry: ZipEntry? = if (wrappedArtifact) null else firstEntry
                 val buffer = ByteArray(256 * 1024)
                 while (true) {
-                    val entry = zip.nextEntry ?: break
+                    val entry = pendingEntry ?: zip.nextEntry ?: break
+                    pendingEntry = null
                     entries++
                     if (entries > 100000) throw IllegalStateException("تحتوي الحزمة على عدد ملفات يتجاوز الحد الآمن.")
                     val rawName = entry.name.replace('\\', '/')
@@ -589,6 +603,36 @@ class MainActivity : FlutterActivity() {
                         }
                     }
                     zip.closeEntry()
+                }
+                if (wrappedArtifact) {
+                    // The GitHub Actions artifact is a ZIP containing the actual engine ZIP and its checksum sidecar.
+                    // The nested ZIP is streamed directly; neither it nor rootfs.tar.gz is written as a temporary file.
+                    zip.close()
+                    archiveZip.closeEntry()
+                    val sidecarEntry = archiveZip.nextEntry
+                        ?: throw SecurityException("حزمة GitHub الخارجية تفتقد ملف SHA-256 الجانبي.")
+                    if (sidecarEntry.name != "bisho-flutter-engine-arm64.zip.sha256" || sidecarEntry.isDirectory) {
+                        throw SecurityException("ملف SHA-256 الجانبي في حزمة GitHub غير مطابق.")
+                    }
+                    val sidecarBytes = ByteArrayOutputStream()
+                    val sidecarBuffer = ByteArray(256)
+                    while (true) {
+                        val count = archiveZip.read(sidecarBuffer)
+                        if (count < 0) break
+                        if (sidecarBytes.size() + count > 4096) {
+                            throw SecurityException("ملف SHA-256 الجانبي أكبر من الحد المتوقع.")
+                        }
+                        sidecarBytes.write(sidecarBuffer, 0, count)
+                    }
+                    val sidecarText = sidecarBytes.toString(Charsets.UTF_8.name())
+                    if (!Regex("(?m)^\\s*[a-fA-F0-9]{64}\\s+\\*?bisho-flutter-engine-arm64\\.zip\\s*$")
+                            .containsMatchIn(sidecarText)) {
+                        throw SecurityException("صيغة SHA-256 الجانبي داخل حزمة GitHub غير صالحة.")
+                    }
+                    archiveZip.closeEntry()
+                    if (archiveZip.nextEntry != null) {
+                        throw SecurityException("حزمة GitHub الخارجية تحتوي ملفات غير متوقعة.")
+                    }
                 }
             }
             if (!rootfsArchiveSeen) throw IllegalStateException("الحزمة لا تحتوي rootfs.tar.gz؛ ارفض تثبيت صيغة ZIP القديمة.")
