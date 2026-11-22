@@ -213,49 +213,21 @@ for virtual_dir in dev proc sys run; do
   [[ -d "$target" ]] || { echo "required virtual directory is missing: $target" >&2; exit 2; }
   find "$target" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
 done
-# Normalize the guest's volatile runtime directory after all chroot
-# processes have stopped. A real /var/run directory may contain live udev,
-# systemd and device-watch entries whose targets disappear or form cycles
-# while cp -L dereferences them into the portable archive.
+# Normalize the guest runtime directory without dereferencing it.
+# Keep /var/run -> /run as a guest symlink in the TAR archive.
 var_dir="$rootfs/var"
 var_run="$var_dir/run"
-[[ -d "$var_dir" && ! -L "$var_dir" ]] || {
-  echo "guest /var must be a real directory before runtime normalization" >&2
-  exit 2
-}
-rm -rf -- "$var_run"
-ln -s /run "$var_run"
-# /run was emptied above. Remove the guest /var/run alias before the
-# dereferencing copy: cp -aL otherwise walks volatile udev/systemd entries
-# through that alias, even after they have been cleaned, and races with
-# disappearing device-watch links. Recreate /var/run as an empty directory
-# in the portable staged rootfs below.
-find "$rootfs/run" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
-[[ -L "$var_run" && "$(readlink "$var_run")" == "/run" ]] || {
-  echo "failed to normalize guest /var/run -> /run" >&2
-  exit 2
-}
-rm -f -- "$var_run"
-# These legacy X11 aliases point back into their own parent directories and
-# are not required by a headless Flutter/Android build runtime.
-find "$source_dir/rootfs/bin" "$source_dir/rootfs/usr/bin" -maxdepth 1 -type l -name X11 -delete 2>/dev/null || true
-
-# Drop dangling/cyclic links and directory aliases that would recurse into an
-# ancestor when dereferenced. Preserve the essential root filesystem aliases.
-dangling_links=0
-while IFS= read -r -d '' link; do
-  if ! readlink -e "$link" >/dev/null 2>&1; then
-    rm -f -- "$link"
-    dangling_links=$((dangling_links + 1))
-  fi
-done < <(find "$source_dir/rootfs" -type l -print0)
-echo "Removed $dangling_links dangling/cyclic optional rootfs symlinks before ZIP staging."
-# Dereference remaining valid symlinks so Android extraction does not depend on symlink metadata.
-cp -aL "$source_dir/runtime/." "$stage/runtime/"
-cp -aL "$source_dir/rootfs/." "$stage/rootfs/"
-# The guest /var/run alias was intentionally removed before dereferencing;
-# ship clean, writable mountpoint directories instead of runner runtime state.
-mkdir -p "$stage/rootfs/run" "$stage/rootfs/var/run"
+[[ -d "$var_dir" && ! -L "$var_dir" ]] || { echo "guest /var must be a real directory" >&2; exit 2; }
+if [[ -e "$var_run" && ! -L "$var_run" ]]; then rm -rf -- "$var_run"; fi
+if [[ ! -L "$var_run" ]]; then ln -s /run "$var_run"; fi
+[[ "$(readlink "$var_run")" == "/run" ]] || { echo "failed to normalize guest /var/run -> /run" >&2; exit 2; }
+# Preserve guest symlinks; Android extracts the TAR with a path-confined symlink-aware extractor.
+# Never dereference absolute guest links on the runner host.
+stage=$(mktemp -d)
+mkdir -p "$stage/runtime"
+cp -a "$source_dir/runtime/." "$stage/runtime/"
+tar --numeric-owner --xattrs --acls --sort=name --mtime='@0' --owner=0 --group=0 --use-compress-program='gzip -n' -C "$rootfs" -cpf "$stage/rootfs.tar.gz" .
+tar -tzf "$stage/rootfs.tar.gz" >/dev/null
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 PROOT_SHA=$(sha256_of "$stage/runtime/proot")
 PROOT_SOURCE_COMMIT=$(cat "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
@@ -282,6 +254,8 @@ cat > "$stage/engine-manifest.json" <<EOF
   "prootVersion": "5.1.107.80",
   "prootSourceCommit": "$PROOT_SOURCE_COMMIT",
   "rootfsDirectory": "rootfs",
+  "rootfsArchive": "rootfs.tar.gz",
+  "rootfsArchiveFormat": "tar.gz",
   "flutterExecutable": "rootfs/opt/flutter/bin/flutter",
   "javaExecutable": "rootfs/usr/lib/jvm/java-17/bin/java",
   "androidSdkDirectory": "rootfs/opt/android-sdk",
@@ -309,11 +283,11 @@ EOF
 # Explicit executable inventory; no wildcard expansion is written to the manifest.
 (
   cd "$stage"
-  find runtime rootfs -type f -perm /111 -print | LC_ALL=C sort > engine-executables.txt
+  { find runtime -type f -perm /111 -print; tar -tvzf rootfs.tar.gz | awk '$1 ~ /x/ {print $NF}'; } | LC_ALL=C sort > engine-executables.txt
   [[ -s engine-executables.txt ]]
   mkdir -p "$(dirname "$output_zip")"
   rm -f "$output_zip"
-  zip -X -q -r "$output_zip" engine-manifest.json engine-executables.txt runtime rootfs
+  zip -X -q "$output_zip" engine-manifest.json engine-executables.txt runtime rootfs.tar.gz
 )
 sha256sum "$output_zip"
 echo "Engine archive created: $output_zip"
