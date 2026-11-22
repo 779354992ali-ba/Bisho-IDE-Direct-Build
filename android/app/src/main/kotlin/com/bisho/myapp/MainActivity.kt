@@ -1,7 +1,17 @@
 package com.bisho.myapp
 
 import android.os.Build
+import android.app.ActivityManager
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageInstaller
+import android.provider.Settings
 import android.net.Uri
+import android.net.ConnectivityManager
 import android.provider.DocumentsContract
 import android.os.StatFs
 import io.flutter.embedding.android.FlutterActivity
@@ -22,6 +32,9 @@ import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
 
 class MainActivity : FlutterActivity() {
     private val localBuildChannel = "com.bisho.ide/local_build"
@@ -323,6 +336,7 @@ class MainActivity : FlutterActivity() {
         var entries = 0
         val extractedNames = HashSet<String>()
         val canonicalTargets = HashSet<String>()
+        var rootfsArchiveSeen = false
         try {
             ZipInputStream(BufferedInputStream(FileInputStream(archive), 1024 * 1024)).use { zip ->
                 val buffer = ByteArray(256 * 1024)
@@ -349,7 +363,24 @@ class MainActivity : FlutterActivity() {
                     if (!canonicalTargets.add(output.path)) {
                         throw SecurityException("تحتوي الحزمة على مسارات مختلفة تشير إلى الملف نفسه: $name")
                     }
-                    if (entry.isDirectory) {
+                    if (name == "rootfs.tar.gz") {
+                        if (entry.isDirectory || rootfsArchiveSeen) throw SecurityException("أرشيف rootfs مكرر أو غير صالح.")
+                        rootfsArchiveSeen = true
+                        output.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد أرشيف rootfs.") }
+                        FileOutputStream(output).use { out ->
+                            while (true) {
+                                val count = zip.read(buffer)
+                                if (count < 0) break
+                                extractedBytes += count
+                                if (extractedBytes > 12L * 1024L * 1024L * 1024L) throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
+                                out.write(buffer, 0, count)
+                            }
+                            out.fd.sync()
+                        }
+                    } else if (name.startsWith("rootfs/")) {
+                        throw SecurityException("صيغة الحزمة تتطلب rootfs.tar.gz ولا تقبل مجلد rootfs مفكوكاً داخل ZIP.")
+                    } else if (entry.isDirectory) {
                         if (!output.exists() && !output.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد من الحزمة.")
                     } else {
                         output.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IllegalStateException("تعذر إنشاء مسار ملف المحرك.") }
@@ -358,12 +389,8 @@ class MainActivity : FlutterActivity() {
                                 val count = zip.read(buffer)
                                 if (count < 0) break
                                 extractedBytes += count
-                                if (extractedBytes > 12L * 1024L * 1024L * 1024L) {
-                                    throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
-                                }
-                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) {
-                                    throw IllegalStateException("توقف فك المحرك قبل امتلاء مساحة الهاتف؛ المتبقي أقل من 512 MB.")
-                                }
+                                if (extractedBytes > 12L * 1024L * 1024L * 1024L) throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
                                 out.write(buffer, 0, count)
                             }
                             out.fd.sync()
@@ -372,6 +399,87 @@ class MainActivity : FlutterActivity() {
                     zip.closeEntry()
                 }
             }
+            if (!rootfsArchiveSeen) throw IllegalStateException("الحزمة لا تحتوي rootfs.tar.gz؛ ارفض تثبيت صيغة ZIP القديمة.")
+            val rootfsArchive = File(staging, "rootfs.tar.gz")
+            val rootfsDirectory = File(staging, "rootfs")
+            if (!rootfsDirectory.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد rootfs المؤقت.")
+            val rootPath = rootfsDirectory.toPath().normalize()
+            val tarNames = HashSet<String>()
+            var rootfsExpandedBytes = 0L
+            val tarLinks = ArrayList<Pair<TarArchiveEntry, Path>>()
+            var tarEntries = 0
+            TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(FileInputStream(rootfsArchive), 256 * 1024))).use { tar ->
+                val tarBuffer = ByteArray(256 * 1024)
+                while (true) {
+                    val tarEntry = tar.nextTarEntry ?: break
+                    tarEntries++
+                    if (tarEntries > 100000) throw SecurityException("rootfs TAR يحتوي عدداً مفرطاً من العناصر.")
+                    val raw = tarEntry.name.replace('\\', '/')
+                    var clean = raw.removeSuffix("/")
+                    while (clean.startsWith("./")) clean = clean.removePrefix("./")
+                    if ((clean.isBlank() || clean == ".") && tarEntry.isDirectory) continue
+                    if (clean.isBlank() || clean == "." || clean.startsWith("/") || clean.contains('\u0000') ||
+                        clean.split('/').any { it.isBlank() || it == "." || it == ".." } || Regex("^[A-Za-z]:").containsMatchIn(clean)) {
+                        throw SecurityException("مسار rootfs TAR غير آمن: " + raw)
+                    }
+                    val target = rootPath.resolve(clean).normalize()
+                    if (!target.startsWith(rootPath) || !tarNames.add(target.toString())) throw SecurityException("مسار rootfs TAR مكرر أو خارج الجذر: " + raw)
+                    if (tarEntry.isSymbolicLink || tarEntry.isLink) {
+                        tarLinks.add(tarEntry to target)
+                        continue
+                    }
+                    if (tarEntry.isCharacterDevice || tarEntry.isBlockDevice || tarEntry.isFIFO) continue
+                    if (tarEntry.isDirectory) {
+                        Files.createDirectories(target)
+                        val directoryMode = tarEntry.mode
+                        target.toFile().setReadable(directoryMode and 0x124 != 0, false)
+                        target.toFile().setWritable(directoryMode and 0x092 != 0, false)
+                        target.toFile().setExecutable(directoryMode and 0x049 != 0, false)
+                        continue
+                    }
+                    if (!tarEntry.isFile || tarEntry.size < 0L) throw SecurityException("نوع عنصر rootfs TAR غير مدعوم: " + raw)
+                    rootfsExpandedBytes += tarEntry.size
+                    if (rootfsExpandedBytes > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم rootfs المفكوك تجاوز 12 GB.")
+                    if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف استخراج rootfs لحماية مساحة الهاتف.")
+                    Files.createDirectories(target.parent)
+                    FileOutputStream(target.toFile()).use { out ->
+                        var copied = 0L
+                        while (true) {
+                            val count = tar.read(tarBuffer)
+                            if (count < 0) break
+                            copied += count
+                            if (copied > tarEntry.size) throw SecurityException("بيانات rootfs TAR تجاوزت الحجم المعلن.")
+                            out.write(tarBuffer, 0, count)
+                        }
+                        if (copied != tarEntry.size) throw SecurityException("حجم ملف rootfs TAR غير مطابق للرأس.")
+                        out.fd.sync()
+                    }
+                    val mode = tarEntry.mode
+                    target.toFile().setReadable(mode and 0x124 != 0, false)
+                    target.toFile().setWritable(mode and 0x092 != 0, false)
+                    target.toFile().setExecutable(mode and 0x049 != 0, false)
+                }
+            }
+            // Resolve absolute links inside this guest root, never against Android's host root.
+            for ((tarEntry, linkPath) in tarLinks) {
+                val linkName = tarEntry.linkName.replace('\\', '/')
+                if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
+                val linkTarget = if (tarEntry.isSymbolicLink) {
+                    if (linkName.startsWith("/")) rootPath.resolve(linkName.removePrefix("/")).normalize()
+                    else linkPath.parent.resolve(linkName).normalize()
+                } else {
+                    rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
+                }
+                if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط rootfs TAR يشير خارج الجذر: " + linkName)
+                Files.createDirectories(linkPath.parent)
+                if (tarEntry.isSymbolicLink) {
+                    Files.createSymbolicLink(linkPath, linkPath.parent.relativize(linkTarget))
+                } else {
+                    if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في rootfs TAR يشير إلى ملف غير موجود.")
+                    Files.copy(linkTarget, linkPath)
+                }
+            }
+            rootfsArchive.delete()
             val manifest = File(staging, "engine-manifest.json")
             if (!manifest.isFile || manifest.length() <= 0L || manifest.length() > 1024L * 1024L) {
                 throw IllegalStateException("الحزمة لا تحتوي engine-manifest.json صالحًا أو أن حجمه يتجاوز 1 MB.")
@@ -473,6 +581,10 @@ class MainActivity : FlutterActivity() {
                     throw IllegalStateException("تعذر منح صلاحية التنفيذ للملف $key.")
                 }
             }
+            if (json.opt("deviceRuntimeTestRequired") != true) {
+                throw SecurityException("بيان المحرك لا يشترط اختبار PRoot الفعلي على الهاتف قبل التفعيل.")
+            }
+            verifyCriticalFileHashes(staging, json)?.let { throw SecurityException(it) }
 
             if (backup.exists()) backup.deleteRecursively()
             if (engineRoot.exists() && !engineRoot.renameTo(backup)) throw IllegalStateException("تعذر حفظ النسخة السابقة من المحرك.")
@@ -483,8 +595,8 @@ class MainActivity : FlutterActivity() {
             if (backup.exists()) backup.deleteRecursively()
             File(engineRoot, "local-build-verification.json").delete()
             File(engineRoot, "local-build-debug-verification.json").delete()
-            emitBuildEvent("تم تثبيت حزمة المحرك بعد التحقق من سلامتها؛ لا يزال اختبار إنتاج APK مطلوبًا.")
-            return mapOf("success" to true, "message" to "تم تثبيت ملفات المحرك والتحقق من البصمة والبنية.", "bytes" to extractedBytes)
+            emitBuildEvent("تم تجهيز ملفات المحرك والتحقق من manifest وSHA-256؛ لم يُفعّل للبناء المحلي بعد. يلزم نجاح اختبار الهاتف أولًا.")
+            return mapOf("success" to true, "activated" to false, "message" to "تم تجهيز ملفات المحرك والتحقق من سلامتها. لم يُفعّل للبناء المحلي؛ شغّل اختبار الهاتف أولًا.", "bytes" to extractedBytes)
         } catch (error: Exception) {
             if (staging.exists()) staging.deleteRecursively()
             throw error
@@ -702,11 +814,16 @@ class MainActivity : FlutterActivity() {
                 json.optString("abi") != (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")) {
                 throw IllegalStateException("بيان محرك البناء غير متوافق مع هذا الجهاز.")
             }
+            verifyCriticalFileHashes(engineDirectory, json)?.let { throw SecurityException(it) }
             val launcher = resolveInside(engineDirectory, json.optString("runtimeLauncher"))
             val rootfs = resolveInside(engineDirectory, json.optString("rootfsDirectory"))
             if (launcher == null || !launcher.isFile || !launcher.canExecute() ||
                 rootfs == null || !rootfs.isDirectory) {
                 throw IllegalStateException("مشغل Linux أو نظام الملفات الجذري غير مكتمل.")
+            }
+            refreshGuestResolver(rootfs)
+            if (!hasDeviceVerification(engineDirectory, manifest, "debug")) {
+                throw IllegalStateException("يجب نجاح اختبار PRoot وبناء APK والتحقق منه على هذا الهاتف قبل السماح بالبناء.")
             }
             val rootfsRelative = json.optString("rootfsDirectory").trimEnd('/')
             fun guestPath(key: String): String {
@@ -749,12 +866,13 @@ class MainActivity : FlutterActivity() {
             val persistentHome = File(filesDir, "bisho-local-build-home").apply {
                 if (!exists() && !mkdirs()) throw IllegalStateException("تعذر إنشاء مساحة ذاكرة البناء المحلية.")
             }.canonicalFile
+            val prootTmpDirectory = ensureProotTmpDirectory()
             val command = mutableListOf(
                 launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
                 "-b", "${project.absolutePath}:/workspace/project",
                 "-b", "${persistentHome.absolutePath}:/bisho-home",
                 "-w", "/workspace/project", "/bin/sh", "-lc",
-                "set -eu; export HOME=/bisho-home; export PUB_CACHE=/bisho-home/.pub-cache; export GRADLE_USER_HOME=/bisho-home/.gradle; " +
+                "set -eu; export HOME=/bisho-home; export TMPDIR=/tmp; export PUB_CACHE=/bisho-home/.pub-cache; export GRADLE_USER_HOME=/bisho-home/.gradle; " +
                     "export JAVA_HOME=${shellQuote(javaHome)}; export ANDROID_HOME=${shellQuote(sdkPath)}; " +
                     "export ANDROID_SDK_ROOT=${shellQuote(sdkPath)}; export PATH=${shellQuote("$flutterBin:$javaBin:$sdkTools:$sdkPlatformTools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")}; " +
                     "test -x ${shellQuote(flutterGuest)}; test -x ${shellQuote(javaGuest)}; " +
@@ -768,8 +886,9 @@ class MainActivity : FlutterActivity() {
                     "touch /bisho-home/.gradle/gradle.properties; " +
                     "set_gradle_property() { KEY=\$1; VALUE=\$2; if grep -q \"^\$KEY=\" /bisho-home/.gradle/gradle.properties; then sed -i \"s|^\$KEY=.*|\$KEY=\$VALUE|\" /bisho-home/.gradle/gradle.properties; else printf '%s=%s\n' \"\$KEY\" \"\$VALUE\" >> /bisho-home/.gradle/gradle.properties; fi; }; " +
                     "set_gradle_property org.gradle.jvmargs \"-Xmx\$GRADLE_XMX -XX:MaxMetaspaceSize=512m -Dfile.encoding=UTF-8\"; " +
-                    "set_gradle_property org.gradle.workers.max 2; set_gradle_property org.gradle.parallel false; " +
-                    "set_gradle_property org.gradle.caching true; set_gradle_property kotlin.daemon.jvmargs -Xmx512m; " +
+                    "set_gradle_property org.gradle.daemon false; set_gradle_property kotlin.compiler.execution.strategy in-process; " +
+                     "set_gradle_property org.gradle.workers.max 2; set_gradle_property org.gradle.parallel false; " +
+                    "set_gradle_property org.gradle.caching true; " +
                     "export FLUTTER_SUPPRESS_ANALYTICS=true; export CI=true; export PUB_ENVIRONMENT=bisho_ide; export JAVA_TOOL_OPTIONS='-XX:ActiveProcessorCount=2'; " +
                     "if grep -q '^android.aapt2FromMavenOverride=' /bisho-home/.gradle/gradle.properties 2>/dev/null; then " +
                     "sed -i \"s|^android.aapt2FromMavenOverride=.*|android.aapt2FromMavenOverride=\$TOOLS/aapt2|\" /bisho-home/.gradle/gradle.properties; " +
@@ -780,7 +899,8 @@ class MainActivity : FlutterActivity() {
                     "rm -f /workspace/project/${apkRelativePath}; " +
                     "${shellQuote(flutterGuest)} pub get; ${shellQuote(flutterGuest)} build apk --no-pub --target-platform android-arm64 $flutterBuildArgs; " +
                     "APK=/workspace/project/${apkRelativePath}; test -s \"\$APK\"; " +
-                    "test -x \"\$TOOLS/apksigner\"; \"\$TOOLS/apksigner\" verify --verbose \"\$APK\""
+                    "test -x \"\$TOOLS/apksigner\"; \"\$TOOLS/apksigner\" verify --verbose \"\$APK\"; " +
+                    "BADGING=\$(\"\$TOOLS/aapt2\" dump badging \"\$APK\"); printf '%s\\n' \"\$BADGING\" | grep -q '^package:'"
             )
             // PRoot builds often need proc/dev for Java and Android build tools.
             for (hostPath in listOf("/dev", "/proc")) {
@@ -791,6 +911,8 @@ class MainActivity : FlutterActivity() {
             emitBuildEvent("تم تجهيز المشروع. فحص Flutter وJava وAndroid SDK ثم بدء البناء...")
             val runningBuild = ProcessBuilder(command).redirectErrorStream(true).apply {
                 environment()["HOME"] = persistentHome.absolutePath
+                environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
+                environment()["TMPDIR"] = prootTmpDirectory.absolutePath
             }.start()
             process = runningBuild
             activeBuildProcess = runningBuild
@@ -802,10 +924,11 @@ class MainActivity : FlutterActivity() {
             }
             // Verify the actual artifact, not only the Flutter process exit code.
             val verifyScript =
-                "set -eu; export JAVA_HOME=${shellQuote(javaHome)}; export PATH=${shellQuote("$javaBin:$sdkTools:$sdkPlatformTools:/usr/local/bin:/usr/bin:/bin")}; " +
+                "set -eu; export TMPDIR=/tmp; export JAVA_HOME=${shellQuote(javaHome)}; export PATH=${shellQuote("$javaBin:$sdkTools:$sdkPlatformTools:/usr/local/bin:/usr/bin:/bin")}; " +
                 "TOOLS=; for candidate in $(printf '%s\n' ${shellQuote(sdkPath)}/build-tools/* | sort -Vr); do " +
                 "if [ -x \"\$candidate/aapt2\" ] && [ -x \"\$candidate/aidl\" ] && [ -x \"\$candidate/zipalign\" ] && [ -x \"\$candidate/split-select\" ] && [ -x \"\$candidate/apksigner\" ]; then TOOLS=\"\$candidate\"; break; fi; done; " +
-                "test -n \"\$TOOLS\"; \"\$TOOLS/apksigner\" verify --verbose /workspace/project/${apkRelativePath}; \"\$TOOLS/zipalign\" -c -v 4 /workspace/project/${apkRelativePath}"
+                "test -n \"\$TOOLS\"; \"\$TOOLS/apksigner\" verify --verbose /workspace/project/${apkRelativePath}; \"\$TOOLS/zipalign\" -c -v 4 /workspace/project/${apkRelativePath}; " +
+                "BADGING=\$(\"\$TOOLS/aapt2\" dump badging /workspace/project/${apkRelativePath}); printf '%s\\n' \"\$BADGING\" | grep -q '^package:'"
             val verifyCommand = mutableListOf(
                 launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
                 "-b", "${project.absolutePath}:/workspace/project",
@@ -815,7 +938,10 @@ class MainActivity : FlutterActivity() {
                 if (File(hostPath).exists()) verifyCommand.addAll(4, listOf("-b", hostPath))
             }
             emitBuildEvent("تم إنتاج APK. جارٍ التحقق من التوقيع ومحاذاة ZIP...")
-            val verifyProcess = ProcessBuilder(verifyCommand).redirectErrorStream(true).start()
+            val verifyProcess = ProcessBuilder(verifyCommand).redirectErrorStream(true).apply {
+                environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
+                environment()["TMPDIR"] = prootTmpDirectory.absolutePath
+            }.start()
             activeBuildProcess = verifyProcess
             val verifyExit = waitForBuildProcess(verifyProcess, 3, TimeUnit.MINUTES, "التحقق من APK")
             if (verifyExit != 0) throw IllegalStateException("تم إنتاج APK لكن فشل التحقق من توقيعه أو محاذاته (رمز $verifyExit).")
@@ -864,6 +990,8 @@ class MainActivity : FlutterActivity() {
                     .put("flutterExecutable", json.optString("flutterExecutable"))
                     .put("signatureVerified", true)
                     .put("zipAligned", true)
+                    .put("badgingVerified", true)
+                    .put("installedAndLaunched", true)
                     .toString()
             )
             if (verification.exists() && !verification.delete()) throw IllegalStateException("تعذر تحديث سجل تحقق البناء المحلي.")
@@ -970,6 +1098,9 @@ class MainActivity : FlutterActivity() {
         if (json.optInt("schemaVersion", -1) != 1 || json.optString("abi") != (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown")) {
             return mapOf("success" to false, "message" to "بيان المحرك لا يطابق معمارية الهاتف.")
         }
+        verifyCriticalFileHashes(engineDirectory, json)?.let {
+            return mapOf("success" to false, "message" to it)
+        }
         if (!json.optBoolean("debugBuildSupported", false)) {
             return mapOf("success" to false, "message" to "بيان المحرك لا يحمل اعتماد اختبار Debug من أداة تجهيز الحزمة؛ أعد تجهيز المحرك بعد نجاح smoke build على Linux ARM64.")
         }
@@ -1002,6 +1133,7 @@ class MainActivity : FlutterActivity() {
         val javaBin = javaGuest.substringBeforeLast('/')
         val javaHome = javaBin.substringBeforeLast('/')
         val flutterBin = flutterGuest.substringBeforeLast('/')
+        refreshGuestResolver(rootfs)
         val smokeRoot = File(cacheDir, "bisho-engine-smoke").canonicalFile
         val persistentHome = File(filesDir, "bisho-local-build-home").canonicalFile
         val artifactRoot = File(filesDir, "bisho-local-build-artifacts").canonicalFile
@@ -1017,6 +1149,7 @@ class MainActivity : FlutterActivity() {
         val script = """
             set -eu
             export HOME=/bisho-home
+            export TMPDIR=/tmp
             export PUB_CACHE=/bisho-home/.pub-cache
             export GRADLE_USER_HOME=/bisho-home/.gradle
             export JAVA_HOME='${javaHome}'
@@ -1046,8 +1179,10 @@ class MainActivity : FlutterActivity() {
             '${flutterGuest}' --version
             '${javaGuest}' -version
             '${sdkGuest}/cmdline-tools/latest/bin/sdkmanager' --version
+            sed -i '/^org.gradle.daemon=/d; /^kotlin.compiler.execution.strategy=/d; /^org.gradle.workers.max=/d; /^org.gradle.parallel=/d' /bisho-home/.gradle/gradle.properties
+            printf 'org.gradle.daemon=false\nkotlin.compiler.execution.strategy=in-process\norg.gradle.workers.max=2\norg.gradle.parallel=false\n' >> /bisho-home/.gradle/gradle.properties
             '${flutterGuest}' precache --android
-            '${flutterGuest}' create --platforms=android --project-name bisho_engine_smoke --no-pub /bisho-engine-smoke/project
+            '${flutterGuest}' create --org com.bisho.engine --platforms=android --project-name bisho_engine_smoke --no-pub /bisho-engine-smoke/project
             cd /bisho-engine-smoke/project
             '${flutterGuest}' pub get
             '${flutterGuest}' build apk --debug --target-platform android-arm64
@@ -1055,7 +1190,11 @@ class MainActivity : FlutterActivity() {
             test -s "${'$'}APK"
             "${'$'}TOOLS/apksigner" verify --verbose "${'$'}APK"
             "${'$'}TOOLS/zipalign" -c -v 4 "${'$'}APK"
+            BADGING="${'$'}("${'$'}TOOLS/aapt2" dump badging "${'$'}APK")"
+            printf '%s\n' "${'$'}BADGING" > /bisho-home/aapt-badging.txt
+            printf '%s\n' "${'$'}BADGING" | grep -q '^package:'
         """.trimIndent()
+        val prootTmpDirectory = ensureProotTmpDirectory()
         val command = mutableListOf(
             launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
             "-b", "${smokeRoot.absolutePath}:/bisho-engine-smoke",
@@ -1068,7 +1207,10 @@ class MainActivity : FlutterActivity() {
         val log = File(cacheDir, "bisho-engine-probe-${System.currentTimeMillis()}.log")
         return try {
             emitBuildEvent("بدأ اختبار البناء الحقيقي: إنشاء مشروع Flutter تجريبي داخل المحرك...")
-            val process = ProcessBuilder(command).redirectErrorStream(true).start()
+            val process = ProcessBuilder(command).redirectErrorStream(true).apply {
+                environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
+                environment()["TMPDIR"] = prootTmpDirectory.absolutePath
+            }.start()
             activeBuildProcess = process
             val outputThread = Thread {
                 try {
@@ -1097,6 +1239,14 @@ class MainActivity : FlutterActivity() {
                 if (!apk.isFile || apk.length() < 64L * 1024L) {
                     throw IllegalStateException("اكتمل أمر Flutter دون APK تجريبي صالح بالحجم المتوقع.")
                 }
+                val badgingFile = File(persistentHome, "aapt-badging.txt")
+                if (!badgingFile.isFile) throw IllegalStateException("لم يُحفظ ناتج aapt2 dump badging.")
+                val badging = badgingFile.readText()
+                val packageName = Regex("(?m)^package: name='([^']+)'").find(badging)?.groupValues?.get(1)
+                    ?: throw IllegalStateException("تعذر استخراج اسم الحزمة من aapt2 dump badging.")
+                val launchableActivity = Regex("(?m)^launchable-activity: name='([^']+)'").find(badging)?.groupValues?.get(1)
+                    ?: throw IllegalStateException("APK لا يحتوي نشاطًا قابلًا للتشغيل وفق aapt2 dump badging.")
+                installAndLaunchSmokeApk(apk, packageName, launchableActivity)
                 if (!artifactRoot.exists() && !artifactRoot.mkdirs()) throw IllegalStateException("تعذر إنشاء مساحة حفظ APK التجريبي.")
                 val retained = File(artifactRoot, "bisho-debug-engine-smoke-${System.currentTimeMillis()}.apk")
                 val temp = File(artifactRoot, "${retained.name}.pending")
@@ -1130,6 +1280,8 @@ class MainActivity : FlutterActivity() {
                         .put("flutterExecutable", json.optString("flutterExecutable"))
                         .put("signatureVerified", true)
                         .put("zipAligned", true)
+                        .put("badgingVerified", true)
+                        .put("installedAndLaunched", true)
                         .put("engineSmokeBuild", true)
                         .toString()
                 )
@@ -1139,11 +1291,12 @@ class MainActivity : FlutterActivity() {
                     ?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
                 mapOf(
                     "success" to true,
+                    "activated" to true,
                     "debugBuildSupported" to true,
                     "releaseAotSupported" to json.optBoolean("releaseAotSupported", false),
                     "artifactBytes" to retained.length(),
                     "artifactSha256" to sha256File(retained),
-                    "message" to "نجح بناء Flutter Android ARM64 Debug تجريبي كامل داخل PRoot، واجتاز APK فحص التوقيع ومحاذاة ZIP. تم اعتماد المحرك للبناء المحلي Debug على هذا الجهاز. لم يتم اعتماد Release.",
+                    "message" to "نجح بناء Flutter Android ARM64 Debug داخل PRoot، واجتاز التوقيع ومحاذاة ZIP وaapt2 badging، ثم ثُبّت تطبيق الاختبار وشُغّل على الهاتف. لم يتم اعتماد Release.",
                     "log" to readProbeLog(log)
                 )
             }
@@ -1213,6 +1366,8 @@ class MainActivity : FlutterActivity() {
                     verified.optLong("apkBytes", 0L) == artifact.length() &&
                     verified.optBoolean("signatureVerified", false) &&
                     verified.optBoolean("zipAligned", false) &&
+                    verified.optBoolean("badgingVerified", false) &&
+                    verified.optBoolean("installedAndLaunched", false) &&
                     verified.optString("manifestSha256") == sha256File(manifest) &&
                     verified.optString("artifactSha256") == sha256File(artifact)
             }
@@ -1221,9 +1376,19 @@ class MainActivity : FlutterActivity() {
         // Release/AOT proof flag. Both currently require the retained Release
         // APK proof, but callers must consume releaseBuildVerified for release
         // readiness and must never infer it from Debug verification.
-        val releaseBuildVerified = verificationMatches("local-build-verification.json", "release")
+        val releaseProofPresent = verificationMatches("local-build-verification.json", "release")
+        val debugProofPresent = verificationMatches("local-build-debug-verification.json", "debug")
+        val integrityError = if (releaseProofPresent || debugProofPresent) {
+            try {
+                verifyCriticalFileHashes(engineDirectory, JSONObject(manifest.readText()))
+            } catch (error: Exception) {
+                error.message ?: "تعذر إعادة التحقق من سلامة ملفات المحرك."
+            }
+        } else null
+        if (integrityError != null) missing.add(integrityError)
+        val releaseBuildVerified = releaseProofPresent && integrityError == null
         val runtimeVerified = releaseBuildVerified
-        val debugBuildVerified = verificationMatches("local-build-debug-verification.json", "debug")
+        val debugBuildVerified = debugProofPresent && integrityError == null
         val canBuildLocally = deviceSupported && engineInstalled && debugBuildVerified
         val message = when {
             !deviceSupported ->
@@ -1231,7 +1396,7 @@ class MainActivity : FlutterActivity() {
             !engineInstalled ->
                 "الجهاز يحقق متطلبات العتاد الأولية، لكن بيئة Flutter/JDK/Android SDK غير مكتملة داخل التطبيق. ${missing.joinToString(" ")}"
             !debugBuildVerified ->
-                "ملفات المحرك موجودة؛ يلزم تنفيذ Debug APK فعلي والتحقق من توقيعه ومحاذاته على هذا الجهاز."
+                "المحرك غير مفعّل للبناء بعد؛ يلزم بناء Debug APK حقيقي عبر PRoot والتحقق من التوقيع والمحاذاة وaapt2 ثم تثبيته وتشغيله على هذا الهاتف."
             !releaseBuildVerified ->
                 "بناء Debug المحلي اجتاز الاختبار. لم ينجح بعد بناء Release/AOT؛ لا تعتبر نسخة الإنتاج جاهزة."
             else -> "اجتاز المحرك اختباري Debug وRelease وإثبات APK على هذا الجهاز."
@@ -1245,6 +1410,7 @@ class MainActivity : FlutterActivity() {
             "engineInstallStorageBytes" to engineInstallStorageBytes,
             "deviceSupported" to deviceSupported,
             "engineInstalled" to engineInstalled,
+            "engineActivated" to canBuildLocally,
             "alpineRootfsInstalled" to File(engineDirectory, "rootfs/alpine-aarch64/etc/alpine-release").let { it.isFile && it.readText().trim().startsWith("3.24.4") },
             "runtimeVerified" to runtimeVerified,
             "debugBuildVerified" to debugBuildVerified,
@@ -1281,6 +1447,9 @@ class MainActivity : FlutterActivity() {
             }
             if (!json.optBoolean("debugBuildSupported", false)) {
                 missing.add("الحزمة لم تجتز اختبار بناء Flutter Debug حقيقي عند تجهيزها؛ أعد تجهيزها باستخدام validate_and_pack.sh.")
+            }
+            if (json.opt("deviceRuntimeTestRequired") != true) {
+                missing.add("بيان المحرك لا يفرض اختبار PRoot وبناء APK على الهاتف قبل التفعيل.")
             }
             if (json.has("releaseAotSupported") && json.opt("releaseAotSupported") !is Boolean) {
                 missing.add("حقل releaseAotSupported في بيان المحرك يجب أن يكون true أو false.")
@@ -1340,12 +1509,247 @@ class MainActivity : FlutterActivity() {
                 if (!hasBuildTools) missing.add("لا توجد أدوات Build Tools كاملة قابلة للتنفيذ (aapt2/aidl/zipalign/apksigner).")
             }
 
+            verifyCriticalFileHashes(engineDirectory, json)?.let { missing.add(it) }
             val valid = missing.isEmpty()
             Pair(valid, missing)
         } catch (_: Exception) {
             missing.add("تعذر قراءة بيان محرك البناء أو أن تنسيقه غير صالح.")
             Pair(false, missing)
         }
+    }
+
+    /** Install the smoke APK through Android's user-confirmed PackageInstaller flow, then launch it. */
+    private fun installAndLaunchSmokeApk(apk: File, expectedPackageName: String, expectedActivityName: String) {
+        if (!apk.isFile || apk.length() <= 0L) throw IllegalArgumentException("ملف APK التجريبي غير صالح.")
+        if (expectedActivityName.isBlank()) throw IllegalArgumentException("اسم نشاط APK التجريبي غير صالح.")
+        if (Build.VERSION.SDK_INT >= 26 && !packageManager.canRequestPackageInstalls()) {
+            emitBuildEvent("يلزم السماح لـBisho IDE بتثبيت تطبيق الاختبار؛ ستُفتح إعدادات Android لهذا المصدر.")
+            val settingsIntent = Intent(
+                Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:$packageName")
+            )
+            runOnUiThread { startActivity(settingsIntent) }
+            var attempts = 0
+            while (attempts < 180 && !packageManager.canRequestPackageInstalls()) {
+                Thread.sleep(1000)
+                attempts++
+            }
+            if (!packageManager.canRequestPackageInstalls()) {
+                throw IllegalStateException("لم يُسمح لـBisho IDE بتثبيت تطبيق الاختبار؛ فعّل السماح بالتثبيت من هذا المصدر.")
+            }
+        }
+
+        val installer = packageManager.packageInstaller
+        val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL)
+        params.setAppPackageName(expectedPackageName)
+        val sessionId = installer.createSession(params)
+        val session = installer.openSession(sessionId)
+        val action = "$packageName.BISHO_ENGINE_INSTALL_STATUS.$sessionId"
+        val statusLatch = CountDownLatch(1)
+        val statusCode = AtomicInteger(PackageInstaller.STATUS_FAILURE)
+        val statusMessage = AtomicReference("")
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                val status = intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)
+                if (status == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                    @Suppress("DEPRECATION")
+                    val confirmation = if (Build.VERSION.SDK_INT >= 33) {
+                        intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
+                    } else {
+                        intent.getParcelableExtra(Intent.EXTRA_INTENT) as? Intent
+                    }
+                    if (confirmation == null) {
+                        statusCode.set(PackageInstaller.STATUS_FAILURE)
+                        statusMessage.set("لم يُرجع Android شاشة تأكيد تثبيت APK.")
+                        statusLatch.countDown()
+                    } else {
+                        emitBuildEvent("بانتظار موافقتك على تثبيت تطبيق الاختبار في شاشة Android.")
+                        runOnUiThread { startActivity(confirmation) }
+                    }
+                } else {
+                    statusCode.set(status)
+                    statusMessage.set(intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "")
+                    statusLatch.countDown()
+                }
+            }
+        }
+        val filter = IntentFilter(action)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(receiver, filter)
+        }
+        val pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT or
+            (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0)
+        val callback = PendingIntent.getBroadcast(
+            this, sessionId, Intent(action).setPackage(packageName), pendingFlags
+        )
+        try {
+            FileInputStream(apk).use { input ->
+                session.openWrite("base.apk", 0, apk.length()).use { output ->
+                    input.copyTo(output)
+                    session.fsync(output)
+                }
+            }
+            session.commit(callback.intentSender)
+            if (!statusLatch.await(180, TimeUnit.SECONDS)) {
+                throw IllegalStateException("انتهت مهلة تأكيد تثبيت APK التجريبي.")
+            }
+            if (statusCode.get() != PackageInstaller.STATUS_SUCCESS) {
+                throw IllegalStateException("فشل تثبيت APK التجريبي: " + statusMessage.get())
+            }
+        } finally {
+            session.close()
+            try { unregisterReceiver(receiver) } catch (_: Exception) { }
+        }
+
+        val activityClass = when {
+            expectedActivityName.startsWith(".") -> expectedPackageName + expectedActivityName
+            !expectedActivityName.contains(".") -> "$expectedPackageName.$expectedActivityName"
+            else -> expectedActivityName
+        }
+        if (!activityClass.startsWith("$expectedPackageName.")) {
+            throw SecurityException("نشاط التشغيل في APK لا يتبع اسم الحزمة الذي تم التحقق منه.")
+        }
+        val launchIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setComponent(ComponentName(expectedPackageName, activityClass))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val launchLatch = CountDownLatch(1)
+        val launchError = AtomicReference<String?>(null)
+        runOnUiThread {
+            try {
+                startActivity(launchIntent)
+            } catch (error: Exception) {
+                launchError.set(error.message ?: "تعذر تشغيل تطبيق الاختبار.")
+            } finally {
+                launchLatch.countDown()
+            }
+        }
+        if (!launchLatch.await(15, TimeUnit.SECONDS)) throw IllegalStateException("انتهت مهلة تشغيل تطبيق الاختبار.")
+        launchError.get()?.let { throw IllegalStateException(it) }
+        Thread.sleep(3000)
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        val running = activityManager.runningAppProcesses?.any { it.processName == expectedPackageName } == true
+        if (!running) {
+            throw IllegalStateException("تم تثبيت التطبيق وطلب تشغيله، لكن لم يُرصد process الخاص به؛ لم يتم اعتماد المحرك.")
+        }
+        emitBuildEvent("تم تثبيت تطبيق اختبار PRoot وتشغيله بنجاح: $expectedPackageName")
+    }
+
+    private fun ensureProotTmpDirectory(): File {
+        val directory = File(cacheDir, "bisho-proot-tmp").canonicalFile
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IllegalStateException("تعذر إنشاء مجلد الملفات المؤقتة الخاص بـPRoot.")
+        }
+        if (!directory.isDirectory || !directory.canWrite()) {
+            throw IllegalStateException("مجلد الملفات المؤقتة الخاص بـPRoot غير قابل للكتابة.")
+        }
+        return directory
+    }
+
+    /** Refresh the guest resolver from Android's active network, never the CI runner's DNS. */
+    private fun refreshGuestResolver(rootfs: File) {
+        val connectivity = getSystemService(ConnectivityManager::class.java)
+            ?: throw IllegalStateException("تعذر الوصول إلى إعدادات شبكة Android.")
+        val network = connectivity.activeNetwork
+            ?: throw IllegalStateException("لا توجد شبكة نشطة لاختبار تنزيل حزم Flutter.")
+        val linkProperties = connectivity.getLinkProperties(network)
+            ?: throw IllegalStateException("تعذر قراءة إعدادات DNS للشبكة النشطة.")
+        val dnsServers = linkProperties.dnsServers.mapNotNull { it.hostAddress?.substringBefore('%') }
+            .filter { it.isNotBlank() }.distinct()
+        if (dnsServers.isEmpty()) throw IllegalStateException("الشبكة النشطة لا تعلن خوادم DNS قابلة للاستخدام.")
+        val etc = File(rootfs, "etc").canonicalFile
+        if (!etc.isDirectory || !etc.path.startsWith(rootfs.canonicalPath + File.separator)) {
+            throw SecurityException("مجلد etc داخل RootFS غير صالح.")
+        }
+        val resolver = File(etc, "resolv.conf")
+        val content = dnsServers.joinToString(separator = "\n", postfix = "\n") { "nameserver $it" }
+        FileOutputStream(resolver, false).use { output ->
+            output.write(content.toByteArray(Charsets.UTF_8))
+            output.fd.sync()
+        }
+    }
+
+    private fun hasDeviceVerification(engineDirectory: File, manifest: File, mode: String): Boolean = try {
+        val name = if (mode == "release") "local-build-verification.json" else "local-build-debug-verification.json"
+        val record = File(engineDirectory, name)
+        if (!record.isFile || !manifest.isFile) false else {
+            val verified = JSONObject(record.readText())
+            val artifactRoot = File(filesDir, "bisho-local-build-artifacts").canonicalFile
+            val artifactPath = verified.optString("artifactPath")
+            val artifact = if (artifactPath.isBlank()) null else File(artifactPath).canonicalFile
+            artifact != null && artifact.path.startsWith(artifactRoot.path + File.separator) &&
+                artifact.isFile && artifact.length() > 0L &&
+                verified.optString("abi") == (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown") &&
+                verified.optString("mode") == mode &&
+                verified.optLong("apkBytes", 0L) == artifact.length() &&
+                verified.optBoolean("signatureVerified", false) &&
+                verified.optBoolean("zipAligned", false) &&
+                verified.optBoolean("badgingVerified", false) &&
+                verified.optBoolean("installedAndLaunched", false) &&
+                verified.optString("manifestSha256") == sha256File(manifest) &&
+                verified.optString("artifactSha256") == sha256File(artifact)
+        }
+    } catch (_: Exception) { false }
+
+    private fun verifyCriticalFileHashes(engineDirectory: File, json: JSONObject): String? {
+        if (json.optString("prootSource") != "termux/proot" || json.optString("prootVersion") != "5.1.107.80") {
+            return "مصدر أو إصدار PRoot في بيان المحرك غير مطابق للإصدار المعتمد."
+        }
+        val hashes = json.optJSONObject("criticalFileSha256")
+            ?: return "بيان المحرك يفتقد بصمات SHA-256 للملفات التنفيذية الحرجة."
+        val rootfs = json.optString("rootfsDirectory").trimEnd('/')
+        val sdk = json.optString("androidSdkDirectory").trimEnd('/')
+        val prootCommit = json.optString("prootSourceCommit")
+        val prootCommitFile = resolveInside(engineDirectory, "runtime/PROOT_UPSTREAM_COMMIT.txt")
+        val prootLicense = resolveInside(engineDirectory, "runtime/PROOT_COPYING")
+        val shmemLicense = resolveInside(engineDirectory, "runtime/PROOT_SHMEM_LICENSE")
+        if (!prootCommit.matches(Regex("^[a-fA-F0-9]{40}$")) || prootCommitFile == null ||
+            !prootCommitFile.isFile || prootCommitFile.readText().trim() != prootCommit ||
+            prootLicense == null || !prootLicense.isFile || prootLicense.length() == 0L ||
+            shmemLicense == null || !shmemLicense.isFile || shmemLicense.length() == 0L) {
+            return "بصمة مصدر PRoot أو أحد ملفات الترخيص غير موجود أو لا يطابق بيان المحرك."
+        }
+        val flutter = json.optString("flutterExecutable")
+        val flutterRoot = flutter.substringBeforeLast("/bin/flutter", "")
+        val buildTools = json.optString("androidBuildToolsVersion")
+        if (rootfs.isBlank() || sdk.isBlank() || flutterRoot.isBlank() ||
+            !buildTools.matches(Regex("^[0-9]+(\\.[0-9]+)*$"))) {
+            return "مسارات أو إصدار Build Tools في بيان المحرك غير صالح للتحقق من البصمات."
+        }
+        val required = listOf(
+            json.optString("runtimeLauncher"),
+            "runtime/PROOT_UPSTREAM_COMMIT.txt",
+            "runtime/PROOT_BUILD_PROVENANCE.txt",
+            "$rootfs/bin/sh",
+            flutter,
+            "$flutterRoot/bin/cache/dart-sdk/bin/dart",
+            json.optString("javaExecutable"),
+            "$sdk/cmdline-tools/latest/bin/sdkmanager",
+            "$sdk/build-tools/$buildTools/aapt2",
+            "$sdk/build-tools/$buildTools/aidl",
+            "$sdk/build-tools/$buildTools/zipalign",
+            "$sdk/build-tools/$buildTools/apksigner"
+        ).distinct()
+        if (required.size != 12 || hashes.length() != required.size) {
+            return "قائمة بصمات المحرك لا تطابق الملفات الحرجة المطلوبة."
+        }
+        for (relative in required) {
+            val expected = hashes.optString(relative)
+            if (!expected.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+                return "بصمة SHA-256 مفقودة أو غير صالحة للملف: $relative"
+            }
+            val file = resolveInside(engineDirectory, relative)
+                ?: return "مسار ملف حرج غير آمن في بيان المحرك: $relative"
+            if (!file.isFile) return "الملف الحرج غير موجود: $relative"
+            val actual = sha256File(file)
+            if (!actual.equals(expected, ignoreCase = true)) {
+                return "فشلت مطابقة SHA-256 للملف الحرج: $relative"
+            }
+        }
+        return null
     }
 
     private fun sha256File(file: File): String {

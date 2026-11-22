@@ -22,8 +22,64 @@ EOF
 source_dir=$(realpath "$1")
 output_zip=$(realpath -m "$2")
 rootfs="$source_dir/rootfs"
+smoke_dir=""
+stage=""
+smoke_mounted=false
+
 [[ -x "$rootfs/bin/sh" ]] || { echo "guest rootfs shell is missing" >&2; exit 2; }
-guest_exec() { chroot "$rootfs" /bin/sh -lc "$1"; }
+guest_exec() { chroot "$rootfs" /usr/bin/env JAVA_HOME=/usr/lib/jvm/java-17 PATH=/usr/lib/jvm/java-17/bin:/usr/bin:/bin /bin/sh -lc "$1"; }
+
+stop_guest_processes() {
+  local proc_dir target pid attempt signal
+  local -a pids=()
+  for attempt in 1 2; do
+    pids=()
+    for proc_dir in /proc/[0-9]*; do
+      target=$(readlink -f "$proc_dir/root" 2>/dev/null || true)
+      [[ "$target" == "$rootfs" ]] && pids+=("${proc_dir##*/}")
+    done
+    [[ ${#pids[@]} -eq 0 ]] && return 0
+    signal=TERM
+    [[ "$attempt" == 1 ]] || signal=KILL
+    for pid in "${pids[@]}"; do kill -"$signal" "$pid" 2>/dev/null || true; done
+    sleep 2
+  done
+  for proc_dir in /proc/[0-9]*; do
+    target=$(readlink -f "$proc_dir/root" 2>/dev/null || true)
+    if [[ "$target" == "$rootfs" ]]; then
+      echo "ERROR: guest process ${proc_dir##*/} remains after TERM/KILL; refusing to treat cleanup as successful." >&2
+      return 1
+    fi
+  done
+  return 0
+}
+
+umount_checked() {
+  local target=$1
+  mountpoint -q "$target" || return 0
+  if ! umount "$target"; then
+    echo "ERROR: cannot unmount $target; a guest process may still be using it." >&2
+    return 1
+  fi
+}
+
+cleanup() {
+  local status=$?
+  trap - EXIT
+  set +e
+  stop_guest_processes || { echo "ERROR: guest processes remain during cleanup." >&2; [[ $status -ne 0 ]] || status=1; }
+  if [[ -n "$rootfs" ]]; then
+    umount_checked "$rootfs/tmp/bisho-engine-smoke" || { [[ $status -ne 0 ]] || status=1; }
+    umount_checked "$rootfs/proc" || { [[ $status -ne 0 ]] || status=1; }
+    umount_checked "$rootfs/dev" || { [[ $status -ne 0 ]] || status=1; }
+  fi
+  [[ -z "$stage" ]] || rm -rf "$stage"
+  if [[ -n "$smoke_dir" ]] && ! mountpoint -q "$rootfs/tmp/bisho-engine-smoke"; then
+    rm -rf "$smoke_dir"
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
 [[ -d "$source_dir" ]] || { echo "runtime directory not found" >&2; exit 2; }
 [[ "$(uname -m)" == aarch64 || "$(uname -m)" == arm64 ]] || {
   echo "must run on Linux ARM64; host is $(uname -m)" >&2; exit 2;
@@ -36,6 +92,10 @@ command -v zip >/dev/null || { echo "the 'zip' utility is required to create the
 
 required=(
   runtime/proot
+  runtime/PROOT_BUILD_PROVENANCE.txt
+  runtime/PROOT_UPSTREAM_COMMIT.txt
+  runtime/PROOT_COPYING
+  runtime/PROOT_SHMEM_LICENSE
   rootfs/bin/sh
   rootfs/opt/flutter/bin/flutter
   rootfs/usr/lib/jvm/java-17/bin/java
@@ -94,27 +154,30 @@ done
 
 # Do not package a merely extractable runtime: build a fresh Flutter app in
 # the guest and verify its APK before accepting the Debug toolchain.
+for mount_name in dev proc; do
+  mountpoint -q "$rootfs/$mount_name" || {
+    echo "required guest mount is missing: $rootfs/$mount_name" >&2; exit 2;
+  }
+done
 smoke_dir=$(mktemp -d)
-stage=""
-smoke_mounted=false
-trap '[[ "$smoke_mounted" != true ]] || umount "$rootfs/tmp/bisho-engine-smoke"; [[ -z "$stage" ]] || rm -rf "$stage"; rm -rf "$smoke_dir"' EXIT
 mkdir -p "$source_dir/rootfs/tmp/bisho-engine-smoke" "$smoke_dir/project" "$smoke_dir/home" "$smoke_dir/pub-cache" "$smoke_dir/gradle"
-smoke_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; export FLUTTER_SUPPRESS_ANALYTICS=true; printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/$selected_build_tools/aapt2\n' > /tmp/bisho-engine-smoke/gradle/gradle.properties; /opt/flutter/bin/flutter precache --android; /opt/flutter/bin/flutter create --platforms=android --project-name bisho_engine_smoke /tmp/bisho-engine-smoke/project; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter pub get; /opt/flutter/bin/flutter build apk --debug --target-platform android-arm64; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose build/app/outputs/flutter-apk/app-debug.apk; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 build/app/outputs/flutter-apk/app-debug.apk"
-echo "Running real ARM64 Flutter Debug smoke build (up to 60 minutes)..."
+smoke_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export GRADLE_OPTS=-Dorg.gradle.daemon=false; export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; export FLUTTER_SUPPRESS_ANALYTICS=true; printf 'android.aapt2FromMavenOverride=/opt/android-sdk/build-tools/$selected_build_tools/aapt2\\norg.gradle.daemon=false\\nkotlin.compiler.execution.strategy=in-process\\norg.gradle.workers.max=2\\norg.gradle.parallel=false\\n' > /tmp/bisho-engine-smoke/gradle/gradle.properties; /opt/flutter/bin/flutter precache --android; /opt/flutter/bin/flutter create --platforms=android --project-name bisho_engine_smoke /tmp/bisho-engine-smoke/project; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter pub get; /opt/flutter/bin/flutter build apk --debug --target-platform android-arm64; APK=build/app/outputs/flutter-apk/app-debug.apk; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose \$APK; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 \$APK; /opt/android-sdk/build-tools/$selected_build_tools/aapt2 dump badging \$APK | grep -q '^package:'"
+echo "Running native Linux ARM64 chroot Debug smoke build (up to 60 minutes); this does not certify Android PRoot..."
+mkdir -p "$rootfs/tmp/bisho-engine-smoke"
 mount --bind "$smoke_dir" "$rootfs/tmp/bisho-engine-smoke"
 smoke_mounted=true
 timeout 60m chroot "$rootfs" /bin/sh -lc "$smoke_script"
 [[ -s "$smoke_dir/project/build/app/outputs/flutter-apk/app-debug.apk" ]] || {
   echo "Debug smoke build did not produce a non-empty APK" >&2; exit 5;
 }
-echo "Debug smoke build, APK signature and ZIP alignment: PASS"
+echo "Debug smoke build, APK signature, ZIP alignment and badging: PASS"
 
 # Release is accepted only if the exact ARM64 Android AOT host artifact works
 # in a full Release build, not merely because a file with that name exists.
 aot="$source_dir/rootfs/opt/flutter/bin/cache/artifacts/engine/android-arm64-release/linux-arm64/gen_snapshot"
 release_supported=false
 if [[ -x "$aot" ]]; then
-  release_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter build apk --release --target-platform android-arm64; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose build/app/outputs/flutter-apk/app-release.apk; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 build/app/outputs/flutter-apk/app-release.apk"
+  release_script="set -eu; export HOME=/tmp/bisho-engine-smoke/home; export PUB_CACHE=/tmp/bisho-engine-smoke/pub-cache; export GRADLE_USER_HOME=/tmp/bisho-engine-smoke/gradle; export JAVA_HOME=/usr/lib/jvm/java-17; export ANDROID_HOME=/opt/android-sdk; export ANDROID_SDK_ROOT=/opt/android-sdk; export GRADLE_OPTS=-Dorg.gradle.daemon=false; export JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2; export PATH=/opt/flutter/bin:/usr/lib/jvm/java-17/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/bin:/bin; cd /tmp/bisho-engine-smoke/project; /opt/flutter/bin/flutter build apk --release --target-platform android-arm64; /opt/android-sdk/build-tools/$selected_build_tools/apksigner verify --verbose build/app/outputs/flutter-apk/app-release.apk; /opt/android-sdk/build-tools/$selected_build_tools/zipalign -c -v 4 build/app/outputs/flutter-apk/app-release.apk; /opt/android-sdk/build-tools/$selected_build_tools/aapt2 dump badging build/app/outputs/flutter-apk/app-release.apk | grep -q '^package:'"
   if timeout 60m chroot "$rootfs" /bin/sh -lc "$release_script"; then
     [[ -s "$smoke_dir/project/build/app/outputs/flutter-apk/app-release.apk" ]] && release_supported=true
   fi
@@ -125,28 +188,102 @@ else
   echo "WARNING: Release/AOT is not certified by this engine bundle; Debug remains available."
 fi
 
-umount "$rootfs/tmp/bisho-engine-smoke"
+stop_guest_processes
+umount_checked "$rootfs/tmp/bisho-engine-smoke"
 smoke_mounted=false
-umount "$rootfs/proc"
-umount "$rootfs/dev"
+umount_checked "$rootfs/proc"
+umount_checked "$rootfs/dev"
 
+# Never ship the runner's resolver address. Android writes current DNS servers
+# from ConnectivityManager before each PRoot invocation.
+rm -f "$rootfs/etc/resolv.conf"
+printf '# Generated from Android LinkProperties at runtime by Bisho IDE.\n' > "$rootfs/etc/resolv.conf"
+
+# Virtual mountpoints must be empty in the portable rootfs archive.
+# Clean only real guest directories after all chroot processes have stopped.
+# Normalize the guest runtime directory without dereferencing it.
+# Keep /var/run -> /run as a guest symlink in the TAR archive.
+var_dir="$rootfs/var"
+var_run="$var_dir/run"
+[[ -d "$var_dir" && ! -L "$var_dir" ]] || { echo "guest /var must be a real directory" >&2; exit 2; }
+if [[ -e "$var_run" && ! -L "$var_run" ]]; then rm -rf -- "$var_run"; fi
+if [[ ! -L "$var_run" ]]; then ln -s /run "$var_run"; fi
+[[ "$(readlink "$var_run")" == "/run" ]] || { echo "failed to normalize guest /var/run -> /run" >&2; exit 2; }
+# Preserve guest symlinks; Android extracts the TAR with a path-confined symlink-aware extractor.
+# Never dereference absolute guest links on the runner host.
 stage=$(mktemp -d)
-mkdir -p "$stage/runtime" "$stage/rootfs"
-# Dereference symlinks: ZIP extraction on Android must not depend on symlink metadata.
-cp -aL "$source_dir/runtime/." "$stage/runtime/"
-cp -aL "$source_dir/rootfs/." "$stage/rootfs/"
+mkdir -p "$stage/runtime"
+cp -a "$source_dir/runtime/." "$stage/runtime/"
+write_rootfs_manifest() {
+  local tree=$1 output=$2
+  (
+    cd "$tree"
+    find . -mindepth 1 -printf '%y %m %p %l\n' | LC_ALL=C sort
+    find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
+  ) > "$output"
+}
+write_rootfs_manifest "$rootfs" "$stage/rootfs-manifest.before"
+tar --numeric-owner --xattrs --acls --sort=name --mtime='@0' --owner=0 --group=0 --use-compress-program='gzip -n' -C "$rootfs" -cpf "$stage/rootfs.tar.gz" .
+tar -tzf "$stage/rootfs.tar.gz" >/dev/null
+mkdir -p "$stage/rootfs"
+tar --numeric-owner --xattrs --acls -xzf "$stage/rootfs.tar.gz" -C "$stage/rootfs"
+write_rootfs_manifest "$stage/rootfs" "$stage/rootfs-manifest.after"
+cmp -s "$stage/rootfs-manifest.before" "$stage/rootfs-manifest.after" || {
+  diff -u "$stage/rootfs-manifest.before" "$stage/rootfs-manifest.after" || true
+  echo "ERROR: rootfs TAR roundtrip changed file hashes, modes, entry types or symlink targets." >&2
+  exit 5
+}
+cp "$stage/rootfs-manifest.after" "$stage/rootfs-manifest.txt"
+echo "Rootfs TAR roundtrip manifest: PASS"
+sha256_of() { sha256sum "$1" | awk '{print $1}'; }
+PROOT_SHA=$(sha256_of "$stage/runtime/proot")
+PROOT_SOURCE_COMMIT=$(cat "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
+[[ "$PROOT_SOURCE_COMMIT" == "cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2" ]] || { echo "PRoot source is not the pinned Termux v5.1.107.80 commit." >&2; exit 4; }
+grep -Fq "Source: https://github.com/termux/proot" "$stage/runtime/PROOT_BUILD_PROVENANCE.txt"
+grep -Fq "Tag: v5.1.107.80" "$stage/runtime/PROOT_BUILD_PROVENANCE.txt"
+PROOT_COMMIT_SHA=$(sha256_of "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
+PROOT_PROVENANCE_SHA=$(sha256_of "$stage/runtime/PROOT_BUILD_PROVENANCE.txt")
+SHELL_SHA=$(sha256_of "$stage/rootfs/bin/sh")
+FLUTTER_SHA=$(sha256_of "$stage/rootfs/opt/flutter/bin/flutter")
+DART_SHA=$(sha256_of "$stage/rootfs/opt/flutter/bin/cache/dart-sdk/bin/dart")
+JAVA_SHA=$(sha256_of "$stage/rootfs/usr/lib/jvm/java-17/bin/java")
+SDKMANAGER_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager")
+AAPT2_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/build-tools/$selected_build_tools/aapt2")
+AIDL_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/build-tools/$selected_build_tools/aidl")
+ZIPALIGN_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/build-tools/$selected_build_tools/zipalign")
+APKSIGNER_SHA=$(sha256_of "$stage/rootfs/opt/android-sdk/build-tools/$selected_build_tools/apksigner")
 cat > "$stage/engine-manifest.json" <<EOF
 {
   "schemaVersion": 1,
   "abi": "arm64-v8a",
   "runtimeLauncher": "runtime/proot",
+  "prootSource": "termux/proot",
+  "prootVersion": "5.1.107.80",
+  "prootSourceCommit": "$PROOT_SOURCE_COMMIT",
   "rootfsDirectory": "rootfs",
+  "rootfsArchive": "rootfs.tar.gz",
+  "rootfsArchiveFormat": "tar.gz",
   "flutterExecutable": "rootfs/opt/flutter/bin/flutter",
   "javaExecutable": "rootfs/usr/lib/jvm/java-17/bin/java",
   "androidSdkDirectory": "rootfs/opt/android-sdk",
   "androidBuildToolsVersion": "$selected_build_tools",
   "debugBuildSupported": true,
-  "releaseAotSupported": $release_supported
+  "releaseAotSupported": $release_supported,
+  "deviceRuntimeTestRequired": true,
+  "criticalFileSha256": {
+    "runtime/proot": "$PROOT_SHA",
+    "runtime/PROOT_UPSTREAM_COMMIT.txt": "$PROOT_COMMIT_SHA",
+    "runtime/PROOT_BUILD_PROVENANCE.txt": "$PROOT_PROVENANCE_SHA",
+    "rootfs/bin/sh": "$SHELL_SHA",
+    "rootfs/opt/flutter/bin/flutter": "$FLUTTER_SHA",
+    "rootfs/opt/flutter/bin/cache/dart-sdk/bin/dart": "$DART_SHA",
+    "rootfs/usr/lib/jvm/java-17/bin/java": "$JAVA_SHA",
+    "rootfs/opt/android-sdk/cmdline-tools/latest/bin/sdkmanager": "$SDKMANAGER_SHA",
+    "rootfs/opt/android-sdk/build-tools/$selected_build_tools/aapt2": "$AAPT2_SHA",
+    "rootfs/opt/android-sdk/build-tools/$selected_build_tools/aidl": "$AIDL_SHA",
+    "rootfs/opt/android-sdk/build-tools/$selected_build_tools/zipalign": "$ZIPALIGN_SHA",
+    "rootfs/opt/android-sdk/build-tools/$selected_build_tools/apksigner": "$APKSIGNER_SHA"
+  }
 }
 EOF
 
@@ -157,7 +294,7 @@ EOF
   [[ -s engine-executables.txt ]]
   mkdir -p "$(dirname "$output_zip")"
   rm -f "$output_zip"
-  zip -X -q -r "$output_zip" engine-manifest.json engine-executables.txt runtime rootfs
+  zip -X -q -r "$output_zip" engine-manifest.json engine-executables.txt rootfs-manifest.txt runtime rootfs.tar.gz
 )
 sha256sum "$output_zip"
 echo "Engine archive created: $output_zip"

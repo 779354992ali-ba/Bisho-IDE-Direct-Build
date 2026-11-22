@@ -18,7 +18,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  build-proot:
+    uses: ./.github/workflows/build-proot-android-arm64.yml
+    permissions:
+      contents: read
+
   provision:
+    needs: build-proot
     name: Provision and smoke-test Linux ARM64 Flutter runtime
     # Native ARM64 is required: Flutter/Dart and Android host tools must execute,
     # not merely pass an ELF architecture check.
@@ -46,22 +52,27 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y debootstrap file binutils curl git unzip xz-utils zip
 
-      - name: Download the latest successful Android PRoot artifact from this branch
+      - name: Download Android PRoot artifact built in this workflow run
+        uses: actions/download-artifact@v4.3.0
+        with:
+          name: bisho-proot-android-arm64-termux-v5.1.107.80
+          path: ${{ runner.temp }}/proot-artifact
+
+      - name: Verify pinned PRoot artifact provenance
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          RUN_ID="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build-proot-android-arm64.yml/runs?branch=package100-local-engine-provisioning&per_page=30" --jq '[.workflow_runs[] | select(.conclusion == "success" and .head_branch == "package100-local-engine-provisioning")] | .[0].id')"
-          [[ "$RUN_ID" =~ ^[0-9]+$ ]] || { echo "No successful Android PRoot workflow run found on the engine branch." >&2; exit 1; }
-          mkdir -p "$RUNNER_TEMP/proot-artifact"
-          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name bisho-proot-android-arm64-v5.5.0 --dir "$RUNNER_TEMP/proot-artifact"
           test -s "$RUNNER_TEMP/proot-artifact/proot"
           (
             cd "$RUNNER_TEMP/proot-artifact"
             sha256sum -c SHA256SUMS
+            grep -Fxq "cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2" UPSTREAM_COMMIT.txt
+            grep -Fq "Source: https://github.com/termux/proot" BUILD_PROVENANCE.txt
+            grep -Fq "Tag: v5.1.107.80" BUILD_PROVENANCE.txt
+            grep -Fq "Commit: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2" BUILD_PROVENANCE.txt
+            test -s UPSTREAM_COPYING
+            test -s LIBANDROID_SHMEM_LICENSE
           )
-          echo "PROOT_ARTIFACT_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
 
       - name: Bootstrap Ubuntu 24.04 ARM64 guest rootfs
         shell: bash
@@ -70,7 +81,19 @@ jobs:
           ROOTFS="$RUNNER_TEMP/bisho-engine/rootfs"
           sudo mkdir -p "$ROOTFS"
           sudo debootstrap --arch=arm64 --variant=minbase noble "$ROOTFS" http://ports.ubuntu.com/ubuntu-ports
-          sudo cp /etc/resolv.conf "$ROOTFS/etc/resolv.conf"
+          # Use a reachable runner resolver while provisioning; never ship this host-specific file.
+          RESOLV_CONF="$(readlink -f /etc/resolv.conf)"
+          if grep -Eq '^[[:space:]]*nameserver[[:space:]]+127\.(0\.0\.1|0\.0\.0\.53)' "$RESOLV_CONF"; then
+            for candidate in /run/systemd/resolve/resolv.conf /run/NetworkManager/resolv.conf; do
+              if [[ -s "$candidate" ]] && grep -Eq '^[[:space:]]*nameserver[[:space:]]+' "$candidate" && ! grep -Eq '^[[:space:]]*nameserver[[:space:]]+127\.(0\.0\.1|0\.0\.0\.53)' "$candidate"; then
+                RESOLV_CONF="$candidate"; break
+              fi
+            done
+          fi
+          grep -Eq '^[[:space:]]*nameserver[[:space:]]+' "$RESOLV_CONF" || { echo "No usable runner DNS resolver found." >&2; exit 1; }
+          ! grep -Eq '^[[:space:]]*nameserver[[:space:]]+127\.(0\.0\.1|0\.0\.0\.53)' "$RESOLV_CONF" || { echo "Runner resolver is loopback-only; refusing to build a network-dependent rootfs." >&2; exit 1; }
+          sudo rm -f "$ROOTFS/etc/resolv.conf"
+          sudo install -m 0644 "$RESOLV_CONF" "$ROOTFS/etc/resolv.conf"
           sudo mount --bind /dev "$ROOTFS/dev"
           sudo mount -t proc proc "$ROOTFS/proc"
           sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get update
@@ -164,6 +187,24 @@ jobs:
           sudo test -x "$FLUTTER/bin/cache/dart-sdk/bin/dart"
           file "$FLUTTER/bin/cache/dart-sdk/bin/dart" | grep -Eqi 'ARM aarch64|ARM64'
 
+      - name: Free provisioning caches before engine smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOTFS="$RUNNER_TEMP/bisho-engine/rootfs"
+          # Remove only disposable package/download caches. Keep Flutter, Dart,
+          # the Android SDK, accepted license files and all runtime dependencies.
+          sudo chroot "$ROOTFS" /usr/bin/env DEBIAN_FRONTEND=noninteractive apt-get clean
+          sudo rm -rf "$ROOTFS/var/lib/apt/lists/"* "$ROOTFS/var/cache/apt/archives/"*.deb
+          sudo rm -rf "$ROOTFS/var/tmp/"*
+          sudo rm -rf "$RUNNER_TEMP/sdk-tools-extract" "$RUNNER_TEMP/arm-tools"
+          rm -f "$RUNNER_TEMP/commandlinetools.zip" "$RUNNER_TEMP/repository2-3.xml" "$RUNNER_TEMP/sdk-tools.sha1"
+          sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
+          echo "Disk space after safe cache cleanup:"
+          df -h "$RUNNER_TEMP"
+          echo "Largest retained engine components:"
+          sudo du -sh "$ROOTFS/opt/flutter" "$ROOTFS/opt/android-sdk" "$ROOTFS/usr/lib/jvm" "$ROOTFS/var" 2>/dev/null || true
+
       - name: Assemble and smoke-test the complete local engine
         shell: bash
         run: |
@@ -171,12 +212,16 @@ jobs:
           RUNTIME="$RUNNER_TEMP/bisho-engine"
           sudo mkdir -p "$RUNTIME/runtime"
           sudo install -m 0755 "$RUNNER_TEMP/proot-artifact/proot" "$RUNTIME/runtime/proot"
+          sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/BUILD_PROVENANCE.txt" "$RUNTIME/runtime/PROOT_BUILD_PROVENANCE.txt"
+          sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/UPSTREAM_COMMIT.txt" "$RUNTIME/runtime/PROOT_UPSTREAM_COMMIT.txt"
+          sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/UPSTREAM_COPYING" "$RUNTIME/runtime/PROOT_COPYING"
+          sudo install -m 0644 "$RUNNER_TEMP/proot-artifact/LIBANDROID_SHMEM_LICENSE" "$RUNTIME/runtime/PROOT_SHMEM_LICENSE"
           sudo install -m 0755 tools/engine_bundle/validate_and_pack.sh "$RUNNER_TEMP/validate_and_pack.sh"
           # Do not recurse into rootfs: /dev and /proc are mounted there and must retain kernel ownership.
           sudo chown "$(id -u):$(id -g)" "$RUNTIME" "$RUNTIME/runtime"
           sudo chown "$(id -u):$(id -g)" "$RUNTIME/runtime/proot"
-          # Keep /dev and /proc mounted for native ARM64 chroot smoke tests.
-          sudo env BISHO_GUEST_RUNNER=chroot bash "$RUNNER_TEMP/validate_and_pack.sh" "$RUNTIME" "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
+          # The packer requires these bootstrap mounts and owns their cleanup.
+          sudo bash "$RUNNER_TEMP/validate_and_pack.sh" "$RUNTIME" "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
           unzip -t "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip"
           sha256sum "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip" | tee "$RUNNER_TEMP/bisho-flutter-engine-arm64.zip.sha256"
 

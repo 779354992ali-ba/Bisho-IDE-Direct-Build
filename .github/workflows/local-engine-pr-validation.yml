@@ -1,0 +1,84 @@
+name: Local Engine PR Validation
+
+on:
+  push:
+    branches: [fix/local-engine-runtime-hardening]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: local-engine-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-proot:
+    uses: ./.github/workflows/build-proot-android-arm64.yml
+    permissions:
+      contents: read
+
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5.1.0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5.7.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2.23.0
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+
+      - name: Validate shell and workflow syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n tools/engine_bundle/validate_and_pack.sh
+          bash -n tools/engine_bundle/test_on_device.sh
+          bash -n tools/engine_bundle/diagnose_proot_seccomp.sh
+          python3 -m venv "$RUNNER_TEMP/yaml-venv"
+          "$RUNNER_TEMP/yaml-venv/bin/pip" install --quiet pyyaml
+          "$RUNNER_TEMP/yaml-venv/bin/python" - <<'PY'
+          import yaml
+          for path in (
+              ".github/workflows/provision-local-engine-arm64.yml",
+              ".github/workflows/build-proot-android-arm64.yml",
+              ".github/workflows/local-engine-pr-validation.yml",
+          ):
+              with open(path, encoding="utf-8") as handle:
+                  yaml.safe_load(handle)
+              print(f"YAML syntax: PASS {path}")
+          PY
+          ! grep -q 'BISHO_GUEST_RUNNER' .github/workflows/provision-local-engine-arm64.yml
+          ! grep -q 'BISHO_GUEST_RUNNER' tools/engine_bundle/validate_and_pack.sh
+          echo "Shell and workflow validation: PASS"
+
+      - name: Resolve Flutter dependencies
+        run: flutter pub get
+
+      - name: Analyze Flutter and Kotlin project
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter analyze --no-pub --no-fatal-infos
+
+      - name: Run Flutter tests
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test --no-pub --reporter expanded
+
+      - name: Compile Android Debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter build apk --debug --no-pub
+          test -s build/app/outputs/flutter-apk/app-debug.apk
