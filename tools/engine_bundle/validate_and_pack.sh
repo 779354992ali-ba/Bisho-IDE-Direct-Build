@@ -228,6 +228,8 @@ mkdir -p "$stage/runtime"
 cp -a "$source_dir/runtime/." "$stage/runtime/"
 tar --numeric-owner --xattrs --acls --sort=name --mtime='@0' --owner=0 --group=0 --use-compress-program='gzip -n' -C "$rootfs" -cpf "$stage/rootfs.tar.gz" .
 tar -tzf "$stage/rootfs.tar.gz" >/dev/null
+mkdir -p "$stage/rootfs"
+tar --numeric-owner --xattrs --acls -xzf "$stage/rootfs.tar.gz" -C "$stage/rootfs"
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 PROOT_SHA=$(sha256_of "$stage/runtime/proot")
 PROOT_SOURCE_COMMIT=$(cat "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
@@ -283,7 +285,7 @@ EOF
 # Explicit executable inventory; no wildcard expansion is written to the manifest.
 (
   cd "$stage"
-  { find runtime -type f -perm /111 -print; tar -tvzf rootfs.tar.gz | awk '$1 ~ /x/ {print $NF}'; } | LC_ALL=C sort > engine-executables.txt
+  find runtime rootfs -type f -perm /111 -print | LC_ALL=C sort > engine-executables.txt
   [[ -s engine-executables.txt ]]
   mkdir -p "$(dirname "$output_zip")"
   rm -f "$output_zip"
