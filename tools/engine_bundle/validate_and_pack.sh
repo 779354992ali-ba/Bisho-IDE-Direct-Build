@@ -226,10 +226,27 @@ if [[ ! -L "$var_run" ]]; then ln -s /run "$var_run"; fi
 stage=$(mktemp -d)
 mkdir -p "$stage/runtime"
 cp -a "$source_dir/runtime/." "$stage/runtime/"
+write_rootfs_manifest() {
+  local tree=$1 output=$2
+  (
+    cd "$tree"
+    find . -mindepth 1 -printf '%y %m %p %l\\n' | LC_ALL=C sort
+    find . -type f -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum
+  ) > "$output"
+}
+write_rootfs_manifest "$rootfs" "$stage/rootfs-manifest.before"
 tar --numeric-owner --xattrs --acls --sort=name --mtime='@0' --owner=0 --group=0 --use-compress-program='gzip -n' -C "$rootfs" -cpf "$stage/rootfs.tar.gz" .
 tar -tzf "$stage/rootfs.tar.gz" >/dev/null
 mkdir -p "$stage/rootfs"
 tar --numeric-owner --xattrs --acls -xzf "$stage/rootfs.tar.gz" -C "$stage/rootfs"
+write_rootfs_manifest "$stage/rootfs" "$stage/rootfs-manifest.after"
+cmp -s "$stage/rootfs-manifest.before" "$stage/rootfs-manifest.after" || {
+  diff -u "$stage/rootfs-manifest.before" "$stage/rootfs-manifest.after" || true
+  echo "ERROR: rootfs TAR roundtrip changed file hashes, modes, entry types or symlink targets." >&2
+  exit 5
+}
+cp "$stage/rootfs-manifest.after" "$stage/rootfs-manifest.txt"
+echo "Rootfs TAR roundtrip manifest: PASS"
 sha256_of() { sha256sum "$1" | awk '{print $1}'; }
 PROOT_SHA=$(sha256_of "$stage/runtime/proot")
 PROOT_SOURCE_COMMIT=$(cat "$stage/runtime/PROOT_UPSTREAM_COMMIT.txt")
@@ -289,7 +306,7 @@ EOF
   [[ -s engine-executables.txt ]]
   mkdir -p "$(dirname "$output_zip")"
   rm -f "$output_zip"
-  zip -X -q "$output_zip" engine-manifest.json engine-executables.txt runtime rootfs.tar.gz
+  zip -X -q "$output_zip" engine-manifest.json engine-executables.txt rootfs-manifest.txt runtime rootfs.tar.gz
 )
 sha256sum "$output_zip"
 echo "Engine archive created: $output_zip"
