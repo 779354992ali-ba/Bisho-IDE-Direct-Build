@@ -48,6 +48,12 @@ jobs:
           flutter build apk --debug --no-pub
           test -s build/app/outputs/flutter-apk/app-debug.apk
 
+      - name: Run Android JVM unit tests
+        run: |
+          set -euo pipefail
+          cd android
+          ./gradlew testDebugUnitTest --no-daemon
+
       - name: Upload installable Debug APK
         uses: actions/upload-artifact@v4.6.2
         with:
