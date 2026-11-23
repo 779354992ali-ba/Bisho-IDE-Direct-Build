@@ -578,9 +578,33 @@ class MainActivity : FlutterActivity() {
                             if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط rootfs TAR يشير خارج الجذر: " + linkName)
                             Files.createDirectories(linkPath.parent)
                             if (tarEntry.isSymbolicLink) {
+                                // A TAR may have caused this path to be created as an implicit
+                                // parent directory before its symlink entry is finalized.
+                                // Replace only an empty directory; never discard extracted data.
+                                if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    if (Files.isDirectory(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                        Files.newDirectoryStream(linkPath).use { children ->
+                                            if (children.iterator().hasNext()) {
+                                                throw IllegalStateException(
+                                                    "تعارض رابط رمزي مع مجلد غير فارغ في rootfs: " +
+                                                        linkPath + " -> " + linkName
+                                                )
+                                            }
+                                        }
+                                        Files.delete(linkPath)
+                                    } else {
+                                        throw IllegalStateException(
+                                            "مسار الرابط الرمزي موجود مسبقاً كملف في rootfs: " +
+                                                linkPath + " -> " + linkName
+                                        )
+                                    }
+                                }
                                 Files.createSymbolicLink(linkPath, linkPath.parent.relativize(linkTarget))
                             } else {
                                 if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في rootfs TAR يشير إلى ملف غير موجود.")
+                                if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    throw IllegalStateException("مسار hard link موجود مسبقاً في rootfs: " + linkPath)
+                                }
                                 Files.copy(linkTarget, linkPath)
                             }
                         }
