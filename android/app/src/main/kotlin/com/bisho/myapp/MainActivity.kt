@@ -462,7 +462,19 @@ class MainActivity : FlutterActivity() {
         val engineRoot = File(filesDir, "bisho-local-build-engine")
         val staging = File(filesDir, "bisho-local-build-engine.installing")
         val backup = File(filesDir, "bisho-local-build-engine.previous")
-        if (staging.exists()) staging.deleteRecursively()
+        // Recover an interrupted previous switch before starting another install.
+        if (backup.exists()) {
+            if (!engineRoot.exists()) {
+                if (!backup.renameTo(engineRoot)) {
+                    throw IllegalStateException("تعذر استعادة نسخة المحرك السابقة بعد تثبيت منقطع.")
+                }
+            } else if (!backup.deleteRecursively()) {
+                throw IllegalStateException("تعذر تنظيف النسخة الاحتياطية القديمة للمحرك.")
+            }
+        }
+        if (staging.exists() && !staging.deleteRecursively()) {
+            throw IllegalStateException("تعذر تنظيف مجلد التثبيت المؤقت المتبقي.")
+        }
         if (!staging.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد التثبيت المؤقت.")
         var extractedBytes = 0L
         var entries = 0
@@ -583,48 +595,111 @@ class MainActivity : FlutterActivity() {
                                 target.toFile().setExecutable(mode and 0x049 != 0, false)
                             }
                         }
-                        // Resolve absolute links inside this guest root, never against Android's host root.
-                        for ((tarEntry, linkPath) in tarLinks) {
+                        // Materialize hard links before symlinks so no later write can traverse a guest link.
+                        for ((tarEntry, linkPath) in tarLinks.filter { it.first.isLink }) {
                             val linkName = tarEntry.linkName.replace('\\', '/')
                             if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
-                            val linkTarget = if (tarEntry.isSymbolicLink) {
-                                if (linkName.startsWith("/")) rootPath.resolve(linkName.removePrefix("/")).normalize()
-                                else linkPath.parent.resolve(linkName).normalize()
+                            val linkTarget = rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
+                            if (!linkTarget.startsWith(rootPath) || !Files.isRegularFile(linkTarget)) {
+                                throw SecurityException("Hard link في rootfs TAR يشير إلى ملف غير موجود داخل الجذر.")
+                            }
+                            Files.createDirectories(linkPath.parent)
+                            if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                throw IllegalStateException("مسار hard link موجود مسبقاً في rootfs: " + linkPath)
+                            }
+                            Files.copy(linkTarget, linkPath)
+                        }
+
+                        fun sameRegularFile(first: Path, second: Path): Boolean {
+                            if (!Files.isRegularFile(first, java.nio.file.LinkOption.NOFOLLOW_LINKS) ||
+                                !Files.isRegularFile(second, java.nio.file.LinkOption.NOFOLLOW_LINKS) ||
+                                Files.size(first) != Files.size(second)) return false
+                            Files.newInputStream(first).use { left ->
+                                Files.newInputStream(second).use { right ->
+                                    val a = ByteArray(32 * 1024)
+                                    val b = ByteArray(32 * 1024)
+                                    while (true) {
+                                        val na = left.read(a)
+                                        val nb = right.read(b)
+                                        if (na != nb) return false
+                                        if (na < 0) return true
+                                        for (i in 0 until na) if (a[i] != b[i]) return false
+                                    }
+                                }
+                            }
+                        }
+
+                        fun mergeDirectoryContents(source: Path, destination: Path) {
+                            if (!source.normalize().startsWith(rootPath) ||
+                                !destination.normalize().startsWith(rootPath) ||
+                                source.normalize() == destination.normalize()) {
+                                throw SecurityException("تعارض رابط رمزي خارج حدود دمج مجلدات rootfs.")
+                            }
+                            Files.newDirectoryStream(source).use { children ->
+                                for (child in children) {
+                                    val targetChild = destination.resolve(child.fileName).normalize()
+                                    if (!targetChild.startsWith(rootPath) || targetChild == source.normalize()) {
+                                        throw SecurityException("مسار متداخل غير آمن أثناء دمج محتويات رابط rootfs.")
+                                    }
+                                    if (Files.isDirectory(child, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                        if (Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS) &&
+                                            !Files.isDirectory(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                            throw IllegalStateException("تعارض ملف/مجلد أثناء دمج رابط rootfs: " + targetChild)
+                                        }
+                                        if (!Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                            Files.createDirectory(targetChild)
+                                        }
+                                        mergeDirectoryContents(child, targetChild)
+                                        Files.delete(child)
+                                    } else if (Files.isRegularFile(child, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                        if (Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                            if (!sameRegularFile(child, targetChild)) {
+                                                throw IllegalStateException("تعارض محتوى أثناء دمج رابط rootfs: " + targetChild)
+                                            }
+                                            Files.delete(child)
+                                        } else {
+                                            Files.move(child, targetChild)
+                                        }
+                                    } else {
+                                        throw SecurityException("عنصر غير مدعوم داخل مجلد رابط rootfs: " + child)
+                                    }
+                                }
+                            }
+                            Files.delete(source)
+                        }
+
+                        // Create deeper symlinks first: child entries must not be written through
+                        // a parent symlink. Absolute guest targets stay inside rootfs.
+                        val symbolicLinks = tarLinks.filter { it.first.isSymbolicLink }
+                            .sortedByDescending { it.second.nameCount }
+                        for ((tarEntry, linkPath) in symbolicLinks) {
+                            val linkName = tarEntry.linkName.replace('\\', '/')
+                            if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
+                            val linkTarget = if (linkName.startsWith("/")) {
+                                rootPath.resolve(linkName.removePrefix("/")).normalize()
                             } else {
-                                rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
+                                linkPath.parent.resolve(linkName).normalize()
                             }
                             if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط rootfs TAR يشير خارج الجذر: " + linkName)
                             Files.createDirectories(linkPath.parent)
-                            if (tarEntry.isSymbolicLink) {
-                                // A TAR may have caused this path to be created as an implicit
-                                // parent directory before its symlink entry is finalized.
-                                // Replace only an empty directory; never discard extracted data.
-                                if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                                    if (Files.isDirectory(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                                        Files.newDirectoryStream(linkPath).use { children ->
-                                            if (children.iterator().hasNext()) {
-                                                throw IllegalStateException(
-                                                    "تعارض رابط رمزي مع مجلد غير فارغ في rootfs: " +
-                                                        linkPath + " -> " + linkName
-                                                )
-                                            }
-                                        }
-                                        Files.delete(linkPath)
-                                    } else {
-                                        throw IllegalStateException(
-                                            "مسار الرابط الرمزي موجود مسبقاً كملف في rootfs: " +
-                                                linkPath + " -> " + linkName
-                                        )
-                                    }
+                            if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                if (!Files.isDirectory(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    throw IllegalStateException("مسار الرابط الرمزي موجود مسبقاً كملف في rootfs: " + linkPath)
                                 }
-                                Files.createSymbolicLink(linkPath, linkPath.parent.relativize(linkTarget))
-                            } else {
-                                if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في rootfs TAR يشير إلى ملف غير موجود.")
-                                if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                                    throw IllegalStateException("مسار hard link موجود مسبقاً في rootfs: " + linkPath)
+                                if (linkTarget.startsWith(linkPath)) {
+                                    throw SecurityException("هدف الرابط الرمزي يقع داخل المجلد المراد استبداله: " + linkPath)
                                 }
-                                Files.copy(linkTarget, linkPath)
+                                if (!Files.exists(linkTarget, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    Files.createDirectories(linkTarget)
+                                }
+                                if (!Files.isDirectory(linkTarget)) {
+                                    throw IllegalStateException("لا يمكن دمج مجلد موجود مع هدف رابط غير مجلد: " + linkTarget)
+                                }
+                                // Preserve entries extracted below a symlink path. Identical
+                                // duplicates are coalesced; conflicting data fails safely.
+                                mergeDirectoryContents(linkPath, linkTarget)
                             }
+                            Files.createSymbolicLink(linkPath, linkPath.parent.relativize(linkTarget))
                         }
                     } else if (name.startsWith("rootfs/")) {
                         throw SecurityException("صيغة الحزمة تتطلب rootfs.tar.gz ولا تقبل مجلد rootfs مفكوكاً داخل ZIP.")
@@ -797,6 +872,15 @@ class MainActivity : FlutterActivity() {
             return mapOf("success" to true, "activated" to false, "message" to "تم تجهيز ملفات المحرك والتحقق من سلامتها. لم يُفعّل للبناء المحلي؛ شغّل اختبار الهاتف أولًا.", "bytes" to extractedBytes)
         } catch (error: Exception) {
             if (staging.exists()) staging.deleteRecursively()
+            // Restore the previous engine if activation was interrupted by an exception.
+            if (!engineRoot.exists() && backup.exists()) {
+                if (!backup.renameTo(engineRoot)) {
+                    throw IllegalStateException(
+                        "فشل التثبيت وتعذرت استعادة نسخة المحرك السابقة: ${error.message}",
+                        error
+                    )
+                }
+            }
             throw error
         }
     }
