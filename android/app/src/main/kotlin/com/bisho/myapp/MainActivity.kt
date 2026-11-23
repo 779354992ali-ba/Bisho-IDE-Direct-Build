@@ -377,17 +377,24 @@ class MainActivity : FlutterActivity() {
     /** Wraps one ZIP entry without closing its parent stream; counts bytes consumed by the nested GZIP/TAR reader. */
     private class NonClosingCountingInputStream(
         input: InputStream,
-        private val onBytesRead: (Int) -> Unit
+        private val onBytesRead: (Int) -> Unit,
+        private val digest: MessageDigest? = null
     ) : FilterInputStream(input) {
         override fun read(): Int {
             val value = super.read()
-            if (value >= 0) onBytesRead(1)
+            if (value >= 0) {
+                onBytesRead(1)
+                digest?.update(value.toByte())
+            }
             return value
         }
 
         override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
             val count = super.read(buffer, offset, length)
-            if (count > 0) onBytesRead(count)
+            if (count > 0) {
+                onBytesRead(count)
+                digest?.update(buffer, offset, count)
+            }
             return count
         }
 
@@ -486,9 +493,10 @@ class MainActivity : FlutterActivity() {
                 val firstEntry = archiveZip.nextEntry
                     ?: throw IllegalStateException("ملف ZIP فارغ أو غير صالح.")
                 val wrappedArtifact = firstEntry.name == "bisho-flutter-engine-arm64.zip"
+                val wrappedEngineDigest = if (wrappedArtifact) MessageDigest.getInstance("SHA-256") else null
                 val zip = if (wrappedArtifact) {
                     ZipInputStream(BufferedInputStream(
-                        NonClosingCountingInputStream(archiveZip) { }, 1024 * 1024
+                        NonClosingCountingInputStream(archiveZip, {}, wrappedEngineDigest), 1024 * 1024
                     ))
                 } else {
                     archiveZip
@@ -756,9 +764,15 @@ class MainActivity : FlutterActivity() {
                         sidecarBytes.write(sidecarBuffer, 0, count)
                     }
                     val sidecarText = sidecarBytes.toString(Charsets.UTF_8.name())
-                    if (!Regex("(?m)^\\s*[a-fA-F0-9]{64}\\s+\\*?bisho-flutter-engine-arm64\\.zip\\s*$")
-                            .containsMatchIn(sidecarText)) {
-                        throw SecurityException("صيغة SHA-256 الجانبي داخل حزمة GitHub غير صالحة.")
+                    val sidecarMatch = Regex(
+                        "(?m)^\\s*([a-fA-F0-9]{64})\\s+\\*?(?:.*[/\\\\])?bisho-flutter-engine-arm64\\.zip\\s*$"
+                    ).find(sidecarText)
+                        ?: throw SecurityException("صيغة SHA-256 الجانبي داخل حزمة GitHub غير صالحة.")
+                    val actualNestedSha256 = wrappedEngineDigest?.digest()
+                        ?.joinToString("") { "%02x".format(it) }
+                        ?: throw SecurityException("تعذر حساب بصمة ZIP الداخلي.")
+                    if (!sidecarMatch.groupValues[1].equals(actualNestedSha256, ignoreCase = true)) {
+                        throw SecurityException("بصمة SHA-256 الجانبية لا تطابق ZIP الداخلي؛ رُفضت الحزمة.")
                     }
                     archiveZip.closeEntry()
                     if (archiveZip.nextEntry != null) {
