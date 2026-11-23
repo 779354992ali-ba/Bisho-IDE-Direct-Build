@@ -1164,7 +1164,7 @@ class MainActivity : FlutterActivity() {
                 throw IllegalStateException("بيان محرك البناء غير متوافق مع هذا الجهاز.")
             }
             verifyCriticalFileHashes(engineDirectory, json)?.let { throw SecurityException(it) }
-            val launcher = resolveInside(engineDirectory, json.optString("runtimeLauncher"))
+            val launcher = resolveProotLauncher(engineDirectory, json)
             val rootfs = resolveInside(engineDirectory, json.optString("rootfsDirectory"))
             if (launcher == null || !launcher.isFile || !launcher.canExecute() ||
                 rootfs == null || !rootfs.isDirectory) {
@@ -1454,7 +1454,7 @@ class MainActivity : FlutterActivity() {
         if (!json.optBoolean("debugBuildSupported", false)) {
             return mapOf("success" to false, "message" to "بيان المحرك لا يحمل اعتماد اختبار Debug من أداة تجهيز الحزمة؛ أعد تجهيز المحرك بعد نجاح smoke build على Linux ARM64.")
         }
-        val launcher = resolveInside(engineDirectory, json.optString("runtimeLauncher"))
+        val launcher = resolveProotLauncher(engineDirectory, json)
         val rootfs = resolveInside(engineDirectory, json.optString("rootfsDirectory"))
         val flutter = resolveInside(engineDirectory, json.optString("flutterExecutable"))
         val java = resolveInside(engineDirectory, json.optString("javaExecutable"))
@@ -1806,7 +1806,7 @@ class MainActivity : FlutterActivity() {
                 missing.add("حقل releaseAotSupported في بيان المحرك يجب أن يكون true أو false.")
             }
 
-            val launcher = resolveInside(engineDirectory, json.optString("runtimeLauncher"))
+            val launcher = resolveProotLauncher(engineDirectory, json)
             val rootfs = resolveInside(engineDirectory, json.optString("rootfsDirectory"))
             val flutter = resolveInside(engineDirectory, json.optString("flutterExecutable"))
             val java = resolveInside(engineDirectory, json.optString("javaExecutable"))
@@ -1989,29 +1989,44 @@ class MainActivity : FlutterActivity() {
         emitBuildEvent("تم تثبيت تطبيق اختبار PRoot وتشغيله بنجاح: $expectedPackageName")
     }
 
-    /** Re-apply executable permissions immediately before launching PRoot.
-     * Some Android archive/filesystem paths report canExecute() incorrectly
-     * after extraction; Os.access checks the effective kernel permission.
+    /** Resolve the immutable PRoot executable extracted by Android from the signed APK.
+     * Android 10+ SELinux blocks execve() from writable app_data_file paths even
+     * when chmod 0755 succeeds. Native libraries are extracted under /data/app
+     * and carry the apk_data_file label that permits execution.
      */
+    private fun resolveProotLauncher(engineDirectory: File, manifest: JSONObject): File {
+        if (manifest.optString("runtimeLauncher") != "runtime/proot") {
+            throw SecurityException("مسار PRoot في بيان المحرك غير مطابق.")
+        }
+        val archived = resolveInside(engineDirectory, "runtime/proot")
+            ?: throw SecurityException("ملف PRoot داخل المحرك غير صالح.")
+        if (!archived.isFile || archived.length() <= 0L) {
+            throw IllegalStateException("ملف PRoot داخل حزمة المحرك غير موجود.")
+        }
+        val nativeDirectory = File(applicationInfo.nativeLibraryDir).canonicalFile
+        val executable = File(nativeDirectory, "libproot.so").canonicalFile
+        if (!executable.path.startsWith(nativeDirectory.path + File.separator) ||
+            !executable.isFile || executable.length() <= 0L) {
+            throw IllegalStateException(
+                "ملف PRoot الأصلي غير مثبت داخل مكتبات APK؛ أعد تثبيت نسخة التطبيق التي تتضمن libproot.so."
+            )
+        }
+        if (!Os.access(executable.absolutePath, OsConstants.X_OK)) {
+            throw SecurityException("Android لم يمنح ملف PRoot المضمّن صلاحية التنفيذ من مجلد مكتبات APK.")
+        }
+        return executable
+    }
+
+    /** Verify that the APK-packaged PRoot is executable from Android's native library directory. */
     private fun prepareProotLauncher(launcher: File) {
         val executable = launcher.canonicalFile
-        if (!executable.isFile || !executable.path.startsWith(
-                File(filesDir, "bisho-local-build-engine").canonicalPath + File.separator
-            )) {
-            throw SecurityException("مسار مشغل PRoot غير صالح أو خارج مجلد المحرك.")
+        val nativeDirectory = File(applicationInfo.nativeLibraryDir).canonicalFile
+        if (!executable.path.startsWith(nativeDirectory.path + File.separator) ||
+            executable.name != "libproot.so" || !executable.isFile) {
+            throw SecurityException("يجب تشغيل PRoot من مجلد مكتبات APK الأصلي، وليس من ملفات المحرك القابلة للكتابة.")
         }
-        try {
-            Os.chmod(executable.absolutePath, 0b111101101)
-            val parent = executable.parentFile
-                ?: throw IllegalStateException("مجلد مشغل PRoot غير موجود.")
-            Os.chmod(parent.absolutePath, 0b111101101)
-            if (!Os.access(executable.absolutePath, OsConstants.X_OK)) {
-                throw SecurityException("النواة لا تسمح بتنفيذ PRoot بعد chmod 0755؛ تحقق من سياسة تنفيذ ملفات التطبيق.")
-            }
-        } catch (error: Exception) {
-            throw IllegalStateException(
-                "تعذر تجهيز مشغل PRoot للتنفيذ: ${error.message ?: error.javaClass.simpleName}", error
-            )
+        if (!Os.access(executable.absolutePath, OsConstants.X_OK)) {
+            throw SecurityException("ملف PRoot المضمّن في APK غير قابل للتنفيذ؛ تحقق من إعداد استخراج مكتبات APK.")
         }
     }
 
