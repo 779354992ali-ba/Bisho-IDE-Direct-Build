@@ -4,7 +4,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -81,7 +80,7 @@ class RootfsSymlinkTargetsTest {
             block(root)
         } finally {
             Files.walk(root).use { paths ->
-                paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
+                paths.sorted(Comparator.reverseOrder<Path>()).forEach { Files.deleteIfExists(it) }
             }
         }
     }
