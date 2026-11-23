@@ -603,19 +603,33 @@ class MainActivity : FlutterActivity() {
                                 target.toFile().setExecutable(mode and 0x049 != 0, false)
                             }
                         }
-                        // Materialize hard links before symlinks so no later write can traverse a guest link.
-                        for ((tarEntry, linkPath) in tarLinks.filter { it.first.isLink }) {
-                            val linkName = tarEntry.linkName.replace('\\', '/')
-                            if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
-                            val linkTarget = rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
-                            if (!linkTarget.startsWith(rootPath) || !Files.isRegularFile(linkTarget)) {
-                                throw SecurityException("Hard link في rootfs TAR يشير إلى ملف غير موجود داخل الجذر.")
+                        // Resolve hard-link chains iteratively; TAR entries may reference later entries.
+                        val pendingHardLinks = tarLinks.filter { it.first.isLink }.toMutableList()
+                        while (pendingHardLinks.isNotEmpty()) {
+                            var resolvedAny = false
+                            val iterator = pendingHardLinks.iterator()
+                            while (iterator.hasNext()) {
+                                val (tarEntry, linkPath) = iterator.next()
+                                val linkName = tarEntry.linkName.replace('\\', '/')
+                                if (linkName.isBlank() || linkName.contains('\u0000')) {
+                                    throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
+                                }
+                                val linkTarget = rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
+                                if (!linkTarget.startsWith(rootPath)) {
+                                    throw SecurityException("Hard link في rootfs TAR يشير خارج الجذر.")
+                                }
+                                if (!Files.isRegularFile(linkTarget)) continue
+                                Files.createDirectories(linkPath.parent)
+                                if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    throw IllegalStateException("مسار hard link موجود مسبقاً في rootfs: " + linkPath)
+                                }
+                                Files.copy(linkTarget, linkPath)
+                                iterator.remove()
+                                resolvedAny = true
                             }
-                            Files.createDirectories(linkPath.parent)
-                            if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
-                                throw IllegalStateException("مسار hard link موجود مسبقاً في rootfs: " + linkPath)
+                            if (!resolvedAny) {
+                                throw SecurityException("تعذر حل سلسلة hard links في rootfs TAR؛ الهدف مفقود أو توجد حلقة.")
                             }
-                            Files.copy(linkTarget, linkPath)
                         }
 
                         fun sameRegularFile(first: Path, second: Path): Boolean {
