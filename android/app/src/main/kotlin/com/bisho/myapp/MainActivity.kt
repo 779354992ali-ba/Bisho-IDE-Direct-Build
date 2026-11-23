@@ -650,7 +650,21 @@ class MainActivity : FlutterActivity() {
                                             Files.createDirectory(targetChild)
                                         }
                                         mergeDirectoryContents(child, targetChild)
-                                        Files.delete(child)
+                                    } else if (Files.isSymbolicLink(child)) {
+                                        val oldTarget = child.parent.resolve(Files.readSymbolicLink(child)).normalize()
+                                        if (!oldTarget.startsWith(rootPath)) {
+                                            throw SecurityException("رابط متداخل يشير خارج rootfs أثناء الدمج.")
+                                        }
+                                        if (Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                            if (!Files.isSymbolicLink(targetChild) ||
+                                                targetChild.parent.resolve(Files.readSymbolicLink(targetChild)).normalize() != oldTarget) {
+                                                throw IllegalStateException("تعارض رابط رمزي أثناء دمج rootfs: " + targetChild)
+                                            }
+                                            Files.delete(child)
+                                        } else {
+                                            Files.createSymbolicLink(targetChild, targetChild.parent.relativize(oldTarget))
+                                            Files.delete(child)
+                                        }
                                     } else if (Files.isRegularFile(child, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
                                         if (Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
                                             if (!sameRegularFile(child, targetChild)) {
