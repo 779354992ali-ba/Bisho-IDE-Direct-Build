@@ -15,6 +15,7 @@ import android.net.ConnectivityManager
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.os.StatFs
+import android.system.Os
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -828,8 +829,27 @@ class MainActivity : FlutterActivity() {
                 }
                 val executable = resolveInside(staging, relative)
                     ?: throw SecurityException("مسار تنفيذي غير آمن في engine-executables.txt.")
-                if (!executable.isFile || (!executable.setExecutable(true, false) && !executable.canExecute())) {
-                    throw IllegalStateException("تعذر استعادة صلاحية التنفيذ للملف: $relative")
+                if (!executable.isFile) {
+                    throw IllegalStateException("الملف التنفيذي غير موجود داخل الحزمة: $relative")
+                }
+                // File.setExecutable() can report success while Android's restored
+                // mode bits remain unsuitable after archive extraction. Apply POSIX
+                // 0755 explicitly, and ensure every parent directory is searchable.
+                try {
+                    Os.chmod(executable.absolutePath, 0b111101101)
+                    var parent = executable.parentFile
+                    while (parent != null && parent.canonicalFile != staging.canonicalFile) {
+                        if (!parent.isDirectory || !parent.canonicalPath.startsWith(staging.canonicalPath + File.separator)) {
+                            throw SecurityException("مجلد أب غير آمن أو غير موجود للملف التنفيذي: $relative")
+                        }
+                        Os.chmod(parent.absolutePath, 0b111101101)
+                        parent = parent.parentFile
+                    }
+                } catch (error: Exception) {
+                    throw IllegalStateException("تعذر ضبط صلاحيات POSIX للملف التنفيذي $relative: ${error.message}", error)
+                }
+                if (!executable.canExecute()) {
+                    throw IllegalStateException("الملف التنفيذي لا يملك صلاحية التنفيذ بعد chmod 0755: $relative")
                 }
             }
             val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
