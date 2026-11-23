@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/app-stream-rootfs-install
+  pull_request:
 
 permissions:
   contents: read
