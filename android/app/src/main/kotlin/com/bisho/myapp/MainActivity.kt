@@ -36,6 +36,7 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.LinkOption
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
@@ -325,6 +326,23 @@ class MainActivity : FlutterActivity() {
                 }
                 if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط TAR يشير خارج Alpine: $linkName")
                 Files.createDirectories(linkPath.parent)
+                // TAR may first materialize a link path as a directory (for example usr/bin/X11)
+                // because entries below that path were encountered before deferred links are applied.
+                if (Files.exists(linkPath, LinkOption.NOFOLLOW_LINKS)) {
+                    if (entry.isSymbolicLink && Files.isDirectory(linkPath, LinkOption.NOFOLLOW_LINKS)) {
+                        val isEmpty = Files.newDirectoryStream(linkPath).use { stream -> !stream.iterator().hasNext() }
+                        if (!isEmpty) {
+                            throw IllegalStateException(
+                                "تعارض رابط TAR: المسار $linkPath موجود كمجلد غير فارغ، والهدف هو $linkName؛ لم تُحذف محتوياته."
+                            )
+                        }
+                        Files.delete(linkPath)
+                    } else {
+                        throw IllegalStateException(
+                            "تعارض رابط TAR: المسار $linkPath موجود مسبقًا بنوع لا يمكن استبداله بأمان؛ الهدف $linkName."
+                        )
+                    }
+                }
                 if (entry.isSymbolicLink) {
                     val relativeTarget = linkPath.parent.relativize(linkTarget)
                     Files.createSymbolicLink(linkPath, relativeTarget)
