@@ -540,7 +540,7 @@ class MainActivity : FlutterActivity() {
                         TarArchiveInputStream(
                             GzipCompressorInputStream(
                                 BufferedInputStream(
-                                    NonClosingCountingInputStream(zip) { count ->
+                                    NonClosingCountingInputStream(zip, { count ->
                                         extractedBytes += count.toLong()
                                         if (extractedBytes > 12L * 1024L * 1024L * 1024L) {
                                             throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
@@ -548,7 +548,7 @@ class MainActivity : FlutterActivity() {
                                         if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) {
                                             throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
                                         }
-                                    }, 256 * 1024
+                                    }), 256 * 1024
                                 )
                             )
                         ).use { tar ->
