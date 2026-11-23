@@ -14,13 +14,43 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build-proot:
+    uses: ./.github/workflows/build-proot-android-arm64.yml
+    permissions:
+      contents: read
+
   validate:
+    needs: build-proot
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v5.1.0
 
+      - name: Download and verify Android PRoot native executable
+        uses: actions/download-artifact@v4.3.0
+        with:
+          name: bisho-proot-android-arm64-termux-v5.1.107.80
+          path: ${{ runner.temp }}/proot-artifact
+
+      - name: Package PRoot as an extracted APK native library
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARTIFACT="$RUNNER_TEMP/proot-artifact"
+          test -s "$ARTIFACT/proot"
+          (
+            cd "$ARTIFACT"
+            sha256sum -c SHA256SUMS
+            grep -Fxq "cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2" UPSTREAM_COMMIT.txt
+            grep -Fq "Tag: v5.1.107.80" BUILD_PROVENANCE.txt
+          )
+          file "$ARTIFACT/proot" | grep -Eqi 'ARM aarch64|ARM64'
+          readelf -h "$ARTIFACT/proot" | grep -E 'Machine:.*AArch64'
+          readelf -lW "$ARTIFACT/proot" | grep -F '/system/bin/linker64'
+          mkdir -p android/app/src/main/jniLibs/arm64-v8a
+          install -m 0755 "$ARTIFACT/proot" android/app/src/main/jniLibs/arm64-v8a/libproot.so
+          sha256sum android/app/src/main/jniLibs/arm64-v8a/libproot.so
       - name: Set up Java 17
         uses: actions/setup-java@v5.7.0
         with:
@@ -48,6 +78,27 @@ jobs:
           set -euo pipefail
           flutter build apk --debug --no-pub
           test -s build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Verify PRoot is packaged uncompressed for Android extraction
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="build/app/outputs/flutter-apk/app-debug.apk"
+          python3 - "$APK" <<'PY'
+          import sys, zipfile, hashlib
+          apk = sys.argv[1]
+          member = "lib/arm64-v8a/libproot.so"
+          with zipfile.ZipFile(apk) as archive:
+              info = archive.getinfo(member)
+              if info.compress_type != zipfile.ZIP_STORED:
+                  raise SystemExit("ERROR: libproot.so must be stored uncompressed for PackageManager extraction")
+              payload = archive.read(member)
+          with open("android/app/src/main/jniLibs/arm64-v8a/libproot.so", "rb") as source:
+              expected = source.read()
+          if payload != expected:
+              raise SystemExit("ERROR: packaged PRoot differs from the verified NDK artifact")
+          print(f"APK native PRoot extraction payload: PASS ({len(payload)} bytes, uncompressed)")
+          PY
 
       - name: Run Bisho app JVM unit tests
         run: |
