@@ -16,6 +16,7 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.os.StatFs
 import android.system.Os
+import android.system.OsConstants
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -1169,6 +1170,7 @@ class MainActivity : FlutterActivity() {
                 rootfs == null || !rootfs.isDirectory) {
                 throw IllegalStateException("مشغل Linux أو نظام الملفات الجذري غير مكتمل.")
             }
+            prepareProotLauncher(launcher)
             refreshGuestResolver(rootfs)
             if (!hasDeviceVerification(engineDirectory, manifest, "debug")) {
                 throw IllegalStateException("يجب نجاح اختبار PRoot وبناء APK والتحقق منه على هذا الهاتف قبل السماح بالبناء.")
@@ -1542,6 +1544,7 @@ class MainActivity : FlutterActivity() {
             printf '%s\n' "${'$'}BADGING" > /bisho-home/aapt-badging.txt
             printf '%s\n' "${'$'}BADGING" | grep -q '^package:'
         """.trimIndent()
+        prepareProotLauncher(launcher)
         val prootTmpDirectory = ensureProotTmpDirectory()
         val command = mutableListOf(
             launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
@@ -1984,6 +1987,32 @@ class MainActivity : FlutterActivity() {
             throw IllegalStateException("تم تثبيت التطبيق وطلب تشغيله، لكن لم يُرصد process الخاص به؛ لم يتم اعتماد المحرك.")
         }
         emitBuildEvent("تم تثبيت تطبيق اختبار PRoot وتشغيله بنجاح: $expectedPackageName")
+    }
+
+    /** Re-apply executable permissions immediately before launching PRoot.
+     * Some Android archive/filesystem paths report canExecute() incorrectly
+     * after extraction; Os.access checks the effective kernel permission.
+     */
+    private fun prepareProotLauncher(launcher: File) {
+        val executable = launcher.canonicalFile
+        if (!executable.isFile || !executable.path.startsWith(
+                File(filesDir, "bisho-local-build-engine").canonicalPath + File.separator
+            )) {
+            throw SecurityException("مسار مشغل PRoot غير صالح أو خارج مجلد المحرك.")
+        }
+        try {
+            Os.chmod(executable.absolutePath, 0b111101101)
+            val parent = executable.parentFile
+                ?: throw IllegalStateException("مجلد مشغل PRoot غير موجود.")
+            Os.chmod(parent.absolutePath, 0b111101101)
+            if (!Os.access(executable.absolutePath, OsConstants.X_OK)) {
+                throw SecurityException("النواة لا تسمح بتنفيذ PRoot بعد chmod 0755؛ تحقق من سياسة تنفيذ ملفات التطبيق.")
+            }
+        } catch (error: Exception) {
+            throw IllegalStateException(
+                "تعذر تجهيز مشغل PRoot للتنفيذ: ${error.message ?: error.javaClass.simpleName}", error
+            )
+        }
     }
 
     private fun ensureProotTmpDirectory(): File {
