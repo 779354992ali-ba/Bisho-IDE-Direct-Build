@@ -319,8 +319,7 @@ class MainActivity : FlutterActivity() {
                 val linkName = entry.linkName.replace('\\', '/')
                 if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط TAR فارغ أو غير صالح.")
                 val linkTarget = if (entry.isSymbolicLink) {
-                    if (linkName.startsWith("/")) rootPath.resolve(linkName.removePrefix("/")).normalize()
-                    else linkPath.parent.resolve(linkName).normalize()
+                    RootfsSymlinkTargets.resolveGuestTarget(rootPath, linkPath, linkName)
                 } else {
                     rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
                 }
@@ -344,8 +343,12 @@ class MainActivity : FlutterActivity() {
                     }
                 }
                 if (entry.isSymbolicLink) {
-                    val relativeTarget = linkPath.parent.relativize(linkTarget)
-                    Files.createSymbolicLink(linkPath, relativeTarget)
+                    // Preserve relative TAR text (especially "." for usr/bin/X11).
+                    // Absolute guest paths are translated to safe relative host paths.
+                    Files.createSymbolicLink(
+                        linkPath,
+                        RootfsSymlinkTargets.targetForCreation(linkPath, linkTarget, linkName)
+                    )
                 } else {
                     if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في TAR يشير إلى ملف غير موجود.")
                     Files.copy(linkTarget, linkPath)
@@ -673,10 +676,9 @@ class MainActivity : FlutterActivity() {
                                         }
                                         mergeDirectoryContents(child, targetChild)
                                     } else if (Files.isSymbolicLink(child)) {
-                                        val oldTarget = child.parent.resolve(Files.readSymbolicLink(child)).normalize()
-                                        if (!oldTarget.startsWith(rootPath)) {
-                                            throw SecurityException("رابط متداخل يشير خارج rootfs أثناء الدمج.")
-                                        }
+                                        val oldTarget = RootfsSymlinkTargets.resolveGuestTarget(
+                                            rootPath, child, Files.readSymbolicLink(child).toString()
+                                        )
                                         if (Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
                                             if (!Files.isSymbolicLink(targetChild) ||
                                                 targetChild.parent.resolve(Files.readSymbolicLink(targetChild)).normalize() != oldTarget) {
@@ -684,7 +686,10 @@ class MainActivity : FlutterActivity() {
                                             }
                                             Files.delete(child)
                                         } else {
-                                            Files.createSymbolicLink(targetChild, targetChild.parent.relativize(oldTarget))
+                                            Files.createSymbolicLink(
+                                                targetChild,
+                                                RootfsSymlinkTargets.relativeTarget(targetChild, oldTarget)
+                                            )
                                             Files.delete(child)
                                         }
                                     } else if (Files.isRegularFile(child, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
@@ -711,11 +716,7 @@ class MainActivity : FlutterActivity() {
                         for ((tarEntry, linkPath) in symbolicLinks) {
                             val linkName = tarEntry.linkName.replace('\\', '/')
                             if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
-                            val linkTarget = if (linkName.startsWith("/")) {
-                                rootPath.resolve(linkName.removePrefix("/")).normalize()
-                            } else {
-                                linkPath.parent.resolve(linkName).normalize()
-                            }
+                            val linkTarget = RootfsSymlinkTargets.resolveGuestTarget(rootPath, linkPath, linkName)
                             if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط rootfs TAR يشير خارج الجذر: " + linkName)
                             Files.createDirectories(linkPath.parent)
                             if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
@@ -735,7 +736,10 @@ class MainActivity : FlutterActivity() {
                                 // duplicates are coalesced; conflicting data fails safely.
                                 mergeDirectoryContents(linkPath, linkTarget)
                             }
-                            Files.createSymbolicLink(linkPath, linkPath.parent.relativize(linkTarget))
+                            Files.createSymbolicLink(
+                                linkPath,
+                                RootfsSymlinkTargets.targetForCreation(linkPath, linkTarget, linkName)
+                            )
                         }
                     } else if (name.startsWith("rootfs/")) {
                         throw SecurityException("صيغة الحزمة تتطلب rootfs.tar.gz ولا تقبل مجلد rootfs مفكوكاً داخل ZIP.")
