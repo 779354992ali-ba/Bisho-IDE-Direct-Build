@@ -124,6 +124,16 @@ class ProjectInsightsAnalyzer {
               'قد يحتوي هذا السطر على سر ثابت؛ انقل القيمة إلى تخزين آمن أو متغير بيئة.',
               ProjectInsightSeverity.warning, ProjectInsightCategory.security);
         }
+        if (RegExp(r'''\bhttp://[^\s'"]+''', caseSensitive: false).hasMatch(line)) {
+          add('insecure_http_endpoint', path, lineNo,
+              'رُصد عنوان HTTP غير مشفّر؛ استخدم HTTPS للخدمات الخارجية بعد التحقق من دعمها.',
+              ProjectInsightSeverity.warning, ProjectInsightCategory.security);
+        }
+        if (RegExp(r'\b(eval|exec)\s*\(').hasMatch(line)) {
+          add('dynamic_code_execution', path, lineNo,
+              'استدعاء eval/exec قد ينفّذ نصاً كتعليمات؛ تجنب مدخلات المستخدم غير الموثوقة.',
+              ProjectInsightSeverity.warning, ProjectInsightCategory.security);
+        }
         if (path.endsWith('.dart') && RegExp(r'\bprint\s*\(').hasMatch(line)) {
           add('dart_print_call', path, lineNo,
               'استخدام print في كود التطبيق؛ راجع استخدام سجلّ مناسب قبل الإصدار.',
