@@ -3976,7 +3976,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                         itemBuilder: (context, index) {
                           final diagnostic = diagnostics[index];
                           final location = RegExp(
-                            r'السطر\\s+(\\d+)،\\s*العمود\\s+(\\d+)',
+                            r'السطر\s+(\d+)،\s*العمود\s+(\d+)',
                           ).firstMatch(diagnostic);
                           return ListTile(
                             dense: true,
