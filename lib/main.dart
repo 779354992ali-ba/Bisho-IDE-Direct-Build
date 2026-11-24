@@ -3486,7 +3486,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     var skippedFiles = 0;
     const maxFiles = 500;
     const maxFileBytes = 1024 * 1024;
-    final needle = query.toLowerCase();
+    const ignoredDirectories = {
+      '.git', '.dart_tool', '.idea', '.gradle', 'build',
+      'node_modules', '.bisho-backups',
+    };
+    final needle = query.trim().toLowerCase();
 
     Future<void> scanDirectory(
       String directoryUri,
@@ -3507,25 +3511,47 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             ? item.name
             : '$relativeDirectory/${item.name}';
         if (item.isDir) {
+          if (ignoredDirectories.contains(item.name.toLowerCase())) continue;
           await scanDirectory(item.uri, relativePath);
           continue;
         }
 
+        final matchesFileName = item.name.toLowerCase().contains(needle) ||
+            relativePath.toLowerCase().contains(needle);
         final dot = item.name.lastIndexOf('.');
         final extension = dot < 0
             ? ''
             : item.name.substring(dot + 1).toLowerCase();
-        if (!searchableExtensions.contains(extension)) continue;
+        final canReadContent = searchableExtensions.contains(extension);
+        if (!canReadContent) {
+          if (matchesFileName) {
+            results.add(_ProjectSearchResult(
+              file: item,
+              parentUri: directoryUri,
+              relativePath: relativePath,
+              matchingLines: const [],
+            ));
+          }
+          continue;
+        }
 
         visitedFiles++;
         try {
           final bytes = await safFiles.readFile(item.uri);
           if (bytes.length > maxFileBytes) {
             skippedFiles++;
+            if (matchesFileName) {
+              results.add(_ProjectSearchResult(
+                file: item,
+                parentUri: directoryUri,
+                relativePath: relativePath,
+                matchingLines: const [],
+              ));
+            }
             continue;
           }
           final content = utf8.decode(bytes, allowMalformed: true);
-          final lines = content.split('\n');
+          final lines = content.split('\\n');
           final matchingLines = <int>[];
           for (var i = 0; i < lines.length; i++) {
             if (lines[i].toLowerCase().contains(needle)) {
@@ -3533,7 +3559,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               if (matchingLines.length >= 20) break;
             }
           }
-          if (matchingLines.isNotEmpty) {
+          if (matchesFileName || matchingLines.isNotEmpty) {
             results.add(_ProjectSearchResult(
               file: item,
               parentUri: directoryUri,
@@ -3543,12 +3569,21 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           }
         } catch (_) {
           skippedFiles++;
+          if (matchesFileName) {
+            results.add(_ProjectSearchResult(
+              file: item,
+              parentUri: directoryUri,
+              relativePath: relativePath,
+              matchingLines: const [],
+            ));
+          }
         }
       }
     }
 
-    showMessage('جارٍ البحث داخل ملفات المشروع...');
+    showMessage('جارٍ البحث في أسماء الملفات ومحتوياتها...');
     await scanDirectory(rootUri, '');
+    results.sort((a, b) => a.relativePath.toLowerCase().compareTo(b.relativePath.toLowerCase()));
     if (!mounted) return;
 
     await showDialog<void>(
@@ -3565,8 +3600,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final result = results[index];
-                    final lineSummary =
-                        result.matchingLines.take(5).join(', ');
+                    final lineSummary = result.matchingLines.isEmpty
+                        ? 'تطابق في اسم الملف أو مساره'
+                        : 'الأسطر: ${result.matchingLines.take(5).join(', ')}'
+                            '${result.matchingLines.length > 5 ? ' ...' : ''}';
                     return ListTile(
                       dense: true,
                       leading: const Icon(Icons.description_outlined),
@@ -3576,9 +3613,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        '${result.relativePath}\n'
-                        'الأسطر: $lineSummary'
-                        '${result.matchingLines.length > 5 ? ' ...' : ''}',
+                        '${result.relativePath}\\n$lineSummary',
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
