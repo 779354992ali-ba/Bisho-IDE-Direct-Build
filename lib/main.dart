@@ -4156,7 +4156,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         '#!/usr/bin/env bash',
         'set -euo pipefail',
         'if [[  ]]; then\n  \nfi',
-        'for item in "${items[@]}"; do\n  \n done',
+        'for item in "\${items[@]}"; do\n  \n done',
         'function () {\n  \n}',
       ],
       'Markdown': ['# ', '## ', '- ', '1. ', '```\n\n```', '> '],
@@ -4215,10 +4215,6 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     );
 
     if (chosen == null || !mounted) return;
-    final current = controller.text;
-    final currentCursor = controller.selection.isValid
-        ? controller.selection.extentOffset.clamp(0, current.length).toInt()
-        : current.length;
     // Do not apply a stale completion if the document changed while the
     // suggestion dialog was open. This preserves newer user edits.
     if (controller.text != source) {
