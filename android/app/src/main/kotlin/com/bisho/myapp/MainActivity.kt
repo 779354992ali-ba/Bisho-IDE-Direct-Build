@@ -1730,13 +1730,90 @@ class MainActivity : FlutterActivity() {
         if (log.isFile) log.readText().takeLast(16000) else ""
     } catch (_: Exception) { "" }
 
+    /**
+     * Repairs only app-owned, reproducible state. Never deletes projects, the active
+     * engine, its previous known-good copy, or user-selected archives.
+     */
+    private fun repairSafeLocalBuildState(): Long {
+        var freedBytes = 0L
+        val cache = cacheDir
+        cache.listFiles()?.filter { it.isFile && (
+            it.name.startsWith("bisho-engine-probe-") ||
+            it.name.startsWith("bisho-build-") ||
+            it.name.endsWith(".pending")
+        ) }?.forEach { file ->
+            val length = file.length()
+            if (file.delete()) freedBytes += length
+        }
+
+        // A staging directory is never an installed engine. It is safe to discard
+        // only when no install is currently running (all native work is serialized).
+        val staleStaging = File(filesDir, "bisho-local-build-engine.installing")
+        if (staleStaging.exists()) {
+            val length = staleStaging.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            if (staleStaging.deleteRecursively()) freedBytes += length
+        }
+
+        // Keep APKs referenced by valid proof records; remove only abandoned .pending
+        // copies and unreferenced old smoke APKs created by this app.
+        val engine = File(filesDir, "bisho-local-build-engine")
+        val artifacts = File(filesDir, "bisho-local-build-artifacts")
+        val protected = mutableSetOf<String>()
+        for (proofName in listOf("local-build-debug-verification.json", "local-build-verification.json")) {
+            try {
+                val proof = File(engine, proofName)
+                if (proof.isFile) {
+                    val path = JSONObject(proof.readText()).optString("artifactPath")
+                    if (path.isNotBlank()) protected.add(File(path).canonicalPath)
+                }
+            } catch (_: Exception) { }
+        }
+        artifacts.listFiles()?.filter { it.isFile }?.forEach { file ->
+            val ownedSmokeArtifact = file.name.startsWith("bisho-debug-") && file.name.endsWith(".apk")
+            val abandonedTemp = file.name.endsWith(".pending")
+            if ((abandonedTemp || ownedSmokeArtifact) && file.canonicalPath !in protected) {
+                val length = file.length()
+                if (file.delete()) freedBytes += length
+            }
+        }
+        return freedBytes
+    }
+
+    /** Restore executable mode bits on known toolchain entry points without changing file contents. */
+    private fun repairKnownExecutablePermissions(engineDirectory: File, manifest: JSONObject): List<String> {
+        val repaired = mutableListOf<String>()
+        val relativePaths = mutableListOf(
+            manifest.optString("flutterExecutable"),
+            manifest.optString("javaExecutable"),
+            manifest.optString("rootfsDirectory").trimEnd('/') + "/bin/sh",
+            manifest.optString("androidSdkDirectory").trimEnd('/') + "/cmdline-tools/latest/bin/sdkmanager"
+        )
+        val sdk = manifest.optString("androidSdkDirectory").trimEnd('/')
+        val buildTools = File(engineDirectory, sdk.removePrefix(engineDirectory.absolutePath).trimStart('/') + "/build-tools")
+        buildTools.listFiles()?.filter { it.isDirectory }?.forEach { version ->
+            for (tool in listOf("aapt2", "aidl", "zipalign", "split-select", "apksigner")) {
+                relativePaths.add(version.resolve(tool).relativeTo(engineDirectory).invariantSeparatorsPath)
+            }
+        }
+        for (relative in relativePaths.filter { it.isNotBlank() }) {
+            val file = resolveInside(engineDirectory, relative) ?: continue
+            if (file.isFile && !file.canExecute()) {
+                if (file.setExecutable(true, false) || file.canExecute()) repaired.add(relative)
+            }
+        }
+        return repaired
+    }
+
     private fun inspectLocalBuildEnvironment(): Map<String, Any> {
         val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+        val freedBySafeRepair = repairSafeLocalBuildState()
         val storage = StatFs(filesDir.absolutePath).availableBytes
         val missing = mutableListOf<String>()
 
         val engineDirectory = File(filesDir, "bisho-local-build-engine")
         val manifest = File(engineDirectory, "engine-manifest.json")
+        val engineJson = try { if (manifest.isFile) JSONObject(manifest.readText()) else null } catch (_: Exception) { null }
+        val repairedExecutables = if (engineJson != null) repairKnownExecutablePermissions(engineDirectory, engineJson) else emptyList()
         val engineCheck = inspectToolchainManifest(engineDirectory, manifest, abi)
         val engineInstalled = engineCheck.first
         val requiredForCurrentState = if (engineInstalled) minimumBuildStorageBytes else engineInstallStorageBytes
@@ -1808,8 +1885,10 @@ class MainActivity : FlutterActivity() {
         return mapOf(
             "deviceAbi" to abi,
             "androidVersion" to Build.VERSION.SDK_INT,
-            "availableBytes" to storage,
+            "availableBytes" to StatFs(filesDir.absolutePath).availableBytes,
             "requiredStorageBytes" to requiredForCurrentState,
+            "automaticallyFreedBytes" to freedBySafeRepair,
+            "automaticallyRepairedPermissions" to repairedExecutables,
             "engineInstallStorageBytes" to engineInstallStorageBytes,
             "deviceSupported" to deviceSupported,
             "engineInstalled" to engineInstalled,
