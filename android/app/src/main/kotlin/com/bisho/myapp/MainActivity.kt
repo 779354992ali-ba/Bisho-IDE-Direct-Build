@@ -1474,8 +1474,14 @@ class MainActivity : FlutterActivity() {
         }
         val previous = File(filesDir, "bisho-local-build-engine.previous")
         if (result["success"] == true) {
-            if (previous.exists() && !previous.deleteRecursively()) {
+            val previousRemoved = !previous.exists() || previous.deleteRecursively()
+            if (!previousRemoved) {
                 emitBuildEvent("نجح اختبار المحرك، لكن تعذر حذف النسخة السابقة؛ تم الاحتفاظ بها للحماية.", true)
+            } else {
+                val failed = File(filesDir, "bisho-local-build-engine.failed")
+                if (failed.exists() && !failed.deleteRecursively()) {
+                    emitBuildEvent("نجح اختبار المحرك؛ تعذر تنظيف بقايا المحرك الفاشل السابقة، فتم الاحتفاظ بها.", true)
+                }
             }
             return result
         }
