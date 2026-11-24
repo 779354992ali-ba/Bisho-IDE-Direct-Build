@@ -2078,7 +2078,13 @@ Thumbs.db
             }
           }),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 20),
+        Row(children: [
+          Icon(Icons.folder_open_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text('ملفات المشروع', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 10),
         if (_selectedLanguage == 'Java')
           _infoCard(
             'سيتم إنشاء ملف البداية تلقائيًا وفق اسم الحزمة:\n'
@@ -2091,7 +2097,13 @@ Thumbs.db
             hint: _defaultEntryFile,
             icon: Icons.insert_drive_file_outlined,
           ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 18),
+        Row(children: [
+          Icon(Icons.tune_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text('إعدادات اللغة والإصدار', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 10),
         _field(
           controller: _versionController,
           label: 'إصدار المشروع',
@@ -2175,7 +2187,13 @@ Thumbs.db
             icon: Icons.person_outline,
           ),
         ],
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
+        Row(children: [
+          Icon(Icons.auto_awesome_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text('ملفات إضافية', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 8),
         _optionTile(
           title: 'إنشاء README.md',
           subtitle: 'ملف يشرح المشروع ومعلوماته.',
