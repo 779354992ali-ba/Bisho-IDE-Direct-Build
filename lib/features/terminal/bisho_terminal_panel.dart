@@ -930,19 +930,26 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
 
   Widget _quickBar() {
     Widget chip(String label, VoidCallback onTap, {IconData? icon}) => Padding(
-          padding: const EdgeInsets.only(right: 6),
+          padding: const EdgeInsetsDirectional.only(end: 7),
           child: ActionChip(
             visualDensity: VisualDensity.compact,
+            side: const BorderSide(color: Color(0xFF2A3C55)),
+            backgroundColor: const Color(0xFF152238),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             avatar: icon == null ? null : Icon(icon, size: 15, color: _cyan),
             label: Text(label, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
             onPressed: _busy ? null : onTap,
           ),
         );
-    return SizedBox(
-      height: 38,
+    return Container(
+      height: 46,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0E1929),
+        border: Border(top: BorderSide(color: Color(0xFF26374E))),
+      ),
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         children: [
           chip('Tab', _complete, icon: Icons.keyboard_tab_rounded),
           chip('↑', () => _historyMove(-1)),
@@ -979,8 +986,8 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
                 _output[index].text,
                 style: TextStyle(
                   color: _output[index].color,
-                  fontSize: 11,
-                  height: 1.45,
+                  fontSize: 12,
+                  height: 1.5,
                   fontFamily: 'monospace',
                 ),
               ),
