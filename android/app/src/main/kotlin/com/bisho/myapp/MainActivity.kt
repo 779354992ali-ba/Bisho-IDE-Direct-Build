@@ -47,7 +47,8 @@ import java.util.concurrent.atomic.AtomicReference
 class MainActivity : FlutterActivity() {
     private val localBuildChannel = "com.bisho.ide/local_build"
     // Dynamic admission: actual archive size + a reserve, not a fixed 20 GB gate.
-    private val engineInstallStorageBytes = 1024L * 1024L * 1024L
+    private val engineInstallStorageBytes = 2560L * 1024L * 1024L
+    private val alpineInstallStorageBytes = 1024L * 1024L * 1024L
     private val extractionSafetyReserveBytes = 512L * 1024L * 1024L
     private val minimumBuildStorageBytes = 2560L * 1024L * 1024L
     private val buildExecutor = Executors.newSingleThreadExecutor()
@@ -258,7 +259,7 @@ class MainActivity : FlutterActivity() {
             throw SecurityException("أرشيف Alpine خارج مجلد التنزيل الآمن أو غير موجود.")
         }
         if (archive.length() > 256L * 1024L * 1024L) throw IllegalArgumentException("أرشيف Alpine أكبر من الحد المسموح.")
-        if (StatFs(filesDir.absolutePath).availableBytes < 1024L * 1024L * 1024L) throw IllegalStateException("يلزم 1 GB مساحة حرة قبل تثبيت Alpine.")
+        if (StatFs(filesDir.absolutePath).availableBytes < alpineInstallStorageBytes) throw IllegalStateException("يلزم 1 GB مساحة حرة قبل تثبيت Alpine.")
         val digest = MessageDigest.getInstance("SHA-256")
         FileInputStream(archive).use { input ->
             val buffer = ByteArray(256 * 1024)
