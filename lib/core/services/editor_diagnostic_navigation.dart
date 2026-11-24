@@ -15,7 +15,7 @@ class EditorDiagnosticNavigation {
     }
     if (currentLine != line) return null;
 
-    var lineEnd = source.indexOf('\\n', lineStart);
+    var lineEnd = source.indexOf('\n', lineStart);
     if (lineEnd == -1) lineEnd = source.length;
     if (lineEnd > lineStart && source.codeUnitAt(lineEnd - 1) == 0x0D) {
       lineEnd--;
