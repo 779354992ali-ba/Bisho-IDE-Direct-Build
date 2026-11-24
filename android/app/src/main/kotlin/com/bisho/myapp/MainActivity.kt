@@ -71,6 +71,19 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "inspectEnvironment" -> {
                         buildExecutor.execute {
+                            // Recover an install interrupted by process death: automatically test the
+                            // candidate on next app inspection, committing it only on success.
+                            val pendingEngineBackup = File(filesDir, "bisho-local-build-engine.previous")
+                            if (pendingEngineBackup.exists()) {
+                                val recoveryProbe = probeLocalBuildEngine()
+                                if (recoveryProbe["success"] != true) {
+                                    emitBuildEvent(
+                                        recoveryProbe["message"]?.toString()
+                                            ?: "فشل اختبار المحرك المعلّق؛ تمت محاولة استعادة النسخة السابقة.",
+                                        true
+                                    )
+                                }
+                            }
                             val environment = try { inspectLocalBuildEnvironment() } catch (error: Exception) {
                                 mapOf("deviceAbi" to (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"),
                                     "androidVersion" to Build.VERSION.SDK_INT, "availableBytes" to StatFs(filesDir.absolutePath).availableBytes,
