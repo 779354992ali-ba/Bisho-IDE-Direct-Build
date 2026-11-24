@@ -6289,7 +6289,6 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                                 ),
                                 onTap: isEnabled ? () {
                                   Navigator.pop(sheetContext);
-                                  searchController.dispose();
                                   _runEditorExtension(entry.id);
                                 } : null,
                               ),
