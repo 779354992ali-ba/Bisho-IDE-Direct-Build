@@ -1,6 +1,9 @@
 name: Build Flutter APK
 
 on:
+  push:
+    branches:
+      - fix/app-stream-rootfs-install
   workflow_dispatch:
     inputs:
       flutter_version:
