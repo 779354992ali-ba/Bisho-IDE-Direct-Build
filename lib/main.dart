@@ -5413,7 +5413,6 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                    child: Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
                      style: const TextStyle(fontSize: 10, color: Color(0xFF38BDF8), fontWeight: FontWeight.w700)),
                  ),
-                    style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
                 IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
               ]),
             ),
