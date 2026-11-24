@@ -5203,27 +5203,25 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     final metrics = WorkspaceMetrics.fromSources(
       tabs.map((tab) => tab.controller.text),
     );
-    return _dashboardPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _dashboardSectionTitle(Icons.insights_rounded, 'ملخص مساحة العمل'),
-          const SizedBox(height: 11),
-          Row(
-            children: [
-              _metricTile('التبويبات', metrics.fileCount.toString(), Icons.tab),
-              _metricTile('الأسطر', metrics.lineCount.toString(), Icons.format_align_left),
-              _metricTile('الكلمات', metrics.wordCount.toString(), Icons.text_fields),
-              _metricTile('الأحرف', metrics.characterCount.toString(), Icons.notes),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Text(
-            'الإحصائيات محسوبة من محتوى التبويبات المفتوحة فقط',
-            style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 10),
-          ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _dashboardSectionTitle(Icons.insights_rounded, 'ملخص مساحة العمل'),
+        const SizedBox(height: 11),
+        Row(
+          children: [
+            _metricTile('التبويبات', metrics.fileCount.toString(), Icons.tab),
+            _metricTile('الأسطر', metrics.lineCount.toString(), Icons.format_align_left),
+            _metricTile('الكلمات', metrics.wordCount.toString(), Icons.text_fields),
+            _metricTile('الأحرف', metrics.characterCount.toString(), Icons.notes),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Text(
+          'الإحصائيات محسوبة من محتوى التبويبات المفتوحة فقط',
+          style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 10),
+        ),
+      ],
     );
   }
 
