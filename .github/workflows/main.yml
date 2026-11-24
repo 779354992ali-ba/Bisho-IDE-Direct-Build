@@ -110,7 +110,10 @@ jobs:
           test -n "$AAPT"
           BADGING="$("$AAPT" dump badging "$APK")"
           printf '%s\n' "$BADGING" | grep -F "package: name='com.bisho.myapp' versionCode='100' versionName='1.0.1'"
-          unzip -l "$APK" | grep -Eq 'lib/arm64-v8a/libflutter\.so          mkdir -p build/release-artifact
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libflutter.so"
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libapp.so"
+          unzip -l "$APK" | grep -E "classes[0-9]*[.]dex"
+          echo "APK_IDENTITY_AND_ARM64_RUNTIME_VERIFIED"
           cp "$APK" build/release-artifact/app-release.apk
           cd build/release-artifact
           sha256sum app-release.apk | tee SHA256SUMS.txt
