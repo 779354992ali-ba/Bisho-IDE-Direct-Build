@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'alpine_rootfs_installer.dart';
 
 class EngineInstallProgress {
   const EngineInstallProgress(this.message, {this.received = 0, this.total = 0});
@@ -49,8 +50,26 @@ class LocalBuildEngineInstaller {
   /// Native code keeps the previous engine until this test passes and rolls
   /// back automatically on any failure.
   Future<void> _verifyInstalledEngine() async {
+    // Alpine is a separate optional rootfs. Provision it automatically when
+    // network and storage allow, but do not block Flutter's own bundled rootfs
+    // smoke test if the optional Alpine mirror is unavailable.
+    try {
+      final environment = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
+      if (environment?['alpineRootfsInstalled'] != true) {
+        final alpine = AlpineRootfsInstaller();
+        await alpine.install(onProgress: (message, received, total) {
+          _report(EngineInstallProgress(message, received: received, total: total));
+        });
+        _report(const EngineInstallProgress('تم تثبيت Alpine ARM64 والتحقق منه تلقائياً.'));
+      }
+    } catch (error) {
+      _report(EngineInstallProgress(
+        'تعذر تثبيت Alpine ARM64 تلقائياً: $error. سيستمر اختبار محرك Flutter الأساسي؛ Alpine اختياري لهذا الاختبار.',
+      ));
+    }
+
     _report(const EngineInstallProgress(
-      'اكتمل الاستخراج الآمن. جارٍ اختبار PRoot وبناء APK تجريبي على هذا الهاتف قبل اعتماد المحرك...',
+      'اكتمل فحص المكونات. جارٍ اختبار PRoot وبناء APK تجريبي على هذا الهاتف قبل اعتماد المحرك...',
     ));
     final result = await _channel.invokeMapMethod<Object?, Object?>('probeEngine');
     if (result?['success'] != true || result?['activated'] != true) {
