@@ -5984,6 +5984,25 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                       maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w700))),
                     Text('${diagnostics.length}', style: const TextStyle(color: Color(0xFF94A3B8))),
+                    IconButton(
+                      tooltip: 'نسخ تقرير المشكلات ونصائح الإصلاح',
+                      onPressed: () async {
+                        final report = diagnostics.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final message = entry.value;
+                          if (index >= parserCount) {
+                            final issue = structural[index - parserCount];
+                            return '${issue.line}:${issue.column} — ${issue.message}\\n${_diagnosticAdvice(issue.message)}';
+                          }
+                          return '$message\\n${_diagnosticAdvice(message)}';
+                        }).join('\\n\\n');
+                        await Clipboard.setData(ClipboardData(
+                          text: report.isEmpty ? 'لا توجد مشكلات في الفحص الحالي.' : report,
+                        ));
+                        if (mounted) showMessage('تم نسخ تقرير المشكلات ونصائح الإصلاح');
+                      },
+                      icon: const Icon(Icons.copy_all_rounded),
+                    ),
                     IconButton(onPressed: () => Navigator.pop(sheetContext),
                       icon: const Icon(Icons.close)),
                   ],
