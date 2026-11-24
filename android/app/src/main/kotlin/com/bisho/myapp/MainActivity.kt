@@ -465,7 +465,7 @@ class MainActivity : FlutterActivity() {
         val freeBytes = StatFs(filesDir.absolutePath).availableBytes
         if (freeBytes < minimumBuildStorageBytes) {
             throw IllegalStateException(
-                "المساحة غير كافية لتثبيت المحرك بأمان. نظّف التطبيق الملفات المؤقتة الآمنة وحرّر ${(minimumBuildStorageBytes / (1024.0 * 1024.0 * 1024.0)).format(1)} GB على الأقل؛ المتاح الآن ${(freeBytes / (1024.0 * 1024.0 * 1024.0)).format(1)} GB. لم نحذف مشاريعك أو المحرك السابق. تم توفير ${(freedBytes / (1024.0 * 1024.0 * 1024.0)).format(2)} GB تلقائياً."
+                "المساحة غير كافية لتثبيت المحرك بأمان. نظّف التطبيق الملفات المؤقتة الآمنة وحرّر ${"%.1f".format(minimumBuildStorageBytes / (1024.0 * 1024.0 * 1024.0))} GB على الأقل؛ المتاح الآن ${"%.1f".format(freeBytes / (1024.0 * 1024.0 * 1024.0))} GB. لم نحذف مشاريعك أو المحرك السابق. تم توفير ${"%.2f".format(freedBytes / (1024.0 * 1024.0 * 1024.0))} GB تلقائياً."
             )
         }
         emitBuildEvent("جارٍ حساب SHA-256 لحزمة المحرك...")
@@ -1163,7 +1163,7 @@ class MainActivity : FlutterActivity() {
             val freeBeforeBuild = StatFs(filesDir.absolutePath).availableBytes
             if (freeBeforeBuild < minimumBuildStorageBytes) {
                 throw IllegalStateException(
-                    "نظّف Bisho IDE الملفات المؤقتة الآمنة أولاً ووفّر مساحة إضافية. المتاح: ${(freeBeforeBuild / (1024.0 * 1024.0 * 1024.0)).format(2)} GB؛ المطلوب مبدئياً: 2.5 GB؛ المساحة التي حررها الإصلاح التلقائي: ${(freedBytes / (1024.0 * 1024.0 * 1024.0)).format(2)} GB. لم تُحذف ملفات مشاريعك أو ملفات المحرك."
+                    "نظّف Bisho IDE الملفات المؤقتة الآمنة أولاً ووفّر مساحة إضافية. المتاح: ${"%.2f".format(freeBeforeBuild / (1024.0 * 1024.0 * 1024.0))} GB؛ المطلوب مبدئياً: 2.5 GB؛ المساحة التي حررها الإصلاح التلقائي: ${"%.2f".format(freedBytes / (1024.0 * 1024.0 * 1024.0))} GB. لم تُحذف ملفات مشاريعك أو ملفات المحرك."
                 )
             }
             val stagingRoot = File(filesDir, "bisho-local-builds").canonicalFile
