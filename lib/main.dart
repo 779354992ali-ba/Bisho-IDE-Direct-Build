@@ -6030,12 +6030,15 @@ class TerminalFullScreenScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: const Color(0xFF080D19),
         appBar: AppBar(
-          backgroundColor: const Color(0xFF101827),
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
           title: const Row(
             children: [
               Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
-              SizedBox(width: 8),
-              Text('طرفية Bisho', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(width: 9),
+              Text('طرفية Bisho', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             ],
           ),
           leading: IconButton(
