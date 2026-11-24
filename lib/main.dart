@@ -6003,9 +6003,15 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                                 : issue.severity == ProjectInsightSeverity.warning
                                     ? const Color(0xFFFFC247)
                                     : const Color(0xFF38BDF8);
-                            final matchingTab = tabs.where((tab) =>
-                              tab.fileName.replaceAll('\\\\', '/') == issue.path).firstOrNull;
-                            final canNavigate = matchingTab != null && issue.line > 0;
+                            EditorTab? matchingTab;
+                            for (final candidate in tabs) {
+                              if (candidate.fileName.replaceAll('\\\\', '/') == issue.path) {
+                                matchingTab = candidate;
+                                break;
+                              }
+                            }
+                            final targetTab = matchingTab;
+                            final canNavigate = targetTab != null && issue.line > 0;
 
                             return ListTile(
                               dense: true,
@@ -6027,14 +6033,15 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                                       size: 17, color: Color(0xFF38BDF8))
                                   : null,
                               onTap: canNavigate ? () {
+                                if (targetTab == null) return;
                                 final offset = EditorDiagnosticNavigation.offsetForLineColumn(
-                                  matchingTab.controller.text, issue.line, 1);
+                                  targetTab.controller.text, issue.line, 1);
                                 if (offset == null) return;
-                                final tabIndex = tabs.indexOf(matchingTab);
+                                final tabIndex = tabs.indexOf(targetTab);
                                 Navigator.pop(sheetContext);
                                 setState(() {
                                   activeIndex = tabIndex;
-                                  matchingTab.controller.selection =
+                                  targetTab.controller.selection =
                                       TextSelection.collapsed(offset: offset);
                                 });
                                 _scheduleTabStateSave();
