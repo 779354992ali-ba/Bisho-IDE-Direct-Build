@@ -1046,9 +1046,12 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       child: Scaffold(
         backgroundColor: _background,
         appBar: AppBar(
-          backgroundColor: const Color(0xFF151C30),
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
           title: const Text('بناء ومعاينة Flutter',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           actions: [
             IconButton(onPressed: _copyLog, icon: const Icon(Icons.copy_rounded),
               tooltip: 'نسخ سجل البناء'),
