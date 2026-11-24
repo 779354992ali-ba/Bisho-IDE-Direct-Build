@@ -6564,7 +6564,29 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   ],
                 ),
                 const SizedBox(height: 12),
-                const Text('معاينة الناتج', style: TextStyle(fontWeight: FontWeight.w700)),
+                const Text('النص قبل التعديل', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 120),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF475569)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      input.length > 2500
+                          ? '${input.substring(0, 2500)}\\n… تم اختصار النص السابق.'
+                          : input,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('النص بعد التعديل', style: TextStyle(fontWeight: FontWeight.w700)),
                 const SizedBox(height: 6),
                 Container(
                   width: double.infinity,
