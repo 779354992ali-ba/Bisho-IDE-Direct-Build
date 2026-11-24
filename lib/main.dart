@@ -1413,6 +1413,290 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     }
   }
 
+  static const String _recentProjectsKey = 'bisho_recent_projects_v1';
+  static const String _favoriteProjectsKey = 'bisho_favorite_projects_v1';
+
+  Future<List<Map<String, String>>> _readRecentProjects() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_recentProjectsKey);
+      if (raw == null || raw.isEmpty) return <Map<String, String>>[];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return <Map<String, String>>[];
+      return decoded.whereType<Map>().map((item) => <String, String>{
+        'uri': item['uri']?.toString() ?? '',
+        'name': item['name']?.toString() ?? 'مشروع',
+        'openedAt': item['openedAt']?.toString() ?? '',
+      }).where((item) => item['uri']!.isNotEmpty).toList();
+    } catch (_) {
+      return <Map<String, String>>[];
+    }
+  }
+
+  Future<void> _rememberProject(String uri, String name) async {
+    if (uri.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final recent = await _readRecentProjects();
+      recent.removeWhere((item) => item['uri'] == uri);
+      recent.insert(0, <String, String>{
+        'uri': uri,
+        'name': name.isEmpty ? 'مشروع' : name,
+        'openedAt': DateTime.now().toIso8601String(),
+      });
+      if (recent.length > 12) recent.removeRange(12, recent.length);
+      await prefs.setString(_recentProjectsKey, jsonEncode(recent));
+    } catch (_) {
+      // Project opening must remain available when optional history storage fails.
+    }
+  }
+
+  Future<Set<String>> _readFavoriteProjects() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getStringList(_favoriteProjectsKey)?.toSet() ?? <String>{};
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  Future<void> _toggleFavoriteProject(String uri) async {
+    if (uri.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final favorites = await _readFavoriteProjects();
+      if (!favorites.add(uri)) {
+        favorites.remove(uri);
+      }
+      await prefs.setStringList(_favoriteProjectsKey, favorites.toList());
+    } catch (_) {
+      showMessage('تعذر حفظ قائمة المشاريع المفضلة');
+    }
+  }
+
+  Future<void> _openRememberedProject(String uri, String name) async {
+    try {
+      final permissions = await safFiles.getPersistedPermissions();
+      final permission = permissions.where((item) =>
+        item.uri == uri && item.read && item.write,
+      );
+      if (permission.isEmpty) {
+        showMessage('انتهت صلاحية الوصول لهذا المشروع. أعد فتحه من اختيار المجلد.');
+        return;
+      }
+      final directory = await safFiles.getItem(uri);
+      if (directory == null || !directory.isDir) {
+        showMessage('المشروع لم يعد متاحاً في موقعه الأصلي.');
+        return;
+      }
+      if (projectUri != uri) {
+        final projectTabs = tabs.where((tab) =>
+          tab.parentUri != null && tab.parentUri!.isNotEmpty,
+        ).toList();
+        final unsavedCount = projectTabs.where((tab) => !tab.isSaved).length;
+        if (projectUri != null && projectTabs.isNotEmpty) {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('تبديل المشروع؟'),
+              content: Text(
+                unsavedCount > 0
+                  ? 'يوجد $unsavedCount ملف غير محفوظ. ستبقى التبويبات القديمة مرتبطة بمجلداتها ولن تُحذف.'
+                  : 'ستبقى التبويبات القديمة مفتوحة ومرتبطة بمجلداتها الأصلية.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('متابعة'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true || !mounted) return;
+        }
+      }
+      await saveTabStateSilently();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('bisho_project_uri', uri);
+      await prefs.setString('bisho_project_name', directory.name.isNotEmpty ? directory.name : name);
+      await prefs.remove(_savedDirectoryUriKey);
+      await prefs.remove(_savedDirectoryNameKey);
+      if (!mounted) return;
+      setState(() {
+        projectUri = uri;
+        projectName = directory.name.isNotEmpty ? directory.name : name;
+        selectedDirectoryUri = null;
+        selectedDirectoryName = '';
+        explorerVisible = true;
+        _explorerRevision++;
+        status = 'تم فتح المشروع من المدير الذكي';
+      });
+      await _rememberProject(uri, projectName);
+      showMessage('تم فتح $projectName');
+    } catch (error) {
+      showMessage('تعذر فتح المشروع المحفوظ: $error');
+    }
+  }
+
+  Future<void> showProjectManager() async {
+    var recent = await _readRecentProjects();
+    var favorites = await _readFavoriteProjects();
+    if (!mounted) return;
+    final searchController = TextEditingController();
+    var query = '';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final normalized = query.trim().toLowerCase();
+          final filtered = recent.where((item) {
+            final name = item['name']!.toLowerCase();
+            final uri = item['uri']!.toLowerCase();
+            return normalized.isEmpty || name.contains(normalized) || uri.contains(normalized);
+          }).toList();
+          final favoriteItems = filtered.where((item) => favorites.contains(item['uri'])).toList();
+          final otherItems = filtered.where((item) => !favorites.contains(item['uri'])).toList();
+
+          Widget projectTile(Map<String, String> item) {
+            final uri = item['uri']!;
+            final name = item['name']!;
+            final isCurrent = projectUri == uri;
+            final isFavorite = favorites.contains(uri);
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              leading: CircleAvatar(
+                radius: 19,
+                backgroundColor: const Color(0xFF38BDF8).withValues(alpha: .12),
+                child: Icon(isCurrent ? Icons.folder_open_rounded : Icons.folder_rounded,
+                  color: const Color(0xFF38BDF8), size: 20),
+              ),
+              title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600)),
+              subtitle: Text(
+                isCurrent ? 'المشروع المفتوح حالياً' : 'آخر فتح: \${item['openedAt']!.isEmpty ? 'غير محدد' : item['openedAt']!.replaceFirst('T', ' ').split('.').first}',
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Wrap(
+                spacing: 0,
+                children: [
+                  IconButton(
+                    tooltip: isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة',
+                    onPressed: () async {
+                      await _toggleFavoriteProject(uri);
+                      favorites = await _readFavoriteProjects();
+                      if (context.mounted) setDialogState(() {});
+                    },
+                    icon: Icon(isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                      color: isFavorite ? const Color(0xFFFBBF24) : Colors.white54),
+                  ),
+                  IconButton(
+                    tooltip: 'فتح المشروع',
+                    onPressed: () async {
+                      Navigator.pop(dialogContext);
+                      await _openRememberedProject(uri, name);
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded, color: Color(0xFF34D399)),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return AlertDialog(
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+            contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            title: Row(
+              children: [
+                const Icon(Icons.workspaces_rounded, color: Color(0xFF38BDF8)),
+                const SizedBox(width: 10),
+                const Expanded(child: Text('مدير المشاريع الذكي')),
+                IconButton(
+                  tooltip: 'تحديث القائمة',
+                  onPressed: () async {
+                    recent = await _readRecentProjects();
+                    favorites = await _readFavoriteProjects();
+                    if (context.mounted) setDialogState(() {});
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: MediaQuery.of(dialogContext).size.height * .62,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: searchController,
+                    onChanged: (value) => setDialogState(() => query = value),
+                    decoration: InputDecoration(
+                      hintText: 'ابحث عن مشروع أو مساره...',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: query.isEmpty ? null : IconButton(
+                        onPressed: () {
+                          searchController.clear();
+                          setDialogState(() => query = '');
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: recent.isEmpty
+                      ? const Center(child: Text('ستظهر هنا المشاريع التي تفتحها لاحقاً.'))
+                      : filtered.isEmpty
+                        ? const Center(child: Text('لا توجد مشاريع مطابقة للبحث.'))
+                        : ListView(
+                            children: [
+                              if (favoriteItems.isNotEmpty) ...[
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(4, 4, 4, 6),
+                                  child: Text('المشاريع المفضلة', style: TextStyle(
+                                    color: Color(0xFFFBBF24), fontWeight: FontWeight.w800)),
+                                ),
+                                ...favoriteItems.map(projectTile),
+                              ],
+                              if (otherItems.isNotEmpty) ...[
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(4, 12, 4, 6),
+                                  child: Text('المشاريع الأخيرة', style: TextStyle(
+                                    color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                                ),
+                                ...otherItems.map(projectTile),
+                              ],
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton.icon(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  await openProjectFolder();
+                },
+                icon: const Icon(Icons.folder_open_rounded),
+                label: const Text('فتح مجلد آخر'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إغلاق'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    searchController.dispose();
+  }
+
   Future<void> openProjectFolder() async {
     try {
       final directory = await safFiles.pickProjectFolder();
@@ -1486,6 +1770,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         status = 'تم فتح المشروع عبر SAF';
       });
 
+      await _rememberProject(directory.uri, directory.name);
       showMessage('تم فتح مجلد المشروع');
     } catch (e) {
       showMessage('تعذر فتح المجلد: $e');
@@ -1589,6 +1874,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
             status = 'تم إنشاء المشروع ${project.name}';
           });
+
+          await _rememberProject(project.rootUri, project.name);
 
           // البحث عن ملف البداية داخل المشروع.
           try {
@@ -4665,6 +4952,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 if (value == 'new_project') createNewProject();
                 if (value == 'open') openFile();
                 if (value == 'folder') openProjectFolder();
+                if (value == 'projects') showProjectManager();
                 if (value == 'export') exportFile();
                 if (value == 'export_project') exportProjectArchive();
                 if (value == 'import_zip') importProjectArchive();
@@ -4682,6 +4970,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 _bishoMenuItem('new_project', Icons.create_new_folder_rounded, 'إنشاء مشروع جديد'),
                 _bishoMenuItem('open', Icons.file_open_rounded, 'فتح ملف'),
                 _bishoMenuItem('folder', Icons.folder_open_rounded, 'فتح مجلد مشروع'),
+                _bishoMenuItem('projects', Icons.workspaces_rounded, 'مدير المشاريع الذكي'),
                 const PopupMenuDivider(),
                 _bishoMenuItem('export', Icons.download_rounded, 'تصدير الملف'),
                 _bishoMenuItem('export_project', Icons.archive_rounded, 'تصدير المشروع ZIP كاملاً'),
@@ -4850,6 +5139,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     final projectActions = <_DashboardAction>[
       _DashboardAction(Icons.create_new_folder_rounded, 'إنشاء مشروع', createNewProject, cyan),
       _DashboardAction(Icons.folder_open_rounded, 'فتح مجلد مشروع', openProjectFolder, cyan),
+      _DashboardAction(Icons.workspaces_rounded, 'مدير المشاريع الذكي', showProjectManager, violet),
       _DashboardAction(Icons.drive_folder_upload_rounded, 'استيراد مشروع', importExistingProject, green),
       _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, cyan),
       _DashboardAction(Icons.file_open_rounded, 'فتح ملف', openFile, cyan),
