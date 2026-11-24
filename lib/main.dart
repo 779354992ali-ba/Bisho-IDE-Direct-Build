@@ -5885,73 +5885,175 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   void _openProjectInsightsPanel() {
     final files = <String, String>{};
     for (final tab in tabs) {
-      final path = tab.fileName.replaceAll('\\', '/');
+      final path = tab.fileName.replaceAll('\\\\', '/');
       if (path.isNotEmpty && !files.containsKey(path)) {
         files[path] = tab.controller.text;
       }
     }
     final report = const ProjectInsightsAnalyzer().analyze(files);
+    ProjectInsightCategory? selectedCategory;
+
+    String categoryLabel(ProjectInsightCategory category) {
+      switch (category) {
+        case ProjectInsightCategory.structure:
+          return 'هيكل المشروع';
+        case ProjectInsightCategory.imports:
+          return 'الاستيرادات';
+        case ProjectInsightCategory.maintenance:
+          return 'الصيانة';
+        case ProjectInsightCategory.security:
+          return 'الأمان';
+        case ProjectInsightCategory.dependencies:
+          return 'الحزم';
+        case ProjectInsightCategory.style:
+          return 'تنسيق الكود';
+      }
+    }
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * .72,
-          child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
-              child: Row(children: [
-                const Icon(Icons.health_and_safety_rounded, color: Color(0xFF19D889)),
-                const SizedBox(width: 9),
-                const Expanded(child: Text('فحص الملفات المفتوحة', style: TextStyle(fontWeight: FontWeight.w800))),
-                 Container(
-                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                   decoration: BoxDecoration(color: const Color(0xFF38BDF8).withValues(alpha: .10), borderRadius: BorderRadius.circular(20)),
-                   child: Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
-                     style: const TextStyle(fontSize: 10, color: Color(0xFF38BDF8), fontWeight: FontWeight.w700)),
-                 ),
-                IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refreshSheet) {
+          final visibleInsights = report.insights.where((issue) =>
+              selectedCategory == null || issue.category == selectedCategory).toList();
+          final categories = ProjectInsightCategory.values
+              .where((category) => report.insights.any((issue) => issue.category == category))
+              .toList();
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .78,
+              child: Column(children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+                  child: Row(children: [
+                    const Icon(Icons.health_and_safety_rounded, color: Color(0xFF19D889)),
+                    const SizedBox(width: 9),
+                    const Expanded(child: Text('فحص الملفات المفتوحة',
+                      style: TextStyle(fontWeight: FontWeight.w800))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF38BDF8).withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(20)),
+                      child: Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
+                        style: const TextStyle(fontSize: 10, color: Color(0xFF38BDF8),
+                          fontWeight: FontWeight.w700)),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close)),
+                  ]),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('تحليل محلي للملفات المفتوحة فقط — لا يتم تعديل أي ملف.',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                  )),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(children: [
+                    _insightCount('أخطاء', report.count(ProjectInsightSeverity.error),
+                      const Color(0xFFFF647C)),
+                    _insightCount('تحذيرات', report.count(ProjectInsightSeverity.warning),
+                      const Color(0xFFFFC247)),
+                    _insightCount('ملاحظات', report.count(ProjectInsightSeverity.info),
+                      const Color(0xFF38BDF8)),
+                  ])),
+                if (categories.isNotEmpty)
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: const Text('الكل'),
+                            selected: selectedCategory == null,
+                            onSelected: (_) => refreshSheet(() => selectedCategory = null),
+                          ),
+                        ),
+                        ...categories.map((category) => Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: Text(categoryLabel(category)),
+                            selected: selectedCategory == category,
+                            onSelected: (_) => refreshSheet(
+                              () => selectedCategory = category),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                const Divider(height: 12),
+                Expanded(
+                  child: visibleInsights.isEmpty
+                      ? const Center(child: Text('لا توجد ملاحظات في هذا التصنيف.'))
+                      : ListView.separated(
+                          itemCount: visibleInsights.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, index) {
+                            final issue = visibleInsights[index];
+                            final color = issue.severity == ProjectInsightSeverity.error
+                                ? const Color(0xFFFF647C)
+                                : issue.severity == ProjectInsightSeverity.warning
+                                    ? const Color(0xFFFFC247)
+                                    : const Color(0xFF38BDF8);
+                            final matchingTab = tabs.where((tab) =>
+                              tab.fileName.replaceAll('\\\\', '/') == issue.path).firstOrNull;
+                            final canNavigate = matchingTab != null && issue.line > 0;
+
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(
+                                issue.severity == ProjectInsightSeverity.error
+                                    ? Icons.error_outline
+                                    : issue.severity == ProjectInsightSeverity.warning
+                                        ? Icons.warning_amber_rounded
+                                        : Icons.info_outline,
+                                color: color),
+                              title: Text(issue.message,
+                                style: const TextStyle(fontSize: 12)),
+                              subtitle: Text(
+                                issue.line > 0 ? '${issue.path}:${issue.line}' : issue.path,
+                                style: const TextStyle(fontSize: 10,
+                                  color: Color(0xFF94A3B8))),
+                              trailing: canNavigate
+                                  ? const Icon(Icons.my_location_outlined,
+                                      size: 17, color: Color(0xFF38BDF8))
+                                  : null,
+                              onTap: canNavigate ? () {
+                                final offset = EditorDiagnosticNavigation.offsetForLineColumn(
+                                  matchingTab.controller.text, issue.line, 1);
+                                if (offset == null) return;
+                                final tabIndex = tabs.indexOf(matchingTab);
+                                Navigator.pop(sheetContext);
+                                setState(() {
+                                  activeIndex = tabIndex;
+                                  matchingTab.controller.selection =
+                                      TextSelection.collapsed(offset: offset);
+                                });
+                                _scheduleTabStateSave();
+                              } : null,
+                            );
+                          },
+                        ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Text(
+                    'الفحص يغطي التبويبات المفتوحة فقط. اضغط على التشخيص ذي الموقع للانتقال إليه.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                  )),
               ]),
             ),
-             const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 10), child: Align(
-               alignment: Alignment.centerRight,
-               child: Text('تحليل محلي للملفات المفتوحة فقط — لا يتم تعديل أي ملف.', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-             )),
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Row(children: [
-              _insightCount('أخطاء', report.count(ProjectInsightSeverity.error), const Color(0xFFFF647C)),
-              _insightCount('تحذيرات', report.count(ProjectInsightSeverity.warning), const Color(0xFFFFC247)),
-              _insightCount('ملاحظات', report.count(ProjectInsightSeverity.info), const Color(0xFF38BDF8)),
-            ])),
-            const Divider(height: 18),
-            Expanded(child: report.insights.isEmpty
-                ? const Center(child: Text('لا توجد ملاحظات في الملفات المفتوحة.'))
-                : ListView.separated(
-                    itemCount: report.insights.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, index) {
-                      final issue = report.insights[index];
-                      final color = issue.severity == ProjectInsightSeverity.error
-                          ? const Color(0xFFFF647C)
-                          : issue.severity == ProjectInsightSeverity.warning
-                              ? const Color(0xFFFFC247) : const Color(0xFF38BDF8);
-                      return ListTile(
-                        dense: true,
-                        leading: Icon(issue.severity == ProjectInsightSeverity.error
-                            ? Icons.error_outline : issue.severity == ProjectInsightSeverity.warning
-                                ? Icons.warning_amber_rounded : Icons.info_outline, color: color),
-                        title: Text(issue.message, style: const TextStyle(fontSize: 12)),
-                        subtitle: Text(issue.line > 0 ? '${issue.path}:${issue.line}' : issue.path,
-                            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                      );
-                    },
-                  )),
-            const Padding(padding: EdgeInsets.all(10), child: Text(
-              'الفحص يغطي التبويبات المفتوحة فقط ولا يغيّر أي ملف. نتائج الاستيراد والتحذيرات إرشادية.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-            )),
-          ]),
-        ),
+          );
+        },
       ),
     );
   }
