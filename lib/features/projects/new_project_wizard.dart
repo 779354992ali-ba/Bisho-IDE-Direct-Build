@@ -1808,21 +1808,42 @@ Thumbs.db
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
             child: Row(
               children: [
-                Icon(
-                  Icons.create_new_folder_outlined,
-                  color: colors.primary,
-                  size: 26,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: colors.primary.withValues(alpha: .18)),
+                  ),
+                  child: Icon(
+                    Icons.create_new_folder_outlined,
+                    color: colors.primary,
+                    size: 23,
+                  ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    'إنشاء مشروع جديد',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'إنشاء مشروع جديد',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'اتبع الخطوات لإعداد مشروعك',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
