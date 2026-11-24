@@ -474,14 +474,17 @@ class MainActivity : FlutterActivity() {
         val engineRoot = File(filesDir, "bisho-local-build-engine")
         val staging = File(filesDir, "bisho-local-build-engine.installing")
         val backup = File(filesDir, "bisho-local-build-engine.previous")
-        // Recover an interrupted previous switch before starting another install.
+        // A backup plus an active engine means device smoke verification is still pending.
+        // Never discard the last known-good engine before the candidate passes on-device.
         if (backup.exists()) {
             if (!engineRoot.exists()) {
                 if (!backup.renameTo(engineRoot)) {
                     throw IllegalStateException("تعذر استعادة نسخة المحرك السابقة بعد تثبيت منقطع.")
                 }
-            } else if (!backup.deleteRecursively()) {
-                throw IllegalStateException("تعذر تنظيف النسخة الاحتياطية القديمة للمحرك.")
+            } else {
+                throw IllegalStateException(
+                    "توجد نسخة محرك جديدة لم تجتز اختبار الهاتف بعد؛ اختبرها أولاً أو استعد النسخة السابقة."
+                )
             }
         }
         if (staging.exists() && !staging.deleteRecursively()) {
@@ -932,7 +935,7 @@ class MainActivity : FlutterActivity() {
                 if (backup.exists()) backup.renameTo(engineRoot)
                 throw IllegalStateException("تعذر تفعيل مجلد المحرك الجديد.")
             }
-            if (backup.exists()) backup.deleteRecursively()
+            // Keep .previous until probeLocalBuildEngine completes successfully on this device.
             File(engineRoot, "local-build-verification.json").delete()
             File(engineRoot, "local-build-debug-verification.json").delete()
             emitBuildEvent("تم تجهيز ملفات المحرك والتحقق من manifest وSHA-256؛ لم يُفعّل للبناء المحلي بعد. يلزم نجاح اختبار الهاتف أولًا.")
@@ -1640,6 +1643,10 @@ class MainActivity : FlutterActivity() {
                 if (!proofTemp.renameTo(proof)) throw IllegalStateException("تعذر اعتماد إثبات اختبار المحرك.")
                 artifactRoot.listFiles()?.filter { it.isFile && it.name.startsWith("bisho-debug-") && it.name.endsWith(".apk") }
                     ?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
+                val previousEngine = File(filesDir, "bisho-local-build-engine.previous")
+                if (previousEngine.exists() && !previousEngine.deleteRecursively()) {
+                    throw IllegalStateException("نجح اختبار المحرك، لكن تعذر تنظيف النسخة السابقة؛ احتفظنا بها للحماية.")
+                }
                 mapOf(
                     "success" to true,
                     "activated" to true,
@@ -1652,7 +1659,28 @@ class MainActivity : FlutterActivity() {
                 )
             }
         } catch (error: Exception) {
-            mapOf("success" to false, "message" to (error.message ?: "تعذر تنفيذ اختبار البناء التجريبي."), "log" to readProbeLog(log))
+            val previousEngine = File(filesDir, "bisho-local-build-engine.previous")
+            val activeEngine = File(filesDir, "bisho-local-build-engine")
+            val failedEngine = File(filesDir, "bisho-local-build-engine.failed")
+            var recoveryMessage = ""
+            if (previousEngine.exists()) {
+                try {
+                    if (failedEngine.exists() && !failedEngine.deleteRecursively()) {
+                        throw IllegalStateException("تعذر تنظيف مجلد المحرك الفاشل السابق.")
+                    }
+                    if (activeEngine.exists() && !activeEngine.renameTo(failedEngine)) {
+                        throw IllegalStateException("تعذر عزل المحرك الذي فشل اختباره.")
+                    }
+                    if (!previousEngine.renameTo(activeEngine)) {
+                        if (failedEngine.exists()) failedEngine.renameTo(activeEngine)
+                        throw IllegalStateException("تعذر استعادة نسخة المحرك السابقة.")
+                    }
+                    recoveryMessage = " تمت استعادة نسخة المحرك السابقة تلقائياً؛ احتفظنا بالنسخة الفاشلة في مجلد التشخيص."
+                } catch (recoveryError: Exception) {
+                    recoveryMessage = " تعذر الاسترداد التلقائي: ${recoveryError.message}"
+                }
+            }
+            mapOf("success" to false, "message" to (error.message ?: "تعذر تنفيذ اختبار البناء التجريبي.") + recoveryMessage, "log" to readProbeLog(log))
         } finally {
             activeBuildProcess = null
             if (smokeRoot.exists()) smokeRoot.deleteRecursively()
