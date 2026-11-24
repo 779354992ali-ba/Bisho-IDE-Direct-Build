@@ -5709,9 +5709,84 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     );
 
   void _showDashboardThemeInfo() {
-    BishoThemeController.toggle();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم تبديل الثيم')),
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('مظهر التطبيق',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 5),
+              const Text('اختر المظهر المناسب، وسيُحفظ اختيارك تلقائيًا.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+              const SizedBox(height: 14),
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: BishoThemeController.mode,
+                builder: (context, mode, _) => Column(
+                  children: [
+                    _themeModeTile(sheetContext, ThemeMode.system, mode,
+                      Icons.brightness_auto_rounded, 'حسب إعدادات الجهاز',
+                      'يتبع الوضع الفاتح أو الداكن في Android'),
+                    _themeModeTile(sheetContext, ThemeMode.dark, mode,
+                      Icons.dark_mode_rounded, 'داكن',
+                      'ألوان مريحة للعمل في الإضاءة المنخفضة'),
+                    _themeModeTile(sheetContext, ThemeMode.light, mode,
+                      Icons.light_mode_rounded, 'فاتح',
+                      'واجهة واضحة في الإضاءة القوية'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _themeModeTile(
+    BuildContext sheetContext,
+    ThemeMode value,
+    ThemeMode selected,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
+    final active = value == selected;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Material(
+        color: active
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: .10)
+            : Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(13),
+        child: ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
+            side: BorderSide(
+              color: active ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          leading: Icon(icon, color: active
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 10)),
+          trailing: active
+              ? Icon(Icons.check_circle_rounded,
+                  color: Theme.of(context).colorScheme.primary)
+              : const Icon(Icons.circle_outlined),
+          onTap: () async {
+            await BishoThemeController.set(value);
+            if (sheetContext.mounted) Navigator.pop(sheetContext);
+          },
+        ),
+      ),
     );
   }
 
