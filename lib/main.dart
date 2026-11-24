@@ -49,6 +49,7 @@ import 'core/services/editor_line_actions.dart';
 import 'core/services/editor_text_navigation.dart';
 import 'core/services/editor_syntax_diagnostics.dart';
 import 'core/services/editor_diagnostic_navigation.dart';
+import 'core/services/editor_extension_manifest.dart';
 import 'core/services/editor_bracket_matcher.dart';
 import 'core/services/editor_completion_engine.dart';
 import 'core/services/editor_symbol_insert.dart';
@@ -6342,6 +6343,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }
 
   static const String _enabledExtensionsKey = 'bisho_enabled_editor_extensions_v1';
+  static const String _customExtensionsKey = 'bisho_custom_editor_extensions_v1';
 
   Future<void> _showPluginsHub() async {
     final entries = <_EditorExtensionEntry>[
@@ -6358,6 +6360,30 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _EditorExtensionEntry('tabs_to_spaces', 'تحويل TAB إلى مسافات', 'استبدال كل علامة TAB بأربع مسافات', 'تنظيف النص', Icons.space_bar_rounded, const Color(0xFFFFC247)),
     ];
     final prefs = await SharedPreferences.getInstance();
+    final customPacks = prefs.getStringList(_customExtensionsKey) ?? <String>[];
+    for (final packedEntry in customPacks) {
+      try {
+        final decoded = jsonDecode(packedEntry);
+        if (decoded is! Map<String, dynamic>) continue;
+        final manifest = EditorExtensionManifest.decode(jsonEncode({
+          'format': EditorExtensionManifest.format,
+          'version': EditorExtensionManifest.version,
+          'extensions': [decoded],
+        }));
+        final extension = manifest.extensions.single;
+        entries.add(_EditorExtensionEntry(
+          extension.id,
+          extension.title,
+          extension.description,
+          extension.category,
+          Icons.extension_rounded,
+          const Color(0xFF38BDF8),
+          operationId: extension.operation,
+        ));
+      } catch (_) {
+        // Ignore invalid legacy entries; importing never enables code execution.
+      }
+    }
     final stored = prefs.getStringList(_enabledExtensionsKey);
     var enabled = stored == null
         ? entries.map((entry) => entry.id).toSet()
@@ -6432,6 +6458,22 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                       ),
                     ]),
                   ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await _importEditorExtensionPack();
+                          if (!mounted) return;
+                          Navigator.pop(sheetContext);
+                          await _showPluginsHub();
+                        },
+                        icon: const Icon(Icons.file_upload_outlined, size: 17),
+                        label: const Text('استيراد حزمة إضافات JSON'),
+                      ),
+                    ),
+                  ),
                   const Divider(height: 1),
                   Expanded(
                     child: filtered.isEmpty
@@ -6471,7 +6513,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                                 ),
                                 onTap: isEnabled ? () {
                                   Navigator.pop(sheetContext);
-                                  _runEditorExtension(entry.id);
+                                  _runEditorExtension(entry.operationId ?? entry.id);
                                 } : null,
                               ),
                             );
@@ -6486,6 +6528,54 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       ),
     );
     searchController.dispose();
+  }
+
+  Future<void> _importEditorExtensionPack() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+        allowMultiple: false,
+      );
+      if (picked == null || picked.files.isEmpty) return;
+      final bytes = picked.files.single.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw const FormatException('تعذر قراءة ملف الحزمة.');
+      }
+      final manifest = EditorExtensionManifest.decode(utf8.decode(bytes));
+      final prefs = await SharedPreferences.getInstance();
+      final current = prefs.getStringList(_customExtensionsKey) ?? <String>[];
+      final existingIds = <String>{};
+      for (final item in current) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map<String, dynamic> && decoded['id'] is String) {
+            existingIds.add(decoded['id'] as String);
+          }
+        } catch (_) {
+          // Invalid old entries are ignored and replaced by a valid import.
+        }
+      }
+      final duplicates = manifest.extensions
+          .where((extension) => existingIds.contains(extension.id))
+          .map((extension) => extension.id)
+          .toList();
+      if (duplicates.isNotEmpty) {
+        throw FormatException('معرّفات موجودة مسبقاً: ${duplicates.join(', ')}');
+      }
+      if (current.length + manifest.extensions.length > 60) {
+        throw const FormatException('وصلت إلى الحد الأقصى وهو 60 إضافة مخصصة.');
+      }
+      final merged = [
+        ...current,
+        ...manifest.extensions.map((extension) => jsonEncode(extension.toJson())),
+      ];
+      await prefs.setStringList(_customExtensionsKey, merged);
+      showMessage('تم استيراد ${manifest.extensions.length} إضافة. راجع تفعيلها من مدير الإضافات.');
+    } catch (error) {
+      showMessage('تعذر استيراد حزمة الإضافات: $error');
+    }
   }
 
   Future<void> _runEditorExtension(String operation) async {
@@ -6855,10 +6945,12 @@ class _EditorExtensionEntry {
   final String category;
   final IconData icon;
   final Color color;
+  final String? operationId;
 
   const _EditorExtensionEntry(
-    this.id, this.title, this.description, this.category, this.icon, this.color,
-  );
+    this.id, this.title, this.description, this.category, this.icon, this.color, {
+    this.operationId,
+  });
 }
 
 class _DashboardAction {
