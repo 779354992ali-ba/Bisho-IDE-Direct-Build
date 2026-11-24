@@ -3651,7 +3651,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                           ),
                           title: Text(
                             diagnostics[index],
-                            style: const TextStyle(fontSize: 11),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: selected ? const Color(0xFFE6F4FF) : const Color(0xFF9AABC0),
+                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
                           ),
                         ),
                       )
@@ -4231,15 +4235,29 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       child: Column(
         children: [
           Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            height: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFF142238),
+              border: Border(bottom: BorderSide(color: Color(0xFF26374E))),
+            ),
             child: Row(
               children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF38BDF8).withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.folder_copy_rounded, color: Color(0xFF38BDF8), size: 19),
+                ),
+                const SizedBox(width: 9),
                 const Expanded(
                   child: Text(
-                    'المستكشف',
+                    'مستكشف الملفات',
                     style: TextStyle(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                       fontSize: 13,
                     ),
                   ),
@@ -4413,8 +4431,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
   Widget buildTabBar() {
     return Container(
-      height: 46,
-      color: const Color(0xFF111827),
+      height: 52,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0E1929),
+        border: Border(bottom: BorderSide(color: Color(0xFF26374E))),
+      ),
       child: Row(
         children: [
           Expanded(
@@ -4435,15 +4456,13 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                     padding: const EdgeInsets.symmetric(horizontal: 9),
                     decoration: BoxDecoration(
                       color: selected
-                          ? const Color(0xFF0B1020)
+                          ? const Color(0xFF182A40)
                           : Colors.transparent,
-                      border: Border(
-                        top: BorderSide(
-                          color: selected
-                              ? const Color(0xFF38BDF8)
-                              : Colors.transparent,
-                          width: 2,
-                        ),
+                      borderRadius: BorderRadius.circular(11),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF2C5675)
+                            : Colors.transparent,
                       ),
                     ),
                     child: Row(
@@ -4760,13 +4779,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               Theme(data: BishoTheme.darkTheme, child: buildBottomPanel(tab)),
             if (!_editorFullScreen)
               Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                border: Border(
-                  top: BorderSide(color: Theme.of(context).colorScheme.outline),
-                ),
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: const BoxDecoration(
+                color: Color(0xFF101B2D),
+                border: Border(top: BorderSide(color: Color(0xFF26374E))),
               ),
               child: Row(
                 children: [
