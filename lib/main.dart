@@ -4814,160 +4814,286 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }
 
   Widget _buildToolsDashboard(EditorTab tab) {
-    const cyan = Color(0xFF08B9F4);
-    const blue = Color(0xFF247BFF);
-    const violet = Color(0xFF8B42F5);
-    const green = Color(0xFF19D889);
-    const red = Color(0xFFFF456A);
-    const amber = Color(0xFFFFC247);
+    const cyan = Color(0xFF38BDF8);
+    const blue = Color(0xFF60A5FA);
+    const violet = Color(0xFFA78BFA);
+    const green = Color(0xFF34D399);
+    const amber = Color(0xFFFBBF24);
+    const red = Color(0xFFFB7185);
 
-    final primary = <_DashboardAction>[
-      _DashboardAction(Icons.download_rounded, 'تصدير ملف', exportFile, cyan),
-      _DashboardAction(Icons.archive_rounded, 'تصدير ZIP', exportProjectArchive, cyan),
-      _DashboardAction(Icons.unarchive_rounded, 'استيراد ZIP', importProjectArchive, green),
-      _DashboardAction(Icons.backup_rounded, 'نسخ احتياطي', exportProjectBackup, green),
-      _DashboardAction(Icons.settings_backup_restore_rounded, 'استعادة نسخة', restoreProjectBackup, green),
-      _DashboardAction(Icons.history_rounded, 'سجل النسخ', manageProjectBackups, green),
-      _DashboardAction(Icons.save_rounded, 'حفظ', saveCurrentToDisk, cyan),
-      _DashboardAction(Icons.create_new_folder_rounded, 'مشروع جديد', createNewProject, cyan),
-      _DashboardAction(Icons.folder_rounded, 'مشروع', openProjectFolder, cyan),
+    // Keep every existing command reachable; this is a presentation-only
+    // regrouping. Action callbacks and their underlying services are unchanged.
+    final projectActions = <_DashboardAction>[
+      _DashboardAction(Icons.create_new_folder_rounded, 'إنشاء مشروع', createNewProject, cyan),
+      _DashboardAction(Icons.folder_open_rounded, 'فتح مجلد مشروع', openProjectFolder, cyan),
       _DashboardAction(Icons.drive_folder_upload_rounded, 'استيراد مشروع', importExistingProject, green),
-      _DashboardAction(Icons.folder_open_rounded, 'فتح', openFile, cyan),
-      _DashboardAction(Icons.add_rounded, 'جديد', createNewTab, cyan),
+      _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, cyan),
+      _DashboardAction(Icons.file_open_rounded, 'فتح ملف', openFile, cyan),
+      _DashboardAction(Icons.save_rounded, 'حفظ الملف', saveCurrentToDisk, cyan),
+      _DashboardAction(Icons.save_as_rounded, 'حفظ جميع الملفات', saveAllTabs, green),
+      _DashboardAction(Icons.download_rounded, 'تصدير ملف', exportFile, blue),
+      _DashboardAction(Icons.archive_rounded, 'تصدير المشروع ZIP', exportProjectArchive, blue),
+      _DashboardAction(Icons.unarchive_rounded, 'استيراد مشروع ZIP', importProjectArchive, green),
+      _DashboardAction(Icons.backup_rounded, 'إنشاء نسخة احتياطية', exportProjectBackup, green),
+      _DashboardAction(Icons.settings_backup_restore_rounded, 'استعادة نسخة احتياطية', restoreProjectBackup, green),
+      _DashboardAction(Icons.history_rounded, 'سجل النسخ الاحتياطية', manageProjectBackups, green),
     ];
-    final tools = <_DashboardAction>[
-      _DashboardAction(Icons.search_rounded, 'بحث', searchCode, cyan),
-      _DashboardAction(Icons.find_replace_rounded, 'استبدال', () => searchCode(startInReplaceMode: true), violet),
+
+    final editingActions = <_DashboardAction>[
+      _DashboardAction(Icons.search_rounded, 'البحث في الكود', searchCode, cyan),
+      _DashboardAction(Icons.find_replace_rounded, 'البحث والاستبدال', () => searchCode(startInReplaceMode: true), violet),
       _DashboardAction(Icons.undo_rounded, 'تراجع', undoCodeEdit, red),
       _DashboardAction(Icons.redo_rounded, 'إعادة', redoCodeEdit, green),
-    ];
-    final extras = <_DashboardAction>[
-      _DashboardAction(Icons.palette_rounded, 'تبديل الثيم', _showDashboardThemeInfo, green),
-      _DashboardAction(Icons.rocket_launch_rounded, 'أدوات سريعة', showCodeCompletions, violet),
-      _DashboardAction(Icons.analytics_rounded, 'تحليل الكود', _openDiagnosticsPanel, cyan),
-      _DashboardAction(Icons.health_and_safety_rounded, 'فحص المشروع', _openProjectInsightsPanel, green),
-      _DashboardAction(Icons.extension_rounded, 'إضافات', _showPluginsHub, blue),
-    ];
-    final allTools = <_DashboardAction>[
-      ...tools,
+      _DashboardAction(Icons.auto_awesome_rounded, 'الإكمال التلقائي', showCodeCompletions, violet),
       _DashboardAction(Icons.copy_all_rounded, 'تكرار الأسطر', duplicateSelectedLines, cyan),
       _DashboardAction(Icons.arrow_upward_rounded, 'نقل السطر لأعلى', moveCurrentLineUp, cyan),
       _DashboardAction(Icons.arrow_downward_rounded, 'نقل السطر لأسفل', moveCurrentLineDown, cyan),
-      _DashboardAction(Icons.comment_rounded, 'تعليق / إلغاء', toggleSelectedLineComments, green),
-      _DashboardAction(Icons.compare_arrows_rounded, 'القوس المطابق', jumpToMatchingBracket, cyan),
+      _DashboardAction(Icons.comment_rounded, 'تعليق أو إلغاء التعليق', toggleSelectedLineComments, green),
+      _DashboardAction(Icons.compare_arrows_rounded, 'الانتقال للقوس المطابق', jumpToMatchingBracket, cyan),
+      _DashboardAction(Icons.copy_rounded, 'نسخ الكود', copyCode, blue),
+      _DashboardAction(Icons.text_increase_rounded, 'تكبير خط المحرر', () => changeEditorFontSize(1), cyan),
+      _DashboardAction(Icons.text_decrease_rounded, 'تصغير خط المحرر', () => changeEditorFontSize(-1), cyan),
       _DashboardAction(Icons.difference_rounded, 'مقارنة النص', _openTextDiffDialog, violet),
-      _DashboardAction(Icons.copy_rounded, 'نسخ', copyCode, cyan),
-      _DashboardAction(Icons.text_increase_rounded, 'تكبير الخط', () => changeEditorFontSize(1), cyan),
-      _DashboardAction(Icons.text_decrease_rounded, 'تصغير الخط', () => changeEditorFontSize(-1), cyan),
-      _DashboardAction(Icons.vertical_align_bottom_rounded, 'لوحة المشكلات', _openDiagnosticsPanel, amber),
-      _DashboardAction(Icons.save_rounded, 'حفظ جميع الملفات', saveAllTabs, green),
-      _DashboardAction(Icons.settings_rounded, 'إعدادات مساحة العمل', _showWorkspaceSettings, green),
-      _DashboardAction(Icons.extension_rounded, 'اللغات المدعومة', _showLanguageCapabilities, cyan),
-      _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, cyan),
+    ];
+
+    final qualityActions = <_DashboardAction>[
+      _DashboardAction(Icons.analytics_rounded, 'تحليل الكود والمشكلات', _openDiagnosticsPanel, amber),
+      _DashboardAction(Icons.health_and_safety_rounded, 'فحص جودة المشروع', _openProjectInsightsPanel, green),
+      _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
+      _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
+      _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, blue),
+    ];
+
+    final preferenceActions = <_DashboardAction>[
+      _DashboardAction(Icons.tune_rounded, 'إعدادات مساحة العمل', _showWorkspaceSettings, blue),
+      _DashboardAction(Icons.palette_rounded, 'تبديل المظهر الفاتح والداكن', _showDashboardThemeInfo, violet),
+      _DashboardAction(Icons.bug_report_outlined, 'لوحة المشكلات', _openDiagnosticsPanel, amber),
+    ];
+
+    final allActions = <_DashboardAction>[
+      ...projectActions,
+      ...editingActions,
+      ...qualityActions,
+      ...preferenceActions,
     ];
 
     return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
-          colors: [Color(0xFF071329), Color(0xFF050B1B), Color(0xFF080D24)]),
-      ),
-      child: Stack(children: [
-        Positioned(left: -100, bottom: 10, child: Container(width: 260, height: 170,
-          decoration: BoxDecoration(shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: cyan.withValues(alpha: .20), blurRadius: 75, spreadRadius: 20)]))),
-        Positioned(right: -100, bottom: 0, child: Container(width: 260, height: 170,
-          decoration: BoxDecoration(shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: violet.withValues(alpha: .20), blurRadius: 75, spreadRadius: 20)]))),
-        Positioned(left: 0, right: 0, bottom: 0, height: 150,
-          child: IgnorePointer(child: CustomPaint(painter: _DashboardWavePainter()))),
-        ListView(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 22),
-          children: [
-            _dashboardFileStrip(tab),
-            const SizedBox(height: 12),
-            _dashboardGlowPanel(
-              child: SizedBox(
-                height: 112,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-                  itemCount: primary.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) => SizedBox(
-                    width: 82,
-                    child: _dashboardToolCard(primary[index]),
+      color: const Color(0xFF0B1220),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 26),
+        children: [
+          _dashboardFileStrip(tab),
+          const SizedBox(height: 16),
+          _dashboardPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: cyan.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(Icons.code_rounded, color: cyan, size: 23),
                   ),
-                ),
-              ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('مساحة العمل', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(
+                        projectName == 'لا يوجد مشروع' ? 'ابدأ مشروعاً جديداً أو افتح ملفاتك' : projectName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF9BAFCB)),
+                      ),
+                    ],
+                  )),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: tab.isSaved ? green.withValues(alpha: .12) : amber.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.circle, size: 7, color: tab.isSaved ? green : amber),
+                      const SizedBox(width: 6),
+                      Text(tab.isSaved ? 'محفوظ' : 'غير محفوظ',
+                        style: TextStyle(fontSize: 10, color: tab.isSaved ? green : amber, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(child: _dashboardProjectCard(
+                    icon: Icons.folder_special_rounded,
+                    title: projectName == 'لا يوجد مشروع' ? 'المشروع الحالي' : projectName,
+                    subtitle: projectUri ?? 'لا يوجد مجلد مشروع مرتبط حالياً',
+                    onTap: projectUri != null ? openProjectFolder : createNewProject,
+                    accent: cyan,
+                  )),
+                ]),
+                const SizedBox(height: 8),
+                _workspaceMetricsPanel(),
+              ],
             ),
-            const SizedBox(height: 14),
-            GridView.builder(
-              shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-              itemCount: tools.length + 1,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 5, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: .90),
-              itemBuilder: (context, index) => index < tools.length
-                ? _dashboardToolCard(tools[index])
-                : _dashboardSquareAction(Icons.more_horiz_rounded, 'المزيد', violet, () => _showAllDashboardTools(allTools)),
-            ),
-            const SizedBox(height: 14),
-            GridView.builder(
-              shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-              itemCount: extras.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: .98),
-              itemBuilder: (context, index) => _dashboardToolCard(extras[index]),
-            ),
-            const SizedBox(height: 18),
-            Row(children: [
-              Expanded(child: _dashboardSectionTitle(Icons.history_rounded, 'المشاريع الحديثة')),
-              _dashboardPillButton('عرض الكل', Icons.chevron_left_rounded, openProjectFolder),
-            ]),
-            const SizedBox(height: 9),
-            _dashboardProjectCard(
-              icon: Icons.folder_special_rounded,
-              title: projectName == 'لا يوجد مشروع' ? tab.fileName : projectName,
-              subtitle: projectUri ?? 'الملف الحالي • ${tab.language}',
-              onTap: projectUri != null ? openProjectFolder : _openEditorFullScreen,
-              accent: cyan,
-            ),
-            const SizedBox(height: 9),
-            _dashboardProjectCard(
-              icon: Icons.code_rounded, title: tab.fileName,
-              subtitle: 'الملف المفتوح حالياً • ${tab.language}',
-              onTap: _openEditorFullScreen, accent: violet,
-            ),
-            const SizedBox(height: 15),
-            _workspaceMetricsPanel(),
-            const SizedBox(height: 12),
-            _dashboardPanel(child: Row(children: [
-              const Icon(Icons.circle, color: green, size: 9),
+          ),
+          const SizedBox(height: 18),
+          _dashboardActionSection(
+            icon: Icons.folder_copy_rounded,
+            title: 'المشاريع والملفات',
+            subtitle: 'إنشاء وفتح واستيراد وحفظ وتصدير ونسخ احتياطي',
+            actions: projectActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.edit_note_rounded,
+            title: 'أدوات تحرير الكود',
+            subtitle: 'البحث والتعديل والتنقل والإكمال وأدوات النص',
+            actions: editingActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.fact_check_rounded,
+            title: 'الفحص والأدوات',
+            subtitle: 'تحليل الكود وجودة المشروع واللغات والإضافات',
+            actions: qualityActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.settings_rounded,
+            title: 'التفضيلات والإعدادات',
+            subtitle: 'تخصيص مساحة العمل ومظهر التطبيق',
+            actions: preferenceActions,
+          ),
+          const SizedBox(height: 14),
+          _dashboardPanel(
+            child: Row(children: [
+              const Icon(Icons.insert_drive_file_outlined, color: cyan, size: 19),
               const SizedBox(width: 9),
-              Expanded(child: Text(tab.isSaved ? 'جميع التغييرات محفوظة' : 'توجد تغييرات غير محفوظة',
-                style: const TextStyle(color: Color(0xFFDCE8F7), fontSize: 11))),
-              Text(tab.language, style: const TextStyle(color: cyan, fontWeight: FontWeight.w700)),
-              const SizedBox(width: 12),
+              Expanded(child: Text(tab.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+              Text(tab.language, style: const TextStyle(color: cyan, fontSize: 11, fontWeight: FontWeight.w700)),
+              const SizedBox(width: 10),
               Text('Ln ${tab.controller.selection.isValid ? tab.controller.selection.extentOffset : 1}',
-                style: const TextStyle(color: Color(0xFF9CB1D0), fontSize: 10)),
-            ])),
-          ],
+                style: const TextStyle(color: Color(0xFF9BAFCB), fontSize: 10)),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => _showAllDashboardTools(allActions),
+            icon: const Icon(Icons.apps_rounded),
+            label: const Text('عرض جميع الأدوات في قائمة واحدة'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardActionSection({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required List<_DashboardAction> actions,
+  }) {
+    return _dashboardPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _dashboardSectionTitle(icon, title),
+          const SizedBox(height: 4),
+          Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+          const SizedBox(height: 13),
+          LayoutBuilder(builder: (context, constraints) {
+            final width = (constraints.maxWidth - 9) / 2;
+            return Wrap(
+              spacing: 9,
+              runSpacing: 9,
+              children: [
+                for (final action in actions)
+                  SizedBox(width: width, child: _dashboardFeatureCard(action)),
+              ],
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardFeatureCard(_DashboardAction action) {
+    return Material(
+      color: const Color(0xFF182438),
+      borderRadius: BorderRadius.circular(13),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: action.onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 66),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: const Color(0xFF2A3A52)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 35,
+              height: 35,
+              decoration: BoxDecoration(
+                color: action.color.withValues(alpha: .13),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(action.icon, color: action.color, size: 19),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              action.label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.start,
+              style: const TextStyle(color: Color(0xFFE5EDF7), fontSize: 10.5, height: 1.25, fontWeight: FontWeight.w600),
+            )),
+            const Icon(Icons.chevron_left_rounded, size: 17, color: Color(0xFF71839D)),
+          ]),
         ),
-      ]),
+      ),
     );
   }
 
   Widget _dashboardFileStrip(EditorTab tab) => Container(
-    height: 54, padding: const EdgeInsets.symmetric(horizontal: 10),
-    decoration: BoxDecoration(color: const Color(0xFF0A1428).withValues(alpha: .88),
-      border: Border(bottom: BorderSide(color: const Color(0xFF147DBB).withValues(alpha: .55)))),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    decoration: BoxDecoration(
+      color: const Color(0xFF111D30),
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: const Color(0xFF26374E)),
+    ),
     child: Row(children: [
-      IconButton(onPressed: createNewTab, icon: const Icon(Icons.add, color: Color(0xFF08B9F4), size: 30)),
-      const Spacer(),
-      const Icon(Icons.close, color: Color(0xFF9AAAC4), size: 18),
-      const SizedBox(width: 9),
-      Text(tab.fileName, style: const TextStyle(color: Color(0xFFE7EFFB), fontSize: 14)),
+      Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF38BDF8).withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF38BDF8)),
+      ),
       const SizedBox(width: 10),
-      const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF08B9F4)),
+      Expanded(child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('الملف النشط', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+          const SizedBox(height: 3),
+          Text(tab.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFFE7EFFB), fontSize: 12, fontWeight: FontWeight.w700)),
+        ],
+      )),
+      IconButton(
+        tooltip: 'إنشاء تبويب جديد',
+        onPressed: createNewTab,
+        icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF38BDF8), size: 25),
+      ),
     ]),
   );
 
