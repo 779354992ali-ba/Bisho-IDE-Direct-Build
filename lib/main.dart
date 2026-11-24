@@ -5153,6 +5153,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _DashboardAction(Icons.history_rounded, 'سجل النسخ الاحتياطية', manageProjectBackups, green),
     ];
 
+    final buildActions = <_DashboardAction>[
+      _DashboardAction(Icons.build_circle_rounded, 'مركز البناء والمحرك', openFlutterPreview, blue),
+    ];
+
     final editingActions = <_DashboardAction>[
       _DashboardAction(Icons.search_rounded, 'البحث في الكود', searchCode, cyan),
       _DashboardAction(Icons.find_replace_rounded, 'البحث والاستبدال', () => searchCode(startInReplaceMode: true), violet),
@@ -5171,7 +5175,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     ];
 
     final qualityActions = <_DashboardAction>[
-      _DashboardAction(Icons.analytics_rounded, 'تحليل الكود والمشكلات', _openDiagnosticsPanel, amber),
+      _DashboardAction(Icons.auto_fix_high_rounded, 'مساعد إصلاح الأخطاء', _openDiagnosticsPanel, amber),
       _DashboardAction(Icons.health_and_safety_rounded, 'فحص جودة المشروع', _openProjectInsightsPanel, green),
       _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
       _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
@@ -5186,6 +5190,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     final allActions = <_DashboardAction>[
       ...projectActions,
+      ...buildActions,
       ...editingActions,
       ...qualityActions,
       ...preferenceActions,
@@ -5262,6 +5267,13 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             subtitle: 'إنشاء وفتح واستيراد وحفظ وتصدير ونسخ احتياطي',
             actions: projectActions,
             initiallyExpanded: true,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.build_circle_rounded,
+            title: 'البناء والمحرك المحلي والسحابي',
+            subtitle: 'إدارة المحرك وفحصه وتشغيل البناء ومتابعة APK',
+            actions: buildActions,
           ),
           const SizedBox(height: 16),
           _dashboardActionSection(
@@ -5788,6 +5800,35 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     ),
   );
 
+  String _diagnosticAdvice(String message) {
+    final value = message.toLowerCase();
+    if (value.contains('قوس') || value.contains('bracket') ||
+        value.contains('parenthesis') || value.contains('delimiter')) {
+      return 'راجع أقواس الفتح والإغلاق بالترتيب، وتأكد أن كل قوس له نظير من النوع نفسه.';
+    }
+    if (value.contains('اقتباس') || value.contains('string') ||
+        value.contains('quote') || value.contains('علامة تنصيص')) {
+      return 'تحقق من إغلاق علامات التنصيص، ومن عدم وجود علامة اقتباس غير مهروبة داخل النص.';
+    }
+    if (value.contains('استيراد') || value.contains('import') ||
+        value.contains('package:')) {
+      return 'تحقق من اسم الحزمة ومسار الملف، وتأكد من وجود الاعتماد في pubspec.yaml عند الحاجة.';
+    }
+    if (value.contains('نقطة فاصلة') || value.contains('semicolon') ||
+        value.contains('الفاصلة المنقوطة')) {
+      return 'راجع نهاية التعليمة؛ بعض اللغات تتطلب فاصلة منقوطة وبعضها لا يتطلبها.';
+    }
+    if (value.contains('indent') || value.contains('مسافة بادئة') ||
+        value.contains('إزاحة')) {
+      return 'وحّد المسافات البادئة داخل الكتلة، وتأكد من تطابق مستوى الإزاحة مع الأقواس.';
+    }
+    if (value.contains('غير معروف') || value.contains('unexpected') ||
+        value.contains('unexpected token')) {
+      return 'راجع الرمز السابق لموضع المشكلة؛ قد يكون هناك عامل أو فاصلة أو قوس مفقود.';
+    }
+    return 'اقرأ رسالة الفحص وحدد أول موضع غير متوقع، ثم راجع السطر السابق والسياق المحيط قبل تعديل الملف.';
+  }
+
   void _openDiagnosticsPanel() {
     final tab = activeTab;
     final diagnostics = _getCurrentDiagnostics(tab);
@@ -5835,7 +5876,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                               dense: true,
                               leading: const Icon(Icons.error_outline, color: Colors.orange),
                               title: Text(diagnostics[index], style: const TextStyle(fontSize: 12)),
-                              subtitle: const Text('نتيجة محلل البيانات المحلي'),
+                              subtitle: Text('فحص محلي\n${_diagnosticAdvice(diagnostics[index])}', maxLines: 3, overflow: TextOverflow.ellipsis),
                             );
                           }
                           final issue = structural[index - parserCount];
@@ -5843,7 +5884,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                             dense: true,
                             leading: const Icon(Icons.warning_amber_rounded, color: Colors.amber),
                             title: Text(issue.message, style: const TextStyle(fontSize: 12)),
-                            subtitle: Text('السطر ${issue.line}، العمود ${issue.column}'),
+                            subtitle: Text('السطر ${issue.line}، العمود ${issue.column}\n${_diagnosticAdvice(issue.message)}', maxLines: 3, overflow: TextOverflow.ellipsis),
                             trailing: const Icon(Icons.my_location, size: 17),
                             onTap: () {
                               final offset = issue.offset
