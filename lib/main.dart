@@ -5962,6 +5962,22 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                     _insightCount('ملاحظات', report.count(ProjectInsightSeverity.info),
                       const Color(0xFF38BDF8)),
                   ])),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
+                  child: Row(children: [
+                    const Icon(Icons.speed_rounded, size: 17, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 7),
+                    const Expanded(child: Text('مؤشر جودة إرشادي للملفات المفتوحة',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    Text('${report.qualityScore}/100 · ${report.qualityLabel}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
+                        color: report.qualityScore >= 90
+                            ? const Color(0xFF19D889)
+                            : report.qualityScore >= 75
+                                ? const Color(0xFFFFC247)
+                                : const Color(0xFFFF647C))),
+                  ]),
+                ),
                 if (categories.isNotEmpty)
                   SizedBox(
                     height: 48,
