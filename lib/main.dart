@@ -3947,8 +3947,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                             diagnostics[index],
                             style: TextStyle(
                               fontSize: 11,
-                              color: selected ? const Color(0xFFE6F4FF) : const Color(0xFF9AABC0),
-                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                              color: const Color(0xFF9AABC0),
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ),
@@ -5386,7 +5386,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             color: Color(0xFFE5EDF7), fontSize: 13, fontWeight: FontWeight.w700)),
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 3),
-            child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis,
+            child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
           ),
           children: [
             LayoutBuilder(builder: (context, constraints) {
@@ -6210,7 +6210,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                       const SizedBox(width: 9),
                       const Expanded(child: Text('مدير الإضافات والأدوات',
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-                      Text('\${activeCount}/\${entries.length}',
+                      Text('${activeCount}/${entries.length}',
                         style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
                       IconButton(onPressed: () => Navigator.pop(sheetContext),
                         icon: const Icon(Icons.close)),
@@ -6272,7 +6272,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                                 ),
                                 title: Text(entry.title,
                                   style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
-                                subtitle: Text('\${entry.category} • \${entry.description}',
+                                subtitle: Text('${entry.category} • ${entry.description}',
                                   maxLines: 2, overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
                                 trailing: Switch(
