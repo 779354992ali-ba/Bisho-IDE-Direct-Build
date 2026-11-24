@@ -1372,7 +1372,15 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   style: TextStyle(color: _muted, fontSize: 12, height: 1.5),
                 ),
                 const SizedBox(height: 14),
-                Row(children: [
+                _sectionHeading('اتصال GitHub الآمن', Icons.verified_user_rounded),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0C1728),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF26374E)),
+                  ),
+                  child: Row(children: [
                   Icon(_githubAccount == null ? Icons.link_off : Icons.verified_user,
                     color: _githubAccount == null ? Colors.orangeAccent : Colors.greenAccent),
                   const SizedBox(width: 8),
@@ -1384,6 +1392,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     IconButton(onPressed: _busy ? null : _disconnectGitHub,
                       tooltip: 'فصل الحساب', icon: const Icon(Icons.logout_rounded)),
                 ]),
+                const SizedBox(height: 8),
                 _field('رمز GitHub الشخصي (PAT)', _tokenController,
                   hint: 'الصق الرمز ثم اضغط ربط الحساب', secret: true),
                 SizedBox(
@@ -1400,7 +1409,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   'استخدم Classic Personal Access Token مع تحديد repo وworkflow. يُخزّن الرمز في Android Keystore عبر التخزين الآمن، ولا يُكتب في سجل البناء. لا ترسل الرمز لأي شخص.',
                   style: TextStyle(color: Colors.orangeAccent, fontSize: 11, height: 1.5),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
+                _sectionHeading('إعدادات المستودع والبناء', Icons.settings_ethernet_rounded),
                 _field('اسم المستودع الجديد / أو owner/repo للبناء اليدوي', _repoController, hint: 'my-flutter-app'),
                 _field('ملف Workflow', _workflowController, hint: 'build-android.yml أو main.yml'),
                 Row(children: [
@@ -1408,7 +1418,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   const SizedBox(width: 8),
                   Expanded(child: _field('إصدار Flutter', _versionController)),
                 ]),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+                _sectionHeading('تشغيل وإدارة البناء السحابي', Icons.rocket_launch_rounded),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -1449,7 +1460,25 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ]),
                 const SizedBox(height: 10),
-                Text(_status, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: success ? const Color(0xFF0D2B25)
+                        : failed ? const Color(0xFF321A24) : const Color(0xFF0C1728),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: success ? const Color(0xFF167A5B)
+                        : failed ? const Color(0xFF8D3448) : const Color(0xFF26374E)),
+                  ),
+                  child: Row(children: [
+                    Icon(success ? Icons.check_circle_rounded
+                        : failed ? Icons.error_rounded : Icons.hourglass_top_rounded,
+                      color: success ? Colors.greenAccent : failed ? Colors.redAccent : _cyan),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text(_status,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                  ]),
+                ),
                 const SizedBox(height: 10),
                 Container(
                   width: double.infinity,
