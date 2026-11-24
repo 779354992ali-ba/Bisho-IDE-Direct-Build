@@ -5051,7 +5051,6 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           subtitle: Padding(
             padding: const EdgeInsets.only(top: 3),
             child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
           ),
           children: [
             LayoutBuilder(builder: (context, constraints) {
