@@ -1577,7 +1577,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600)),
               subtitle: Text(
-                isCurrent ? 'المشروع المفتوح حالياً' : 'آخر فتح: \${item['openedAt']!.isEmpty ? 'غير محدد' : item['openedAt']!.replaceFirst('T', ' ').split('.').first}',
+                isCurrent ? 'المشروع المفتوح حالياً' : 'آخر فتح: ${item['openedAt']!.isEmpty ? 'غير محدد' : item['openedAt']!.replaceFirst('T', ' ').split('.').first}',
                 maxLines: 1, overflow: TextOverflow.ellipsis,
               ),
               trailing: Wrap(
