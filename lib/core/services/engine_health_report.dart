@@ -74,7 +74,9 @@ class EngineHealthReport {
       EngineHealthCheck(
         title: 'مساحة التخزين',
         detail: 'المتاح ${value.availableStorageLabel} — المطلوب ${value.requiredStorageLabel}',
-        state: value.availableBytes >= value.requiredStorageBytes
+        state: value.availableBytes > 0 &&
+                value.requiredStorageBytes > 0 &&
+                value.availableBytes >= value.requiredStorageBytes
             ? EngineCheckState.passed
             : EngineCheckState.warning,
       ),
