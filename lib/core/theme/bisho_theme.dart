@@ -83,6 +83,28 @@ class BishoTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
+      cardTheme: CardThemeData(
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        color: const Color(0xFFFFFFFF),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: Color(0xFFFFFFFF),
+        selectedItemColor: Color(0xFF0284C7),
+        unselectedItemColor: Color(0xFF64748B),
+        type: BottomNavigationBarType.fixed,
+        elevation: 0,
+      ),
       colorScheme: scheme,
       scaffoldBackgroundColor: const Color(0xFFF1F5F9),
       canvasColor: scheme.surface,
@@ -178,6 +200,28 @@ class BishoTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
+      cardTheme: CardThemeData(
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        color: BishoColors.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: BishoColors.outline),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: BishoColors.surface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      ),
+      bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+        backgroundColor: BishoColors.surface,
+        selectedItemColor: BishoColors.primary,
+        unselectedItemColor: BishoColors.textMuted,
+        type: BottomNavigationBarType.fixed,
+        elevation: 0,
+      ),
       colorScheme: scheme,
       scaffoldBackgroundColor: BishoColors.background,
       canvasColor: BishoColors.surface,
