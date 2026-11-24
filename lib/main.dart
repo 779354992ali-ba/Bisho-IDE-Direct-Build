@@ -6527,8 +6527,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     }
 
     final updated = source.replaceRange(start, end, output);
-    final previewLines = output.split('\\n');
-    final originalLines = input.split('\\n');
+    final previewLines = output.split('\n');
+    final originalLines = input.split('\n');
     final previewAccepted = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -6578,7 +6578,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   child: SingleChildScrollView(
                     child: SelectableText(
                       output.length > 6000
-                          ? '${output.substring(0, 6000)}\\n\\n… تم اختصار المعاينة؛ سيُطبّق الناتج كاملاً.'
+                          ? '${output.substring(0, 6000)}\n\n… تم اختصار المعاينة؛ سيُطبّق الناتج كاملاً.'
                           : output,
                       textDirection: TextDirection.ltr,
                       style: const TextStyle(
