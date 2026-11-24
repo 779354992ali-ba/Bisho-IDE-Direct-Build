@@ -1438,13 +1438,20 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     try {
       final prefs = await SharedPreferences.getInstance();
       final recent = await _readRecentProjects();
+      final favorites = await _readFavoriteProjects();
       recent.removeWhere((item) => item['uri'] == uri);
       recent.insert(0, <String, String>{
         'uri': uri,
         'name': name.isEmpty ? 'مشروع' : name,
         'openedAt': DateTime.now().toIso8601String(),
       });
-      if (recent.length > 12) recent.removeRange(12, recent.length);
+      while (recent.length > 12) {
+        final removableIndex = recent.lastIndexWhere(
+          (item) => !favorites.contains(item['uri']),
+        );
+        if (removableIndex < 0) break;
+        recent.removeAt(removableIndex);
+      }
       await prefs.setString(_recentProjectsKey, jsonEncode(recent));
     } catch (_) {
       // Project opening must remain available when optional history storage fails.
