@@ -5992,10 +5992,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                           final message = entry.value;
                           if (index >= parserCount) {
                             final issue = structural[index - parserCount];
-                            return '${issue.line}:${issue.column} — ${issue.message}\\n${_diagnosticAdvice(issue.message)}';
+                            return '${issue.line}:${issue.column} — ${issue.message}\n${_diagnosticAdvice(issue.message)}';
                           }
-                          return '$message\\n${_diagnosticAdvice(message)}';
-                        }).join('\\n\\n');
+                          return '$message\n${_diagnosticAdvice(message)}';
+                        }).join('\n\n');
                         await Clipboard.setData(ClipboardData(
                           text: report.isEmpty ? 'لا توجد مشكلات في الفحص الحالي.' : report,
                         ));
