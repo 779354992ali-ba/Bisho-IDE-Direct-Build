@@ -45,6 +45,25 @@ class LocalBuildEngineInstaller {
 
   String _formatBytes(int value) => '${(value / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
 
+  /// Automatically run the full on-device PRoot + Flutter APK smoke test.
+  /// Native code keeps the previous engine until this test passes and rolls
+  /// back automatically on any failure.
+  Future<void> _verifyInstalledEngine() async {
+    _report(const EngineInstallProgress(
+      'اكتمل الاستخراج الآمن. جارٍ اختبار PRoot وبناء APK تجريبي على هذا الهاتف قبل اعتماد المحرك...',
+    ));
+    final result = await _channel.invokeMapMethod<Object?, Object?>('probeEngine');
+    if (result?['success'] != true || result?['activated'] != true) {
+      throw StateError(
+        result?['message']?.toString() ??
+            'لم يجتز المحرك اختبار التشغيل الفعلي؛ لم يتم اعتماده.',
+      );
+    }
+    _report(const EngineInstallProgress(
+      'نجح اختبار PRoot وبناء APK وتثبيته وتشغيله؛ تم اعتماد المحرك تلقائياً.',
+    ));
+  }
+
   Future<void> install({required String archiveUrl, required String sha256}) async {
     final uri = Uri.tryParse(archiveUrl.trim());
     final digest = sha256.trim().toLowerCase();
@@ -125,7 +144,7 @@ class LocalBuildEngineInstaller {
       if (result?['success'] != true) {
         throw StateError(result?['message']?.toString() ?? 'رفض Android تثبيت حزمة المحرك.');
       }
-      _report(const EngineInstallProgress('اكتمل تثبيت ملفات المحرك. يلزم اختبار بناء APK فعلي قبل تفعيله.'));
+      await _verifyInstalledEngine();
     } finally {
       _installing = false;
       _downloadActive = false;
@@ -167,7 +186,7 @@ class LocalBuildEngineInstaller {
       if (result?['success'] != true) {
         throw StateError(result?['message']?.toString() ?? 'رفض Android تثبيت ملف المحرك المحلي.');
       }
-      _report(const EngineInstallProgress('اكتمل تثبيت ملفات المحرك المحلي والتحقق منها.'));
+      await _verifyInstalledEngine();
     } finally {
       _installing = false;
       _nativeInstallStarted = false;
