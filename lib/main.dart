@@ -6578,7 +6578,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   child: SingleChildScrollView(
                     child: SelectableText(
                       input.length > 2500
-                          ? '${input.substring(0, 2500)}\\n… تم اختصار النص السابق.'
+                          ? '${input.substring(0, 2500)}\n… تم اختصار النص السابق.'
                           : input,
                       textDirection: TextDirection.ltr,
                       style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
