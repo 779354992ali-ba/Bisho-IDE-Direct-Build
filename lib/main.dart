@@ -6521,7 +6521,103 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       return;
     }
 
+    if (output == input) {
+      showMessage('لا توجد تغييرات مطلوبة');
+      return;
+    }
+
     final updated = source.replaceRange(start, end, output);
+    final previewLines = output.split('\\n');
+    final originalLines = input.split('\\n');
+    final previewAccepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.preview_rounded, color: Color(0xFF38BDF8)),
+            const SizedBox(width: 8),
+            Expanded(child: Text('معاينة قبل التطبيق')),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(success, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    Chip(
+                      avatar: const Icon(Icons.remove_circle_outline, size: 16),
+                      label: Text('${originalLines.length} سطر قبل'),
+                    ),
+                    Chip(
+                      avatar: const Icon(Icons.add_circle_outline, size: 16),
+                      label: Text('${previewLines.length} سطر بعد'),
+                    ),
+                    Chip(label: Text('${output.length} حرف في الناتج')),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text('معاينة الناتج', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B1220),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      output.length > 6000
+                          ? '${output.substring(0, 6000)}\\n\\n… تم اختصار المعاينة؛ سيُطبّق الناتج كاملاً.'
+                          : output,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: Color(0xFFE2E8F0),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'لن يتغير الملف حتى تضغط «تطبيق». يمكنك الإلغاء للعودة دون أي تعديل.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('تطبيق التغييرات'),
+          ),
+        ],
+      ),
+    );
+
+    if (previewAccepted != true || !mounted) return;
+    if (!tabs.contains(tab) || controller.text != source) {
+      showMessage('تغير الملف أثناء المعاينة؛ أعد تشغيل الإضافة لتجنب استبدال تعديلات أحدث');
+      return;
+    }
+
     controller.value = controller.value.copyWith(
       text: updated,
       selection: TextSelection.collapsed(offset: start + output.length),
