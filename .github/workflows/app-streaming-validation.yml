@@ -1,6 +1,9 @@
 name: App Streamed Installer Validation
 
 on:
+  push:
+    branches:
+      - fix/app-stream-rootfs-install
   pull_request:
 
 permissions:
