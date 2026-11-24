@@ -114,6 +114,7 @@ jobs:
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libapp.so"
           unzip -l "$APK" | grep -E "classes[0-9]*[.]dex"
           echo "APK_IDENTITY_AND_ARM64_RUNTIME_VERIFIED"
+          mkdir -p build/release-artifact
           cp "$APK" build/release-artifact/app-release.apk
           cd build/release-artifact
           sha256sum app-release.apk | tee SHA256SUMS.txt
