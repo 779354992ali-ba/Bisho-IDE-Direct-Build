@@ -5480,6 +5480,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     ]),
   );
 
+  // ignore: unused_element
   Widget _dashboardGlowPanel({required Widget child}) => Container(
     padding: const EdgeInsets.all(9),
     decoration: BoxDecoration(borderRadius: BorderRadius.circular(25),
@@ -5490,6 +5491,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       child: child),
   );
 
+  // ignore: unused_element
   Widget _dashboardSquareAction(IconData icon, String label, Color color, VoidCallback onTap) =>
     Material(color: const Color(0xFF111E37), borderRadius: BorderRadius.circular(19),
       child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(19),
@@ -5500,6 +5502,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
           ]))));
 
+  // ignore: unused_element
   Widget _dashboardPillButton(String label, IconData icon, VoidCallback onTap) =>
     OutlinedButton.icon(onPressed: onTap, icon: Icon(icon, size: 19), label: Text(label),
       style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDCE8F7),
@@ -6510,6 +6513,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }
 }
 
+  // ignore: unused_element
 class _DashboardWavePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
