@@ -48,6 +48,7 @@ import 'core/services/editor_editing_assist.dart';
 import 'core/services/editor_line_actions.dart';
 import 'core/services/editor_text_navigation.dart';
 import 'core/services/editor_syntax_diagnostics.dart';
+import 'core/services/editor_diagnostic_navigation.dart';
 import 'core/services/editor_bracket_matcher.dart';
 import 'core/services/editor_completion_engine.dart';
 import 'core/services/editor_symbol_insert.dart';
@@ -3972,22 +3973,52 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                       )
                     : ListView.builder(
                         itemCount: diagnostics.length,
-                        itemBuilder: (context, index) => ListTile(
-                          dense: true,
-                          leading: const Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.orangeAccent,
-                            size: 18,
-                          ),
-                          title: Text(
-                            diagnostics[index],
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: const Color(0xFF9AABC0),
-                              fontWeight: FontWeight.w500,
+                        itemBuilder: (context, index) {
+                          final diagnostic = diagnostics[index];
+                          final location = RegExp(
+                            r'السطر\\s+(\\d+)،\\s*العمود\\s+(\\d+)',
+                          ).firstMatch(diagnostic);
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orangeAccent,
+                              size: 18,
                             ),
-                          ),
-                        ),
+                            title: Text(
+                              diagnostic,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF9AABC0),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            trailing: location == null
+                                ? null
+                                : const Icon(
+                                    Icons.my_location_outlined,
+                                    size: 15,
+                                    color: Color(0xFF38BDF8),
+                                  ),
+                            onTap: location == null
+                                ? null
+                                : () {
+                                    final offset =
+                                        EditorDiagnosticNavigation.offsetForLineColumn(
+                                      tab.controller.text,
+                                      int.parse(location.group(1)!),
+                                      int.parse(location.group(2)!),
+                                    );
+                                    if (offset == null) return;
+                                    tab.controller.selection =
+                                        TextSelection.collapsed(offset: offset);
+                                    setState(() {
+                                      status = 'الانتقال إلى السطر ${location.group(1)}';
+                                    });
+                                    _scheduleTabStateSave();
+                                  },
+                          );
+                        },
                       )
                 : isFileInfo
                     ? Padding(
