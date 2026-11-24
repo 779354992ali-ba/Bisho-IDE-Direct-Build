@@ -1391,7 +1391,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   if (_githubAccount != null)
                     IconButton(onPressed: _busy ? null : _disconnectGitHub,
                       tooltip: 'فصل الحساب', icon: const Icon(Icons.logout_rounded)),
-                ]),
+                  ]),
+                ),
                 const SizedBox(height: 8),
                 _field('رمز GitHub الشخصي (PAT)', _tokenController,
                   hint: 'الصق الرمز ثم اضغط ربط الحساب', secret: true),
