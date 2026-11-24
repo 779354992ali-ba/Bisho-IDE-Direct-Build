@@ -82,7 +82,7 @@ class LocalBuildEngineInstaller {
       final environment = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
       final available = (environment?['availableBytes'] as num?)?.toInt() ?? 0;
       final requiredReserve = (environment?['engineInstallStorageBytes'] as num?)?.toInt() ??
-          1024 * 1024 * 1024;
+          2560 * 1024 * 1024;
       if (available < requiredReserve) {
         throw StateError('يلزم توفر ${_formatBytes(requiredReserve)} كمساحة احتياطية قبل تنزيل المحرك.');
       }
@@ -111,9 +111,14 @@ class LocalBuildEngineInstaller {
         throw StateError('حجم الحزمة غير معروف أو يتجاوز الحد المسموح (8 GB).');
       }
       final current = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
+      final reserveAfterDownload =
+          (current?['engineInstallStorageBytes'] as num?)?.toInt() ??
+              2560 * 1024 * 1024;
       final freeAfterArchive = (current?['availableBytes'] as num?)?.toInt() ?? 0;
-      if (freeAfterArchive < total + 1024 * 1024 * 1024) {
-        throw StateError('المساحة لا تكفي لهذه الحزمة: يلزم ${_formatBytes(total)} للتنزيل إضافة إلى 1 GB احتياطي. اختر حزمة أصغر أو وفر مساحة.');
+      if (freeAfterArchive < total + reserveAfterDownload) {
+        throw StateError(
+          'المساحة لا تكفي بعد تنظيف الملفات المؤقتة الآمنة: حجم الحزمة ${_formatBytes(total)} مع احتياطي استخراج وبناء ${_formatBytes(reserveAfterDownload)}. المطلوب إجمالاً ${_formatBytes(total + reserveAfterDownload)} والمتاح ${_formatBytes(freeAfterArchive)}. لم تُحذف ملفاتك الشخصية أو المحرك السابق.',
+        );
       }
       sink = archive.openWrite();
       var received = 0;
