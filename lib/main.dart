@@ -6162,62 +6162,149 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     );
   }
 
-  void _showPluginsHub() {
-    final actions = <_DashboardAction>[
-      _DashboardAction(Icons.data_object_rounded, 'تنسيق JSON', () => _runEditorExtension('json_format'), const Color(0xFF08B9F4)),
-      _DashboardAction(Icons.compress_rounded, 'ضغط JSON', () => _runEditorExtension('json_minify'), const Color(0xFF8B42F5)),
-      _DashboardAction(Icons.lock_rounded, 'ترميز Base64', () => _runEditorExtension('base64_encode'), const Color(0xFF19D889)),
-      _DashboardAction(Icons.lock_open_rounded, 'فك Base64', () => _runEditorExtension('base64_decode'), const Color(0xFFFFC247)),
-      _DashboardAction(Icons.link_rounded, 'ترميز URL', () => _runEditorExtension('url_encode'), const Color(0xFF08B9F4)),
-      _DashboardAction(Icons.link_off_rounded, 'فك URL', () => _runEditorExtension('url_decode'), const Color(0xFF247BFF)),
-      _DashboardAction(Icons.sort_by_alpha_rounded, 'ترتيب الأسطر', () => _runEditorExtension('sort_lines'), const Color(0xFF8B42F5)),
-      _DashboardAction(Icons.filter_alt_rounded, 'حذف الأسطر المكررة', () => _runEditorExtension('unique_lines'), const Color(0xFF19D889)),
-    ];
+  static const String _enabledExtensionsKey = 'bisho_enabled_editor_extensions_v1';
 
-    showModalBottomSheet<void>(
+  Future<void> _showPluginsHub() async {
+    final entries = <_EditorExtensionEntry>[
+      _EditorExtensionEntry('json_format', 'تنسيق JSON', 'ترتيب المسافات وإظهار بنية JSON بوضوح', 'تنسيق البيانات', Icons.data_object_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('json_minify', 'ضغط JSON', 'إزالة المسافات غير الضرورية لتقليل الحجم', 'تنسيق البيانات', Icons.compress_rounded, const Color(0xFF8B42F5)),
+      _EditorExtensionEntry('base64_encode', 'ترميز Base64', 'تحويل النص إلى Base64', 'الترميز والتحويل', Icons.lock_rounded, const Color(0xFF19D889)),
+      _EditorExtensionEntry('base64_decode', 'فك Base64', 'استعادة النص من Base64', 'الترميز والتحويل', Icons.lock_open_rounded, const Color(0xFFFFC247)),
+      _EditorExtensionEntry('url_encode', 'ترميز URL', 'تهيئة النص للاستخدام داخل عناوين URL', 'الترميز والتحويل', Icons.link_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('url_decode', 'فك URL', 'فك ترميز النص الموجود داخل عنوان URL', 'الترميز والتحويل', Icons.link_off_rounded, const Color(0xFF247BFF)),
+      _EditorExtensionEntry('sort_lines', 'ترتيب الأسطر', 'ترتيب الأسطر أبجدياً داخل التحديد أو الملف', 'تحرير النص', Icons.sort_by_alpha_rounded, const Color(0xFF8B42F5)),
+      _EditorExtensionEntry('unique_lines', 'حذف الأسطر المكررة', 'إزالة الأسطر المتكررة مع الاحتفاظ بأول ظهور', 'تحرير النص', Icons.filter_alt_rounded, const Color(0xFF19D889)),
+    ];
+    final prefs = await SharedPreferences.getInstance();
+    final stored = prefs.getStringList(_enabledExtensionsKey);
+    var enabled = stored == null
+        ? entries.map((entry) => entry.id).toSet()
+        : stored.toSet();
+    if (!mounted) return;
+    final searchController = TextEditingController();
+    var query = '';
+
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * .72,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-                child: Row(children: [
-                  const Icon(Icons.extension_rounded, color: Color(0xFF38BDF8)),
-                  const SizedBox(width: 9),
-                  const Expanded(child: Text('إضافات وأدوات مدمجة',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-                  IconButton(onPressed: () => Navigator.pop(sheetContext),
-                    icon: const Icon(Icons.close)),
-                ]),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, refreshSheet) {
+          final normalized = query.trim().toLowerCase();
+          final filtered = entries.where((entry) =>
+            normalized.isEmpty ||
+            entry.title.toLowerCase().contains(normalized) ||
+            entry.description.toLowerCase().contains(normalized) ||
+            entry.category.toLowerCase().contains(normalized),
+          ).toList();
+          final activeCount = entries.where((entry) => enabled.contains(entry.id)).length;
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .78,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                    child: Row(children: [
+                      const Icon(Icons.extension_rounded, color: Color(0xFF38BDF8)),
+                      const SizedBox(width: 9),
+                      const Expanded(child: Text('مدير الإضافات والأدوات',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                      Text('\${activeCount}/\${entries.length}',
+                        style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                      IconButton(onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close)),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: TextField(
+                      controller: searchController,
+                      onChanged: (value) => refreshSheet(() => query = value),
+                      decoration: InputDecoration(
+                        hintText: 'ابحث عن إضافة أو وظيفة...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: query.isEmpty ? null : IconButton(
+                          onPressed: () {
+                            searchController.clear();
+                            refreshSheet(() => query = '');
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(children: [
+                      const Expanded(child: Text('اضغط على الإضافة لتشغيلها، أو استخدم المفتاح لتفعيلها وتعطيلها.',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10))),
+                      TextButton(
+                        onPressed: () async {
+                          enabled = entries.map((entry) => entry.id).toSet();
+                          await prefs.setStringList(_enabledExtensionsKey, enabled.toList());
+                          refreshSheet(() {});
+                        },
+                        child: const Text('تفعيل الكل'),
+                      ),
+                    ]),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: filtered.isEmpty
+                      ? const Center(child: Text('لا توجد إضافات مطابقة للبحث.'))
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 5),
+                          itemBuilder: (_, index) {
+                            final entry = filtered[index];
+                            final isEnabled = enabled.contains(entry.id);
+                            return Card(
+                              color: const Color(0xFF101D36),
+                              margin: EdgeInsets.zero,
+                              child: ListTile(
+                                dense: true,
+                                leading: CircleAvatar(
+                                  backgroundColor: entry.color.withValues(alpha: .14),
+                                  child: Icon(entry.icon, color: entry.color, size: 20),
+                                ),
+                                title: Text(entry.title,
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                subtitle: Text('\${entry.category} • \${entry.description}',
+                                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                                trailing: Switch(
+                                  value: isEnabled,
+                                  onChanged: (value) async {
+                                    if (value) {
+                                      enabled.add(entry.id);
+                                    } else {
+                                      enabled.remove(entry.id);
+                                    }
+                                    await prefs.setStringList(_enabledExtensionsKey, enabled.toList());
+                                    refreshSheet(() {});
+                                  },
+                                ),
+                                onTap: isEnabled ? () {
+                                  Navigator.pop(sheetContext);
+                                  searchController.dispose();
+                                  _runEditorExtension(entry.id);
+                                } : null,
+                              ),
+                            );
+                          },
+                        ),
+                  ),
+                ],
               ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Align(alignment: Alignment.centerRight,
-                  child: Text('أدوات محلية تعمل مباشرة على محتوى الملف الحالي',
-                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11))),
-              ),
-              Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
-                  itemCount: actions.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10,
-                    childAspectRatio: 1.55),
-                  itemBuilder: (_, index) => _dashboardToolCard(_DashboardAction(
-                    actions[index].icon, actions[index].label, () {
-                      Navigator.pop(sheetContext);
-                      actions[index].onTap();
-                    }, actions[index].color)),
-                ),
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
+    searchController.dispose();
   }
 
   Future<void> _runEditorExtension(String operation) async {
@@ -6445,6 +6532,19 @@ class _DashboardWavePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _EditorExtensionEntry {
+  final String id;
+  final String title;
+  final String description;
+  final String category;
+  final IconData icon;
+  final Color color;
+
+  const _EditorExtensionEntry(
+    this.id, this.title, this.description, this.category, this.icon, this.color,
+  );
 }
 
 class _DashboardAction {
