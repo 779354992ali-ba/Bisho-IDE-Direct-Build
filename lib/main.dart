@@ -6386,7 +6386,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     }
     final stored = prefs.getStringList(_enabledExtensionsKey);
     var enabled = stored == null
-        ? entries.map((entry) => entry.id).toSet()
+        ? entries.where((entry) => entry.operationId == null)
+            .map((entry) => entry.id).toSet()
         : stored.toSet();
     if (!mounted) return;
     final searchController = TextEditingController();
@@ -6546,7 +6547,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       final manifest = EditorExtensionManifest.decode(utf8.decode(bytes));
       final prefs = await SharedPreferences.getInstance();
       final current = prefs.getStringList(_customExtensionsKey) ?? <String>[];
-      final existingIds = <String>{};
+      final existingIds = <String>{
+        'json_format', 'json_minify', 'base64_encode', 'base64_decode',
+        'url_encode', 'url_decode', 'sort_lines', 'unique_lines',
+        'trim_trailing_whitespace', 'normalize_line_endings', 'tabs_to_spaces',
+      };
       for (final item in current) {
         try {
           final decoded = jsonDecode(item);
