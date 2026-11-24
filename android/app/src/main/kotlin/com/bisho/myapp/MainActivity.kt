@@ -1441,7 +1441,43 @@ class MainActivity : FlutterActivity() {
      * Tool version output alone is not proof that Gradle, AAPT2, Java, and the
      * Android platform can cooperate to produce a usable APK on this device.
      */
+    /** Probe wrapper owns rollback for every failure path, including validation early-returns. */
     private fun probeLocalBuildEngine(): Map<String, Any> {
+        val result = try {
+            probeLocalBuildEngineInternal()
+        } catch (error: Exception) {
+            mapOf("success" to false, "message" to (error.message ?: "تعذر اختبار المحرك."))
+        }
+        val previous = File(filesDir, "bisho-local-build-engine.previous")
+        if (result["success"] == true) {
+            if (previous.exists() && !previous.deleteRecursively()) {
+                emitBuildEvent("نجح اختبار المحرك، لكن تعذر حذف النسخة السابقة؛ تم الاحتفاظ بها للحماية.", true)
+            }
+            return result
+        }
+        if (!previous.exists()) return result
+        val active = File(filesDir, "bisho-local-build-engine")
+        val failed = File(filesDir, "bisho-local-build-engine.failed")
+        return try {
+            if (failed.exists() && !failed.deleteRecursively()) {
+                throw IllegalStateException("تعذر تنظيف مجلد المحرك الفاشل السابق.")
+            }
+            if (active.exists() && !active.renameTo(failed)) {
+                throw IllegalStateException("تعذر عزل المحرك الذي فشل اختباره.")
+            }
+            if (!previous.renameTo(active)) {
+                if (failed.exists()) failed.renameTo(active)
+                throw IllegalStateException("تعذر استعادة نسخة المحرك السابقة.")
+            }
+            result + ("message" to ((result["message"] as? String ?: "فشل اختبار المحرك.") +
+                " تمت استعادة نسخة المحرك السابقة تلقائياً؛ احتفظنا بالنسخة الفاشلة للتشخيص."))
+        } catch (recoveryError: Exception) {
+            result + ("message" to ((result["message"] as? String ?: "فشل اختبار المحرك.") +
+                " تعذر الاسترداد التلقائي: ${recoveryError.message}"))
+        }
+    }
+
+    private fun probeLocalBuildEngineInternal(): Map<String, Any> {
         val engineDirectory = File(filesDir, "bisho-local-build-engine").canonicalFile
         val manifest = File(engineDirectory, "engine-manifest.json")
         if (!manifest.isFile || manifest.length() <= 0L || manifest.length() > 1024L * 1024L) {
@@ -1643,10 +1679,6 @@ class MainActivity : FlutterActivity() {
                 if (!proofTemp.renameTo(proof)) throw IllegalStateException("تعذر اعتماد إثبات اختبار المحرك.")
                 artifactRoot.listFiles()?.filter { it.isFile && it.name.startsWith("bisho-debug-") && it.name.endsWith(".apk") }
                     ?.sortedByDescending { it.lastModified() }?.drop(3)?.forEach { it.delete() }
-                val previousEngine = File(filesDir, "bisho-local-build-engine.previous")
-                if (previousEngine.exists() && !previousEngine.deleteRecursively()) {
-                    throw IllegalStateException("نجح اختبار المحرك، لكن تعذر تنظيف النسخة السابقة؛ احتفظنا بها للحماية.")
-                }
                 mapOf(
                     "success" to true,
                     "activated" to true,
@@ -1659,28 +1691,7 @@ class MainActivity : FlutterActivity() {
                 )
             }
         } catch (error: Exception) {
-            val previousEngine = File(filesDir, "bisho-local-build-engine.previous")
-            val activeEngine = File(filesDir, "bisho-local-build-engine")
-            val failedEngine = File(filesDir, "bisho-local-build-engine.failed")
-            var recoveryMessage = ""
-            if (previousEngine.exists()) {
-                try {
-                    if (failedEngine.exists() && !failedEngine.deleteRecursively()) {
-                        throw IllegalStateException("تعذر تنظيف مجلد المحرك الفاشل السابق.")
-                    }
-                    if (activeEngine.exists() && !activeEngine.renameTo(failedEngine)) {
-                        throw IllegalStateException("تعذر عزل المحرك الذي فشل اختباره.")
-                    }
-                    if (!previousEngine.renameTo(activeEngine)) {
-                        if (failedEngine.exists()) failedEngine.renameTo(activeEngine)
-                        throw IllegalStateException("تعذر استعادة نسخة المحرك السابقة.")
-                    }
-                    recoveryMessage = " تمت استعادة نسخة المحرك السابقة تلقائياً؛ احتفظنا بالنسخة الفاشلة في مجلد التشخيص."
-                } catch (recoveryError: Exception) {
-                    recoveryMessage = " تعذر الاسترداد التلقائي: ${recoveryError.message}"
-                }
-            }
-            mapOf("success" to false, "message" to (error.message ?: "تعذر تنفيذ اختبار البناء التجريبي.") + recoveryMessage, "log" to readProbeLog(log))
+            mapOf("success" to false, "message" to (error.message ?: "تعذر تنفيذ اختبار البناء التجريبي."), "log" to readProbeLog(log))
         } finally {
             activeBuildProcess = null
             if (smokeRoot.exists()) smokeRoot.deleteRecursively()
