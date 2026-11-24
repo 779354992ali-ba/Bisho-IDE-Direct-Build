@@ -5,21 +5,21 @@ void main() {
   group('EditorDiagnosticNavigation', () {
     test('maps one-based line and column to a text offset', () {
       expect(
-        EditorDiagnosticNavigation.offsetForLineColumn('first\\nsecond', 2, 3),
+        EditorDiagnosticNavigation.offsetForLineColumn('first\nsecond', 2, 3),
         8,
       );
     });
 
     test('clamps columns to the end of a line', () {
       expect(
-        EditorDiagnosticNavigation.offsetForLineColumn('abc\\nxy', 2, 99),
+        EditorDiagnosticNavigation.offsetForLineColumn('abc\nxy', 2, 99),
         6,
       );
     });
 
     test('handles CRLF without placing the cursor after the carriage return', () {
       expect(
-        EditorDiagnosticNavigation.offsetForLineColumn('one\\r\\ntwo', 2, 2),
+        EditorDiagnosticNavigation.offsetForLineColumn('one\r\ntwo', 2, 2),
         6,
       );
     });
@@ -31,7 +31,7 @@ void main() {
     });
 
     test('supports the empty final line after a trailing newline', () {
-      expect(EditorDiagnosticNavigation.offsetForLineColumn('abc\\n', 2, 1), 4);
+      expect(EditorDiagnosticNavigation.offsetForLineColumn('abc\n', 2, 1), 4);
     });
   });
 }
