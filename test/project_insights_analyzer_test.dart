@@ -42,6 +42,16 @@ void main() {
       expect(report.insights.every((i) => !i.message.contains('abcdefghijk123')), isTrue);
     });
 
+    test('flags insecure HTTP endpoints and dynamic code execution', () {
+      final report = analyzer.analyze({
+        'src/app.js': "fetch('http://example.com/api');\\neval(userInput);",
+      });
+      expect(report.insights.map((i) => i.code), containsAll([
+        'insecure_http_endpoint', 'dynamic_code_execution',
+      ]));
+      expect(report.insights.every((i) => i.category == ProjectInsightCategory.security), isTrue);
+    });
+
     test('ignores generated directories and rejects unsafe input paths', () {
       final report = analyzer.analyze({
         '../outside.dart': "import 'x.dart';",
