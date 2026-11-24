@@ -4996,6 +4996,33 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           ),
           const SizedBox(height: 14),
           _dashboardPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _dashboardSectionTitle(Icons.flash_on_rounded, 'بدء سريع'),
+                const SizedBox(height: 10),
+                LayoutBuilder(builder: (context, constraints) {
+                  final width = (constraints.maxWidth - 9) / 2;
+                  final quickActions = <_DashboardAction>[
+                    _DashboardAction(Icons.create_new_folder_rounded, 'مشروع جديد', createNewProject, cyan),
+                    _DashboardAction(Icons.folder_open_rounded, 'فتح مشروع', openProjectFolder, green),
+                    _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, blue),
+                    _DashboardAction(Icons.search_rounded, 'بحث في الكود', searchCode, violet),
+                  ];
+                  return Wrap(
+                    spacing: 9,
+                    runSpacing: 9,
+                    children: quickActions.map((action) => SizedBox(
+                      width: width,
+                      child: _dashboardFeatureCard(action),
+                    )).toList(),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _dashboardPanel(
             child: Row(children: [
               const Icon(Icons.insert_drive_file_outlined, color: cyan, size: 19),
               const SizedBox(width: 9),
