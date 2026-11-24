@@ -4476,7 +4476,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                           child: Text(
                             tab.fileName,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: selected ? const Color(0xFFE6F4FF) : const Color(0xFF9AABC0),
+                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
                           ),
                         ),
                         if (!tab.isSaved)
