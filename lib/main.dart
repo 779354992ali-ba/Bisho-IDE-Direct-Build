@@ -5408,11 +5408,20 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 const Icon(Icons.health_and_safety_rounded, color: Color(0xFF19D889)),
                 const SizedBox(width: 9),
                 const Expanded(child: Text('فحص الملفات المفتوحة', style: TextStyle(fontWeight: FontWeight.w800))),
-                Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
+                 Container(
+                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                   decoration: BoxDecoration(color: const Color(0xFF38BDF8).withValues(alpha: .10), borderRadius: BorderRadius.circular(20)),
+                   child: Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
+                     style: const TextStyle(fontSize: 10, color: Color(0xFF38BDF8), fontWeight: FontWeight.w700)),
+                 ),
                     style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
                 IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
               ]),
             ),
+             const Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, 10), child: Align(
+               alignment: Alignment.centerRight,
+               child: Text('تحليل محلي للملفات المفتوحة فقط — لا يتم تعديل أي ملف.', style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+             )),
             Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Row(children: [
               _insightCount('أخطاء', report.count(ProjectInsightSeverity.error), const Color(0xFFFF647C)),
               _insightCount('تحذيرات', report.count(ProjectInsightSeverity.warning), const Color(0xFFFFC247)),
