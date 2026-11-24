@@ -978,20 +978,48 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
       child: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              itemCount: _output.length,
-              itemBuilder: (context, index) => SelectableText(
-                _output[index].text,
-                style: TextStyle(
-                  color: _output[index].color,
-                  fontSize: 12,
-                  height: 1.5,
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ),
+            child: _output.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 58,
+                            height: 58,
+                            decoration: BoxDecoration(
+                              color: _cyan.withValues(alpha: .10),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: const Color(0xFF26374E)),
+                            ),
+                            child: const Icon(Icons.terminal_rounded, color: _cyan, size: 29),
+                          ),
+                          const SizedBox(height: 13),
+                          const Text('الطرفية جاهزة',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
+                          const SizedBox(height: 6),
+                          const Text('اكتب أمراً في الأسفل أو استخدم الاختصارات السريعة.\nاكتب help لعرض الأوامر المتاحة.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: _muted, fontSize: 11, height: 1.6)),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                    itemCount: _output.length,
+                    itemBuilder: (context, index) => SelectableText(
+                      _output[index].text,
+                      style: TextStyle(
+                        color: _output[index].color,
+                        fontSize: 12,
+                        height: 1.5,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
           ),
           const Divider(height: 1, color: Color(0xFF263449)),
           _quickBar(),
