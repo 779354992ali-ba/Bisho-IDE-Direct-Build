@@ -54,6 +54,7 @@ class MainActivity : FlutterActivity() {
     private val buildExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var activeBuildProcess: Process? = null
     @Volatile private var stagingCancelled: Boolean = false
+    @Volatile private var engineActivationAwaitingProbe: Boolean = false
     @Volatile private var buildEventSink: EventChannel.EventSink? = null
     private var pendingEngineArchivePicker: MethodChannel.Result? = null
     private val engineArchivePickerRequestCode = 48127
@@ -75,7 +76,7 @@ class MainActivity : FlutterActivity() {
                             // Recover an install interrupted by process death: automatically test the
                             // candidate on next app inspection, committing it only on success.
                             val pendingEngineBackup = File(filesDir, "bisho-local-build-engine.previous")
-                            if (pendingEngineBackup.exists()) {
+                            if (pendingEngineBackup.exists() && !engineActivationAwaitingProbe) {
                                 val recoveryProbe = probeLocalBuildEngine()
                                 if (recoveryProbe["success"] != true) {
                                     emitBuildEvent(
@@ -103,6 +104,8 @@ class MainActivity : FlutterActivity() {
                                 probeLocalBuildEngine()
                             } catch (error: Exception) {
                                 mapOf("success" to false, "message" to (error.message ?: "تعذر اختبار المحرك."))
+                            } finally {
+                                engineActivationAwaitingProbe = false
                             }
                             runOnUiThread { result.success(probe) }
                         }
@@ -955,6 +958,7 @@ class MainActivity : FlutterActivity() {
             // Keep .previous until probeLocalBuildEngine completes successfully on this device.
             File(engineRoot, "local-build-verification.json").delete()
             File(engineRoot, "local-build-debug-verification.json").delete()
+            engineActivationAwaitingProbe = true
             emitBuildEvent("تم تجهيز ملفات المحرك والتحقق من manifest وSHA-256؛ لم يُفعّل للبناء المحلي بعد. يلزم نجاح اختبار الهاتف أولًا.")
             return mapOf("success" to true, "activated" to false, "message" to "تم تجهيز ملفات المحرك والتحقق من سلامتها. لم يُفعّل للبناء المحلي؛ شغّل اختبار الهاتف أولًا.", "bytes" to extractedBytes)
         } catch (error: Exception) {
