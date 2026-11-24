@@ -362,6 +362,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   int nextTabId = 1;
   int _explorerRevision = 0;
   String _explorerFilter = '';
+  String _explorerTypeFilter = 'all';
   final TextEditingController _explorerFilterController = TextEditingController();
 
   String status = 'جاهز';
@@ -4381,9 +4382,21 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             List<SafDocumentFile>.from(snapshot.data ?? []);
 
         final filter = _explorerFilter.trim().toLowerCase();
-        if (filter.isNotEmpty) {
-          items.removeWhere((item) => !item.name.toLowerCase().contains(filter));
-        }
+        const explorerTypeExtensions = <String, Set<String>>{
+          'code': {'dart', 'py', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'java', 'kt', 'kts', 'swift', 'c', 'h', 'cpp', 'hpp', 'go', 'rs', 'php', 'sh', 'bash'},
+          'config': {'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'properties', 'gradle'},
+          'web': {'html', 'htm', 'css', 'scss', 'sass', 'md', 'markdown'},
+          'media': {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp3', 'wav', 'mp4', 'webm'},
+        };
+        items.removeWhere((item) {
+          if (item.isDir) return false;
+          if (filter.isNotEmpty && !item.name.toLowerCase().contains(filter)) return true;
+          final allowed = explorerTypeExtensions[_explorerTypeFilter];
+          if (allowed == null) return false;
+          final dot = item.name.lastIndexOf('.');
+          final extension = dot < 0 ? '' : item.name.substring(dot + 1).toLowerCase();
+          return !allowed.contains(extension);
+        });
 
         items.sort((a, b) {
           if (a.isDir && !b.isDir) return -1;
@@ -4634,6 +4647,27 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
+              ),
+            ),
+          if (projectUri != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: DropdownButtonFormField<String>(
+                initialValue: _explorerTypeFilter,
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'نوع الملفات',
+                  prefixIcon: Icon(Icons.filter_alt_outlined, size: 18),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('كل الملفات')),
+                  DropdownMenuItem(value: 'code', child: Text('ملفات البرمجة')),
+                  DropdownMenuItem(value: 'config', child: Text('ملفات الإعدادات')),
+                  DropdownMenuItem(value: 'web', child: Text('الويب والتوثيق')),
+                  DropdownMenuItem(value: 'media', child: Text('الصور والوسائط')),
+                ],
+                onChanged: (value) => setState(() => _explorerTypeFilter = value ?? 'all'),
               ),
             ),
           if (projectUri == null)
