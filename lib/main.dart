@@ -4219,13 +4219,27 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     final currentCursor = controller.selection.isValid
         ? controller.selection.extentOffset.clamp(0, current.length).toInt()
         : current.length;
+    // Do not apply a stale completion if the document changed while the
+    // suggestion dialog was open. This preserves newer user edits.
+    if (controller.text != source) {
+      setState(() {
+        status = 'تغير محتوى المحرر أثناء عرض الاقتراح؛ لم يتم إدراج الإكمال.';
+      });
+      return;
+    }
     final currentSelection = controller.selection;
-    final hasSelection = currentSelection.isValid && !currentSelection.isCollapsed;
-    final currentBefore = current.substring(0, currentCursor);
-    final currentMatch = RegExp(r'[A-Za-z_][A-Za-z0-9_]*
+    final hasSelection =
+        currentSelection.isValid && !currentSelection.isCollapsed;
+    final replaceStart = hasSelection
+        ? currentSelection.start.clamp(0, source.length).toInt()
+        : (match?.start ?? cursor);
+    final replaceEnd = hasSelection
+        ? currentSelection.end.clamp(0, source.length).toInt()
+        : cursor;
+    final updated = source.replaceRange(replaceStart, replaceEnd, chosen);
     controller.value = TextEditingValue(
       text: updated,
-      selection: TextSelection.collapsed(offset: start + chosen.length),
+      selection: TextSelection.collapsed(offset: replaceStart + chosen.length),
     );
     setState(() {
       tab.isSaved = false;
