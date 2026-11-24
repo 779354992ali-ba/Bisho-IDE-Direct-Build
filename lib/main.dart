@@ -6531,7 +6531,8 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                 ),
               ],
               icon: const Icon(Icons.edit_note),
-            ),            IconButton(
+            ),
+            IconButton(
               tooltip: 'حفظ الملف',
               onPressed: widget.onSave,
               icon: const Icon(Icons.save_rounded),
