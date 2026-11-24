@@ -4947,6 +4947,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             title: 'المشاريع والملفات',
             subtitle: 'إنشاء وفتح واستيراد وحفظ وتصدير ونسخ احتياطي',
             actions: projectActions,
+            initiallyExpanded: true,
           ),
           const SizedBox(height: 16),
           _dashboardActionSection(
@@ -4998,27 +4999,50 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     required String title,
     required String subtitle,
     required List<_DashboardAction> actions,
+    bool initiallyExpanded = false,
   }) {
     return _dashboardPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _dashboardSectionTitle(icon, title),
-          const SizedBox(height: 4),
-          Text(subtitle, style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-          const SizedBox(height: 13),
-          LayoutBuilder(builder: (context, constraints) {
-            final width = (constraints.maxWidth - 9) / 2;
-            return Wrap(
-              spacing: 9,
-              runSpacing: 9,
-              children: [
-                for (final action in actions)
-                  SizedBox(width: width, child: _dashboardFeatureCard(action)),
-              ],
-            );
-          }),
-        ],
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          splashColor: const Color(0xFF38BDF8).withValues(alpha: .06),
+          highlightColor: Colors.transparent,
+        ),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          maintainState: true,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 8, bottom: 4),
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF38BDF8).withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: const Color(0xFF38BDF8), size: 20),
+          ),
+          title: Text(title, style: const TextStyle(
+            color: Color(0xFFE5EDF7), fontSize: 13, fontWeight: FontWeight.w700)),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+          ),
+          children: [
+            LayoutBuilder(builder: (context, constraints) {
+              final width = (constraints.maxWidth - 9) / 2;
+              return Wrap(
+                spacing: 9,
+                runSpacing: 9,
+                children: [
+                  for (final action in actions)
+                    SizedBox(width: width, child: _dashboardFeatureCard(action)),
+                ],
+              );
+            }),
+          ],
+        ),
       ),
     );
   }
@@ -5173,10 +5197,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                               itemCount: filtered.length,
                               gridDelegate:
                                   const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 9,
-                                mainAxisSpacing: 9,
-                                childAspectRatio: 1.15,
+                                crossAxisCount: 2,
+                                 crossAxisSpacing: 10,
+                                 mainAxisSpacing: 10,
+                                 childAspectRatio: 1.65,
                               ),
                               itemBuilder: (_, index) {
                                 final action = filtered[index];
