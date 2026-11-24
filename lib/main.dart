@@ -5407,7 +5407,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               child: Row(children: [
                 const Icon(Icons.health_and_safety_rounded, color: Color(0xFF19D889)),
                 const SizedBox(width: 9),
-                const Expanded(child: Text('فحص جودة المشروع', style: TextStyle(fontWeight: FontWeight.w700))),
+                const Expanded(child: Text('فحص الملفات المفتوحة', style: TextStyle(fontWeight: FontWeight.w800))),
                 Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
                     style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
                 IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
