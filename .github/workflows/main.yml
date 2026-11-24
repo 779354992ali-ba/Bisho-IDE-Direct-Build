@@ -106,6 +106,182 @@ jobs:
           set -euo pipefail
           APK='build/app/outputs/flutter-apk/app-release.apk'
           test -s "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -n "$AAPT"
+          BADGING="$("$AAPT" dump badging "$APK")"
+          printf '%s\n' "$BADGING" | grep -F "package: name='com.bisho.myapp' versionCode='100' versionName='1.0.1'"
+          unzip -l "$APK" | grep -Eq 'lib/arm64-v8a/libflutter\.so          mkdir -p build/release-artifact
+          cp "$APK" build/release-artifact/app-release.apk
+          cd build/release-artifact
+          sha256sum app-release.apk | tee SHA256SUMS.txt
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "flutter_version=$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])')"
+            echo "built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > BUILD_INFO.txt
+          ls -lh app-release.apk SHA256SUMS.txt BUILD_INFO.txt
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: Bisho-IDE-Release-APK
+          path: |
+            build/release-artifact/app-release.apk
+            build/release-artifact/SHA256SUMS.txt
+            build/release-artifact/BUILD_INFO.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create build diagnostics report
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p build/diagnostics
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "job_status=${{ job.status }}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            echo "finished_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo '--- Toolchain ---'
+            flutter --version 2>&1 || true
+            dart --version 2>&1 || true
+            java -version 2>&1 || true
+          } > build/diagnostics/BUILD_DIAGNOSTICS.txt
+          echo "Run URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> build/diagnostics/BUILD_DIAGNOSTICS.txt
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: Bisho-IDE-Build-Diagnostics
+          path: build/diagnostics/
+          if-no-files-found: warn
+          retention-days: 14
+
+          unzip -l "$APK" | grep -Eq 'lib/arm64-v8a/libapp\.so          mkdir -p build/release-artifact
+          cp "$APK" build/release-artifact/app-release.apk
+          cd build/release-artifact
+          sha256sum app-release.apk | tee SHA256SUMS.txt
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "flutter_version=$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])')"
+            echo "built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > BUILD_INFO.txt
+          ls -lh app-release.apk SHA256SUMS.txt BUILD_INFO.txt
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: Bisho-IDE-Release-APK
+          path: |
+            build/release-artifact/app-release.apk
+            build/release-artifact/SHA256SUMS.txt
+            build/release-artifact/BUILD_INFO.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create build diagnostics report
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p build/diagnostics
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "job_status=${{ job.status }}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            echo "finished_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo '--- Toolchain ---'
+            flutter --version 2>&1 || true
+            dart --version 2>&1 || true
+            java -version 2>&1 || true
+          } > build/diagnostics/BUILD_DIAGNOSTICS.txt
+          echo "Run URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> build/diagnostics/BUILD_DIAGNOSTICS.txt
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: Bisho-IDE-Build-Diagnostics
+          path: build/diagnostics/
+          if-no-files-found: warn
+          retention-days: 14
+
+          unzip -l "$APK" | grep -Eq 'classes[0-9]*\.dex          mkdir -p build/release-artifact
+          cp "$APK" build/release-artifact/app-release.apk
+          cd build/release-artifact
+          sha256sum app-release.apk | tee SHA256SUMS.txt
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "flutter_version=$(flutter --version --machine | python3 -c 'import json,sys; print(json.load(sys.stdin)["frameworkVersion"])')"
+            echo "built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > BUILD_INFO.txt
+          ls -lh app-release.apk SHA256SUMS.txt BUILD_INFO.txt
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: Bisho-IDE-Release-APK
+          path: |
+            build/release-artifact/app-release.apk
+            build/release-artifact/SHA256SUMS.txt
+            build/release-artifact/BUILD_INFO.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Create build diagnostics report
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p build/diagnostics
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "workflow=${GITHUB_WORKFLOW}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "commit=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "job_status=${{ job.status }}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "runner_arch=${RUNNER_ARCH}"
+            echo "finished_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo
+            echo '--- Toolchain ---'
+            flutter --version 2>&1 || true
+            dart --version 2>&1 || true
+            java -version 2>&1 || true
+          } > build/diagnostics/BUILD_DIAGNOSTICS.txt
+          echo "Run URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> build/diagnostics/BUILD_DIAGNOSTICS.txt
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: Bisho-IDE-Build-Diagnostics
+          path: build/diagnostics/
+          if-no-files-found: warn
+          retention-days: 14
+
+          echo "APK_IDENTITY_AND_ARM64_RUNTIME_VERIFIED"
           mkdir -p build/release-artifact
           cp "$APK" build/release-artifact/app-release.apk
           cd build/release-artifact
