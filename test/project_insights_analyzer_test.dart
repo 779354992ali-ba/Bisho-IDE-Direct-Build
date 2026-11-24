@@ -52,6 +52,18 @@ void main() {
       expect(report.insights, isEmpty);
     });
 
+    test('calculates an advisory quality score from issue severity', () {
+      final clean = analyzer.analyze({'lib/main.dart': 'void main() {}'});
+      expect(clean.qualityScore, 100);
+      expect(clean.qualityLabel, 'ممتاز');
+
+      final report = analyzer.analyze({
+        'lib/main.dart': "import 'missing.dart';\n// TODO: review\n",
+      });
+      expect(report.qualityScore, 80);
+      expect(report.qualityLabel, 'جيد');
+    });
+
     test('reports Flutter entrypoint omission and stable counts', () {
       final report = analyzer.analyze({'pubspec.yaml': 'name: sample\n'});
       expect(report.insights.single.code, 'flutter_entry_missing');
