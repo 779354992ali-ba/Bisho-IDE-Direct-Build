@@ -461,9 +461,12 @@ class MainActivity : FlutterActivity() {
         if (archiveSize <= 0L || archiveSize > 8L * 1024L * 1024L * 1024L) {
             throw IllegalArgumentException("حجم الحزمة غير معروف أو يتجاوز الحد المسموح (8 GB).")
         }
+        val freedBytes = repairSafeLocalBuildState()
         val freeBytes = StatFs(filesDir.absolutePath).availableBytes
-        if (freeBytes < engineInstallStorageBytes) {
-            throw IllegalStateException("المساحة الحرة أقل من 1 GB؛ أوقف التثبيت لحماية الهاتف.")
+        if (freeBytes < minimumBuildStorageBytes) {
+            throw IllegalStateException(
+                "المساحة غير كافية لتثبيت المحرك بأمان. نظّف التطبيق الملفات المؤقتة الآمنة وحرّر ${(minimumBuildStorageBytes / (1024.0 * 1024.0 * 1024.0)).format(1)} GB على الأقل؛ المتاح الآن ${(freeBytes / (1024.0 * 1024.0 * 1024.0)).format(1)} GB. لم نحذف مشاريعك أو المحرك السابق. تم توفير ${(freedBytes / (1024.0 * 1024.0 * 1024.0)).format(2)} GB تلقائياً."
+            )
         }
         emitBuildEvent("جارٍ حساب SHA-256 لحزمة المحرك...")
         val digest = MessageDigest.getInstance("SHA-256")
@@ -1156,9 +1159,12 @@ class MainActivity : FlutterActivity() {
         var process: Process? = null
         try {
             val project = File(projectPath).canonicalFile
+            val freedBytes = repairSafeLocalBuildState()
             val freeBeforeBuild = StatFs(filesDir.absolutePath).availableBytes
             if (freeBeforeBuild < minimumBuildStorageBytes) {
-                throw IllegalStateException("المساحة الحرة غير كافية للبناء المحلي؛ يلزم توفير 2.5 GB على الأقل كبداية لمساحة Gradle وملفات البناء المؤقتة؛ المشاريع الكبيرة قد تحتاج أكثر.")
+                throw IllegalStateException(
+                    "نظّف Bisho IDE الملفات المؤقتة الآمنة أولاً ووفّر مساحة إضافية. المتاح: ${(freeBeforeBuild / (1024.0 * 1024.0 * 1024.0)).format(2)} GB؛ المطلوب مبدئياً: 2.5 GB؛ المساحة التي حررها الإصلاح التلقائي: ${(freedBytes / (1024.0 * 1024.0 * 1024.0)).format(2)} GB. لم تُحذف ملفات مشاريعك أو ملفات المحرك."
+                )
             }
             val stagingRoot = File(filesDir, "bisho-local-builds").canonicalFile
             // The staging folder is app-private. Reject arbitrary paths supplied
@@ -1817,8 +1823,10 @@ class MainActivity : FlutterActivity() {
         val engineCheck = inspectToolchainManifest(engineDirectory, manifest, abi)
         val engineInstalled = engineCheck.first
         val requiredForCurrentState = if (engineInstalled) minimumBuildStorageBytes else engineInstallStorageBytes
-        val deviceSupported = abi == "arm64-v8a" &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && storage >= requiredForCurrentState
+        // Hardware compatibility is independent from temporary free-space readiness.
+        // Low storage must not mislabel a supported ARM64 Android device as unsupported.
+        val deviceSupported = abi == "arm64-v8a" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        val storageReady = storage >= requiredForCurrentState
 
         if (abi != "arm64-v8a") {
             missing.add("المعمارية الحالية ($abi) غير مدعومة؛ المطلوب arm64-v8a.")
@@ -1826,7 +1834,7 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             missing.add("يتطلب محرك البناء Android 10 أو أحدث.")
         }
-        if (storage < requiredForCurrentState) {
+        if (!storageReady) {
             missing.add(if (engineInstalled)
                 "المساحة الحرة أقل من 2.5 GB؛ المشاريع الكبيرة قد تحتاج مساحة إضافية أثناء البناء."
             else "يلزم توفر حجم الحزمة الفعلية إضافة إلى 1 GB احتياطي؛ لا يوجد شرط ثابت قدره 20 GB.")
@@ -1869,7 +1877,7 @@ class MainActivity : FlutterActivity() {
         val releaseBuildVerified = releaseProofPresent && integrityError == null
         val runtimeVerified = releaseBuildVerified
         val debugBuildVerified = debugProofPresent && integrityError == null
-        val canBuildLocally = deviceSupported && engineInstalled && debugBuildVerified
+        val canBuildLocally = deviceSupported && storageReady && engineInstalled && debugBuildVerified
         val message = when {
             !deviceSupported ->
                 "هذا الجهاز لا يحقق متطلبات بيئة البناء المحلية: ${missing.joinToString(" ")}"
@@ -1889,8 +1897,9 @@ class MainActivity : FlutterActivity() {
             "requiredStorageBytes" to requiredForCurrentState,
             "automaticallyFreedBytes" to freedBySafeRepair,
             "automaticallyRepairedPermissions" to repairedExecutables,
-            "engineInstallStorageBytes" to engineInstallStorageBytes,
+            "engineInstallStorageBytes" to minimumBuildStorageBytes,
             "deviceSupported" to deviceSupported,
+            "storageReady" to storageReady,
             "engineInstalled" to engineInstalled,
             "engineActivated" to canBuildLocally,
             "alpineRootfsInstalled" to File(engineDirectory, "rootfs/alpine-aarch64/etc/alpine-release").let { it.isFile && it.readText().trim().startsWith("3.24.4") },
