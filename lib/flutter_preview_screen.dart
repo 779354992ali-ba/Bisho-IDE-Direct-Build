@@ -14,6 +14,7 @@ import 'core/services/github_repository_service.dart';
 import 'core/services/project_scaffold_repair_service.dart';
 import 'core/services/project_health_analyzer.dart';
 import 'core/services/local_build_environment.dart';
+import 'core/services/engine_health_report.dart';
 import 'core/services/local_build_runner.dart';
 import 'core/services/local_build_engine_installer.dart';
 import 'core/services/alpine_rootfs_installer.dart';
@@ -1231,6 +1232,69 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     ]),
                   ),
                 ],
+                if (_localBuildEnvironment != null) ...[
+                  const SizedBox(height: 12),
+                  _sectionHeading('تقرير صحة المحرك — فحص آمن', Icons.health_and_safety_rounded),
+                  Builder(builder: (context) {
+                    final report = EngineHealthReport.fromEnvironment(_localBuildEnvironment!);
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(11),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0A1424),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF26374E)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(report.headline,
+                            style: TextStyle(
+                              color: report.failed > 0 ? Colors.orangeAccent : Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            )),
+                          const SizedBox(height: 5),
+                          Text('ناجح: ${report.passed}  •  تنبيه: ${report.warnings}  •  يحتاج معالجة: ${report.failed}',
+                            style: const TextStyle(color: _muted, fontSize: 10)),
+                          const Divider(height: 16, color: Color(0xFF26374E)),
+                          ...report.checks.map((check) {
+                            final passed = check.state == EngineCheckState.passed;
+                            final failed = check.state == EngineCheckState.failed;
+                            final color = passed ? Colors.greenAccent :
+                                failed ? Colors.redAccent : Colors.orangeAccent;
+                            final icon = passed ? Icons.check_circle_rounded :
+                                failed ? Icons.error_rounded : Icons.info_rounded;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(icon, color: color, size: 15),
+                                  const SizedBox(width: 7),
+                                  Expanded(child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(check.title, style: const TextStyle(
+                                        color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                                      Text(check.detail, style: const TextStyle(
+                                        color: _muted, fontSize: 10, height: 1.35)),
+                                    ],
+                                  )),
+                                ],
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 5),
+                          const Text(
+                            'هذا التقرير لا يغيّر ملفات المحرك ولا يحذف النسخ السابقة. فحوص البناء غير المجراة تبقى غير معتمدة.',
+                            style: TextStyle(color: _muted, fontSize: 10, height: 1.4),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
                 const Padding(
                   padding: EdgeInsets.only(bottom: 8),
                   child: Text(
@@ -1347,7 +1411,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   child: TextButton.icon(
                     onPressed: _checkingLocalBuild ? null : _inspectLocalBuildEnvironment,
                     icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('إعادة فحص بيئة البناء'),
+                    label: const Text('فحص صحة المحرك الآن (قراءة فقط)'),
                   ),
                 ),
                 const Text(
