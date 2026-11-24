@@ -3551,7 +3551,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             continue;
           }
           final content = utf8.decode(bytes, allowMalformed: true);
-          final lines = content.split('\\n');
+          final lines = content.split('\n');
           final matchingLines = <int>[];
           for (var i = 0; i < lines.length; i++) {
             if (lines[i].toLowerCase().contains(needle)) {
@@ -3613,7 +3613,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        '${result.relativePath}\\n$lineSummary',
+                        '\${result.relativePath}\n$lineSummary',
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
