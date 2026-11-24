@@ -6389,6 +6389,10 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFF080D19),
         appBar: AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
           leading: IconButton(
             tooltip: 'العودة إلى Bisho IDE',
             icon: const Icon(Icons.arrow_back),
@@ -6413,14 +6417,12 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
             IconButton(
               tooltip: 'معاينة / تشغيل الملف الحالي',
               onPressed: widget.onPreview,
-              icon: const Icon(Icons.play_circle_fill_rounded,
-                color: Color(0xFF19D889)),
+              icon: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF19D889)),
             ),
             IconButton(
               tooltip: 'بناء ومعاينة Flutter',
               onPressed: widget.onFlutterPreview,
-              icon: const Icon(Icons.phone_android_rounded,
-                color: Color(0xFF38BDF8)),
+              icon: const Icon(Icons.phone_android_rounded, color: Color(0xFF38BDF8)),
             ),
             PopupMenuButton<String>(
               tooltip: 'أدوات التحرير',
@@ -6440,6 +6442,15 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                     break;
                   case 'wrap':
                     _toggleWordWrap();
+                    break;
+                  case 'complete':
+                    widget.onShowCompletions();
+                    break;
+                  case 'smaller':
+                    _changeFontSize(-1);
+                    break;
+                  case 'larger':
+                    _changeFontSize(1);
                     break;
                 }
               },
@@ -6484,6 +6495,30 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                     ],
                   ),
                 ),
+                const PopupMenuItem(
+                  value: 'complete',
+                  child: Row(children: [
+                    Icon(Icons.auto_awesome, size: 20),
+                    SizedBox(width: 12),
+                    Text('الإكمال التلقائي'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'smaller',
+                  child: Row(children: [
+                    Icon(Icons.text_decrease, size: 20),
+                    SizedBox(width: 12),
+                    Text('تصغير الخط'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'larger',
+                  child: Row(children: [
+                    Icon(Icons.text_increase, size: 20),
+                    SizedBox(width: 12),
+                    Text('تكبير الخط'),
+                  ]),
+                ),
                 PopupMenuItem(
                   value: 'wrap',
                   child: Row(
@@ -6496,29 +6531,14 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                 ),
               ],
               icon: const Icon(Icons.edit_note),
-            ),
-            IconButton(
-              tooltip: 'إكمال تلقائي',
-              onPressed: widget.onShowCompletions,
-              icon: const Icon(Icons.auto_awesome),
-            ),
-            IconButton(
-              tooltip: 'تصغير الخط',
-              onPressed: () => _changeFontSize(-1),
-              icon: const Icon(Icons.text_decrease),
-            ),
-            IconButton(
-              tooltip: 'تكبير الخط',
-              onPressed: () => _changeFontSize(1),
-              icon: const Icon(Icons.text_increase),
-            ),
-            IconButton(
+            ),            IconButton(
               tooltip: 'حفظ الملف',
               onPressed: widget.onSave,
-              icon: const Icon(Icons.save),
+              icon: const Icon(Icons.save_rounded),
             ),
           ],
         ),
+
         body: SafeArea(
           child: Focus(
             onKeyEvent: _handleEditorKey,
