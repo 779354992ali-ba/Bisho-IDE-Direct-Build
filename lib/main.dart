@@ -4600,45 +4600,43 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 ),
               ),
         appBar: _editorFullScreen ? null : AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: false,
+          titleSpacing: 14,
+          shape: const Border(
+            bottom: BorderSide(color: Color(0xFF26374E), width: 0.8),
+          ),
           title: const Row(
             children: [
-              Icon(
-                Icons.code,
-                color: Color(0xFF38BDF8),
-              ),
-              SizedBox(width: 8),
-              Text(
-                'Bisho IDE',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              Icon(Icons.code_rounded, color: Color(0xFF38BDF8), size: 25),
+              SizedBox(width: 9),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Bisho IDE', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  SizedBox(height: 1),
+                  Text('بيئة التطوير', style: TextStyle(color: Color(0xFF91A4BE), fontSize: 9, fontWeight: FontWeight.w500)),
+                ],
               ),
             ],
           ),
           actions: [
             IconButton(
-              onPressed: _openEditorFullScreen,
-              icon: const Icon(Icons.code),
-              tooltip: 'فتح المحرر في شاشة كاملة',
-            ),
-            IconButton(
               onPressed: saveCurrentToDisk,
-              icon: const Icon(Icons.save),
+              icon: const Icon(Icons.save_rounded),
               tooltip: 'حفظ الملف',
             ),
             IconButton(
               onPressed: _showTerminalPanel,
-              icon: const Icon(Icons.terminal, color: Color(0xFF38BDF8)),
+              icon: const Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
               tooltip: 'فتح الطرفية',
             ),
-            IconButton(
-              onPressed: BishoThemeController.toggle,
-              icon: Icon(
-                Theme.of(context).brightness == Brightness.dark
-                    ? Icons.light_mode_rounded
-                    : Icons.dark_mode_rounded,
-              ),
-              tooltip: 'تبديل الثيم (فاتح/داكن)',
-            ),
             PopupMenuButton<String>(
+              tooltip: 'المزيد من الأدوات',
+              icon: const Icon(Icons.more_vert_rounded),
               onSelected: (value) {
                 if (value == 'new') createNewTab();
                 if (value == 'new_project') createNewProject();
@@ -4652,6 +4650,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 if (value == 'saveall') saveAllTabs();
                 if (value == 'terminal') _showTerminalPanel();
                 if (value == 'complete') showCodeCompletions();
+                if (value == 'fullscreen') _openEditorFullScreen();
+                if (value == 'theme') BishoThemeController.toggle();
                 if (value == 'exit') _confirmApplicationExit();
               },
               itemBuilder: (context) => [
@@ -4669,10 +4669,13 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 _bishoMenuItem('complete', Icons.auto_awesome_rounded, 'الإكمال التلقائي'),
                 _bishoMenuItem('saveall', Icons.save_rounded, 'حفظ جميع الملفات'),
                 _bishoMenuItem('terminal', Icons.terminal_rounded, 'فتح الطرفية'),
+                _bishoMenuItem('fullscreen', Icons.fullscreen_rounded, 'فتح المحرر في شاشة كاملة'),
+                _bishoMenuItem('theme', Icons.palette_outlined, 'تبديل المظهر'),
                 const PopupMenuDivider(),
                 _bishoMenuItem('exit', Icons.exit_to_app_rounded, 'الخروج من التطبيق', color: Colors.orangeAccent),
               ],
             ),
+            const SizedBox(width: 4),
           ],
         ),
         body: Column(
