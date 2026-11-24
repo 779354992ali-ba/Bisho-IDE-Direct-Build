@@ -3613,7 +3613,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        '\${result.relativePath}\n$lineSummary',
+                        '${result.relativePath}\n$lineSummary',
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
