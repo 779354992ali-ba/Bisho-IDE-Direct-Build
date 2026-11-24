@@ -665,8 +665,11 @@ class _HtmlPreviewScreenState extends State<HtmlPreviewScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF101318),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF191E26),
+        backgroundColor: const Color(0xFF101B2D),
         foregroundColor: Colors.white,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
         title: const Text(
           'معاينة مشروع الويب',
           style: TextStyle(
