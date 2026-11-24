@@ -5570,24 +5570,44 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   IconButton(onPressed: () => Navigator.pop(sheetContext, false),
                     icon: const Icon(Icons.close)),
                 ]),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('إظهار مستكشف الملفات'),
-                  value: draftExplorerVisible,
-                  onChanged: (value) => refreshSheet(() => draftExplorerVisible = value),
+                const SizedBox(height: 14),
+                _dashboardPanel(
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.folder_copy_rounded, color: Color(0xFF38BDF8)),
+                    title: const Text('إظهار مستكشف الملفات',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    subtitle: const Text('عرض شجرة ملفات المشروع بجانب مساحة العمل',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                    value: draftExplorerVisible,
+                    onChanged: (value) => refreshSheet(() => draftExplorerVisible = value),
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  const Expanded(child: Text('حجم خط المحرر')),
-                  Text('${draftFontSize.round()} px', style: const TextStyle(color: Color(0xFF38BDF8))),
-                ]),
-                Slider(
-                  min: 10, max: 24, divisions: 14,
-                  value: draftFontSize,
-                  onChanged: (value) => refreshSheet(() => draftFontSize = value),
+                const SizedBox(height: 10),
+                _dashboardPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.text_fields_rounded, color: Color(0xFF38BDF8)),
+                        const SizedBox(width: 9),
+                        const Expanded(child: Text('حجم خط المحرر',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                        Text('${draftFontSize.round()} px',
+                          style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                      ]),
+                      const SizedBox(height: 5),
+                      const Text('اضبط حجم النص لتسهيل القراءة والكتابة',
+                        style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                      Slider(
+                        min: 10, max: 24, divisions: 14,
+                        value: draftFontSize,
+                        onChanged: (value) => refreshSheet(() => draftFontSize = value),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
                 SizedBox(width: double.infinity, child: FilledButton.icon(
                   onPressed: () => Navigator.pop(sheetContext, true),
                   icon: const Icon(Icons.save_rounded), label: const Text('حفظ الإعدادات'),
