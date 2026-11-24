@@ -1971,56 +1971,70 @@ Thumbs.db
       title: 'اختر لغة المشروع',
       subtitle: 'ستظهر إعدادات خاصة باللغة التي تختارها.',
       children: [
-        ..._languages.map((language) {
-          final selected = language == _selectedLanguage;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: InkWell(
-              onTap: _isCreating || _isPickingLocation
-                  ? null
-                  : () => _selectLanguage(language),
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? Theme.of(context).colorScheme.primaryContainer
-                      : Theme.of(context).colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    LanguageBrandBadge(language: language, size: 44),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        language,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final cardWidth = (constraints.maxWidth - 10) / 2;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _languages.map((language) {
+                final selected = language == _selectedLanguage;
+                return SizedBox(
+                  width: cardWidth,
+                  child: InkWell(
+                    onTap: _isCreating || _isPickingLocation
+                        ? null
+                        : () => _selectLanguage(language),
+                    borderRadius: BorderRadius.circular(15),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      constraints: const BoxConstraints(minHeight: 82),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : Theme.of(context).colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color: selected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.outlineVariant,
+                          width: selected ? 1.5 : 1,
                         ),
                       ),
-                    ),
-                    if (selected)
-                      Icon(
-                        Icons.check_circle,
-                        color: Theme.of(context).colorScheme.primary,
+                      child: Row(
+                        children: [
+                          LanguageBrandBadge(language: language, size: 34),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              language,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          if (selected)
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 18,
+                            ),
+                        ],
                       ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
       ],
     );
   }
-
 
   Widget _buildSettingsStep() {
     return _stepContent(
