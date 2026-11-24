@@ -2215,35 +2215,157 @@ Thumbs.db
   }
 
   Widget _buildSummaryStep() {
+    final colors = Theme.of(context).colorScheme;
     return _stepContent(
-      title: 'مكان حفظ المشروع',
-      subtitle: 'سيتم إنشاء مجلد باسم المشروع داخل المكان الذي تختاره.',
+      title: 'راجع مشروعك قبل الإنشاء',
+      subtitle: 'تأكد من الإعدادات ومكان الحفظ. يمكنك الرجوع وتعديل أي اختيار.',
       children: [
-        _infoCard(
-          'اسم المشروع: $_projectName\n'
-          'اسم المجلد: $_safeProjectName\n'
-          'اللغة: $_selectedLanguage\n'
-          'النوع: ${_projectMode == 'integrated' ? 'متكامل' : 'أساسي'}\n'
-          'القالب: ${_templateLabel(_selectedTemplate)}\n'
-          'ملف البداية: $_actualEntryFile',
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                colors.primaryContainer.withValues(alpha: .72),
+                colors.surfaceContainerLow,
+              ],
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colors.primary.withValues(alpha: .35)),
+          ),
+          child: Row(
+            children: [
+              LanguageBrandBadge(language: _selectedLanguage, size: 48),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_projectName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
+                    Text('$_selectedLanguage · ${_projectMode == 'integrated' ? 'متكامل' : 'أساسي'}',
+                      style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11)),
+                  ],
+                ),
+              ),
+              Icon(Icons.check_circle_rounded, color: colors.primary, size: 24),
+            ],
+          ),
         ),
         const SizedBox(height: 14),
-        if (_saveLocation != null)
-          _infoCard(
-            'مكان الحفظ:\n${_saveLocation!.name}',
-          )
-        else
-          _infoCard(
-            'عند الضغط على إنشاء المشروع، ستفتح نافذة اختيار مجلد الحفظ.',
-          ),
+        _summaryGroup(
+          title: 'هوية المشروع',
+          icon: Icons.badge_outlined,
+          children: [
+            _summaryRow('اسم المشروع', _projectName, Icons.drive_file_rename_outline),
+            _summaryRow('اسم المجلد', _safeProjectName, Icons.folder_outlined),
+            _summaryRow('اللغة', _selectedLanguage, Icons.code_rounded),
+            _summaryRow('نوع المشروع', _projectMode == 'integrated' ? 'متكامل' : 'أساسي', Icons.layers_outlined),
+            _summaryRow('القالب', _templateLabel(_selectedTemplate), Icons.dashboard_customize_outlined),
+            _summaryRow('ملف البداية', _actualEntryFile, Icons.play_circle_outline_rounded),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _summaryGroup(
+          title: 'ملفات وإعدادات إضافية',
+          icon: Icons.tune_rounded,
+          children: [
+            _summaryRow('إصدار المشروع', _versionController.text.trim().isEmpty ? 'الافتراضي' : _versionController.text.trim(), Icons.tag_rounded),
+            _summaryRow('README.md', _includeReadme ? 'سيتم إنشاؤه' : 'غير مفعّل', Icons.description_outlined,
+              enabled: _includeReadme),
+            _summaryRow('.gitignore', _includeGitignore ? 'سيتم إنشاؤه' : 'غير مفعّل', Icons.visibility_off_outlined,
+              enabled: _includeGitignore),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _summaryGroup(
+          title: 'مكان الحفظ',
+          icon: Icons.save_alt_rounded,
+          children: [
+            _summaryRow('المجلد الأب', _saveLocation?.name ?? 'سيُطلب منك اختيار المجلد التالي', Icons.folder_open_rounded),
+          ],
+        ),
         if (_isFlutter) ...[
-          const SizedBox(height: 14),
-          _infoCard(
-            'تنبيه: مشروع Flutter الناتج يحتوي ملفات المصدر والإعدادات '
-            'الأساسية فقط، وليس scaffold أصليًا كاملًا قابلًا للبناء.',
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colors.tertiaryContainer.withValues(alpha: .45),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: colors.tertiary.withValues(alpha: .35)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded, color: colors.tertiary),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    'مشروع Flutter الناتج يحتوي ملفات المصدر والإعدادات الأساسية. ستحتاج إلى بيئة Flutter متوافقة لإكمال التهيئة والبناء.',
+                    style: TextStyle(fontSize: 11, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ],
+    );
+  }
+
+  Widget _summaryGroup({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 8),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: .65)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(icon, size: 17, color: colors.primary),
+            const SizedBox(width: 8),
+            Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+          ]),
+          const SizedBox(height: 8),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(String label, String value, IconData icon, {bool enabled = true}) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Icon(icon, size: 15, color: enabled ? colors.onSurfaceVariant : colors.outline),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 104,
+          child: Text(label, style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
+        ),
+        Expanded(
+          child: Text(value,
+            textAlign: TextAlign.end,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+              color: enabled ? colors.onSurface : colors.outline)),
+        ),
+      ]),
     );
   }
 
