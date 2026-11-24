@@ -44,6 +44,22 @@ class ProjectInsightsReport {
       insights.where((item) => item.severity == severity).length;
 
   bool get hasErrors => count(ProjectInsightSeverity.error) > 0;
+
+  /// Advisory score based only on detected insights in the supplied open files.
+  /// It is not a substitute for compiler, analyzer, or security testing.
+  int get qualityScore {
+    final penalty = count(ProjectInsightSeverity.error) * 18 +
+        count(ProjectInsightSeverity.warning) * 8 +
+        count(ProjectInsightSeverity.info) * 2;
+    return (100 - penalty).clamp(0, 100);
+  }
+
+  String get qualityLabel {
+    if (qualityScore >= 90) return 'ممتاز';
+    if (qualityScore >= 75) return 'جيد';
+    if (qualityScore >= 50) return 'يحتاج تحسين';
+    return 'يحتاج مراجعة';
+  }
 }
 
 class ProjectInsightsAnalyzer {
