@@ -6033,8 +6033,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                                       size: 17, color: Color(0xFF38BDF8))
                                   : null,
                               onTap: canNavigate ? () {
-                                if (targetTab == null) return;
-                                final offset = EditorDiagnosticNavigation.offsetForLineColumn(
+                                                                final offset = EditorDiagnosticNavigation.offsetForLineColumn(
                                   targetTab.controller.text, issue.line, 1);
                                 if (offset == null) return;
                                 final tabIndex = tabs.indexOf(targetTab);
