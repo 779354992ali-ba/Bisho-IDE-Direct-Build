@@ -1013,6 +1013,19 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
     );
   }
 
+  Widget _sectionHeading(String title, IconData icon) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(children: [
+      Icon(icon, color: _cyan, size: 17),
+      const SizedBox(width: 8),
+      Text(title, style: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+      )),
+    ]),
+  );
+
   Widget _localBuildInfoRow(String label, String value) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
     child: Row(children: [
@@ -1172,32 +1185,51 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                 ),
                 const SizedBox(height: 10),
                 if (_localBuildEnvironment != null) ...[
-                  _localBuildInfoRow('معمارية الهاتف', _localBuildEnvironment!.deviceAbi),
-                  _localBuildInfoRow('إصدار Android API', _localBuildEnvironment!.androidVersion == 0
-                      ? 'غير متاح' : _localBuildEnvironment!.androidVersion.toString()),
-                  _localBuildInfoRow('المساحة الحرة', _localBuildEnvironment!.availableStorageLabel),
-                  _localBuildInfoRow('دعم الجهاز', _localBuildEnvironment!.deviceSupported
-                      ? 'يحقق المتطلبات الأولية' : 'لا يحقق المتطلبات الأولية'),
-                  _localBuildInfoRow('المساحة المطلوبة', _localBuildEnvironment!.requiredStorageLabel),
-                  _localBuildInfoRow('نظام Alpine ARM64', _localBuildEnvironment!.alpineRootfsInstalled
-                      ? 'مثبّت وموجود' : 'غير مثبّت'),
-                  _localBuildInfoRow('ملفات المحرك', _localBuildEnvironment!.engineInstalled
-                      ? 'موجودة بنيويًا' : 'غير مكتملة'),
-                  _localBuildInfoRow('اختبار Debug APK', _localBuildEnvironment!.debugBuildVerified
-                      ? 'نجح البناء والتحقق من التوقيع والمحاذاة' : 'لم ينجح بعد'),
-                  _localBuildInfoRow('اختبار Release/AOT', _localBuildEnvironment!.releaseBuildVerified
-                      ? 'تم إنتاج APK والتحقق من توقيعه' : 'لم ينجح بعد؛ Debug لا يكفي لاعتماده'),
-                  if (_localBuildEnvironment!.missingRequirements.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    const Text('النواقص والمتطلبات:',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
-                    ..._localBuildEnvironment!.missingRequirements.map((item) =>
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text('• $item',
-                          style: const TextStyle(color: _muted, fontSize: 11, height: 1.4)),
-                      )),
-                  ],
+                  _sectionHeading('حالة الجهاز والمحرك', Icons.fact_check_rounded),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0C1728),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(color: const Color(0xFF26374E)),
+                    ),
+                    child: Column(children: [
+                      _localBuildInfoRow('معمارية الهاتف', _localBuildEnvironment!.deviceAbi),
+                      _localBuildInfoRow('إصدار Android API', _localBuildEnvironment!.androidVersion == 0
+                          ? 'غير متاح' : _localBuildEnvironment!.androidVersion.toString()),
+                      _localBuildInfoRow('المساحة الحرة', _localBuildEnvironment!.availableStorageLabel),
+                      _localBuildInfoRow('دعم الجهاز', _localBuildEnvironment!.deviceSupported
+                          ? 'يحقق المتطلبات الأولية' : 'لا يحقق المتطلبات الأولية'),
+                      _localBuildInfoRow('المساحة المطلوبة', _localBuildEnvironment!.requiredStorageLabel),
+                      const Divider(height: 14, color: Color(0xFF26374E)),
+                      _localBuildInfoRow('نظام Alpine ARM64', _localBuildEnvironment!.alpineRootfsInstalled
+                          ? 'مثبّت وموجود' : 'غير مثبّت'),
+                      _localBuildInfoRow('ملفات المحرك', _localBuildEnvironment!.engineInstalled
+                          ? 'موجودة بنيويًا' : 'غير مكتملة'),
+                      _localBuildInfoRow('اختبار Debug APK', _localBuildEnvironment!.debugBuildVerified
+                          ? 'نجح البناء والتحقق من التوقيع والمحاذاة' : 'لم ينجح بعد'),
+                      _localBuildInfoRow('اختبار Release/AOT', _localBuildEnvironment!.releaseBuildVerified
+                          ? 'تم إنتاج APK والتحقق من توقيعه' : 'لم ينجح بعد؛ Debug لا يكفي لاعتماده'),
+                      if (_localBuildEnvironment!.missingRequirements.isNotEmpty) ...[
+                        const Divider(height: 14, color: Color(0xFF26374E)),
+                        const Align(
+                          alignment: Alignment.centerRight,
+                          child: Text('النواقص والمتطلبات',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orangeAccent, fontSize: 12)),
+                        ),
+                        ..._localBuildEnvironment!.missingRequirements.map((item) =>
+                          Padding(
+                            padding: const EdgeInsets.only(top: 5),
+                            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 15),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(item,
+                                style: const TextStyle(color: _muted, fontSize: 11, height: 1.4))),
+                            ]),
+                          )),
+                      ],
+                    ]),
+                  ),
                 ],
                 const Padding(
                   padding: EdgeInsets.only(bottom: 8),
@@ -1206,7 +1238,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     style: TextStyle(color: _muted, fontSize: 11, height: 1.4),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
+                _sectionHeading('تجهيز بيئة Linux', Icons.inventory_2_outlined),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -1237,7 +1270,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     label: Text(_probingLocalEngine ? 'جارٍ اختبار المحرك...' : 'اختبار بناء APK تجريبي فعليًا'),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
+                _sectionHeading('اختبار وإدارة المحرك', Icons.build_circle_outlined),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -1259,7 +1293,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     icon: const Icon(Icons.cancel_outlined),
                     label: const Text('إلغاء تنزيل المحرك'),
                   )),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
+                _sectionHeading('إعدادات البناء المحلي', Icons.tune_rounded),
                 DropdownButtonFormField<String>(
                   value: _localBuildMode,
                   decoration: const InputDecoration(
@@ -1295,7 +1330,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     label: const Text('إلغاء البناء'),
                   )),
                 if (_localBuildLog.isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
+                  _sectionHeading('سجل العمليات', Icons.receipt_long_rounded),
                   Container(
                     width: double.infinity,
                     constraints: const BoxConstraints(maxHeight: 180),
