@@ -1001,7 +1001,14 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
               children: [
                 const Icon(Icons.chevron_right, color: _green, size: 19),
                 Expanded(
-                  child: Shortcuts(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111D30),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF2A3C55)),
+                    ),
+                    child: Shortcuts(
                     shortcuts: <ShortcutActivator, Intent>{
                       const SingleActivator(LogicalKeyboardKey.arrowUp):
                           const _TerminalHistoryIntent(-1),
@@ -1055,6 +1062,7 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
                         ),
                         onSubmitted: _execute,
                       ),
+                    ),
                     ),
                   ),
                 ),
