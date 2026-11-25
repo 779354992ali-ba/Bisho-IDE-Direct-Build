@@ -72,6 +72,7 @@ import 'core/services/editor_diagnostic_navigation.dart';
 import 'core/services/editor_extension_manifest.dart';
 import 'core/services/editor_bracket_matcher.dart';
 import 'core/services/editor_completion_engine.dart';
+import 'core/services/editor_command_palette.dart';
 import 'core/services/editor_symbol_insert.dart';
 import 'core/services/workspace_metrics.dart';
 import 'core/services/project_insights_analyzer.dart';
@@ -257,6 +258,24 @@ class _BishoSplashGateState extends State<_BishoSplashGate>
     );
   }
 
+}
+
+class _PaletteCommand {
+  const _PaletteCommand({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.run,
+    this.keywords = '',
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final FutureOr<void> Function() run;
+  final String keywords;
+
+  String get searchableText => '$title $description $keywords';
 }
 
 class EditorTab {
@@ -3447,6 +3466,102 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     saveTabStateSilently();
   }
+  Future<void> _openCommandPalette() async {
+    final commands = <_PaletteCommand>[
+      _PaletteCommand(title: 'ملف جديد', description: 'إنشاء تبويب وملف فارغ', icon: Icons.note_add_rounded, run: createNewTab, keywords: 'new file'),
+      _PaletteCommand(title: 'مشروع جديد', description: 'إنشاء مشروع باستخدام المعالج', icon: Icons.create_new_folder_rounded, run: createNewProject, keywords: 'new project'),
+      _PaletteCommand(title: 'فتح ملف', description: 'اختيار ملف من الجهاز', icon: Icons.file_open_rounded, run: openFile, keywords: 'open file'),
+      _PaletteCommand(title: 'فتح مشروع', description: 'اختيار مجلد مشروع', icon: Icons.folder_open_rounded, run: openProjectFolder, keywords: 'open folder'),
+      _PaletteCommand(title: 'مدير المشاريع', description: 'المشاريع الأخيرة والمفضلة', icon: Icons.workspaces_rounded, run: showProjectManager, keywords: 'projects'),
+      _PaletteCommand(title: 'حفظ الملف', description: 'حفظ التعديلات الحالية', icon: Icons.save_rounded, run: saveCurrentToDisk, keywords: 'save'),
+      _PaletteCommand(title: 'حفظ جميع الملفات', description: 'حفظ كل التبويبات المفتوحة', icon: Icons.save_as_rounded, run: saveAllTabs, keywords: 'save all'),
+      _PaletteCommand(title: 'بحث واستبدال', description: 'البحث داخل الملف أو المشروع', icon: Icons.find_replace_rounded, run: () => searchCode(startInReplaceMode: true), keywords: 'search replace find'),
+      _PaletteCommand(title: 'بحث في المشروع', description: 'البحث داخل جميع الملفات', icon: Icons.search_rounded, run: searchCode, keywords: 'find in files'),
+      _PaletteCommand(title: 'الإكمال البرمجي', description: 'اقتراح الكلمات والمقاطع', icon: Icons.auto_awesome_rounded, run: showCodeCompletions, keywords: 'autocomplete intellisense'),
+      _PaletteCommand(title: 'الطرفية', description: 'فتح جلسة الأوامر', icon: Icons.terminal_rounded, run: _showTerminalPanel, keywords: 'terminal shell console'),
+      _PaletteCommand(title: 'فحص المشكلات', description: 'عرض التشخيصات والإصلاحات', icon: Icons.bug_report_rounded, run: _openDiagnosticsPanel, keywords: 'diagnostics errors lint'),
+      _PaletteCommand(title: 'مساعد إصلاح الأخطاء', description: 'اقتراح تعديلات مع معاينة', icon: Icons.auto_fix_high_rounded, run: _openFixAssistant, keywords: 'fix errors'),
+      _PaletteCommand(title: 'تنسيق الكود', description: 'معاينة تنسيق النص', icon: Icons.format_align_left_rounded, run: _openFormatPreview, keywords: 'format code'),
+      _PaletteCommand(title: 'سجل إصدارات الملف', description: 'استعادة نسخة سابقة', icon: Icons.history_rounded, run: _openVersionHistory, keywords: 'history restore'),
+      _PaletteCommand(title: 'فحص جودة المشروع', description: 'تحليل بنية المشروع', icon: Icons.health_and_safety_rounded, run: _openProjectInsightsPanel, keywords: 'project health'),
+      _PaletteCommand(title: 'الإضافات والأدوات', description: 'فتح مركز الإضافات المدمجة', icon: Icons.extension_rounded, run: _showPluginsHub, keywords: 'extensions plugins'),
+      _PaletteCommand(title: 'شاشة المحرر الكاملة', description: 'توسيع مساحة تحرير الكود', icon: Icons.fullscreen_rounded, run: _openEditorFullScreen, keywords: 'fullscreen editor'),
+      _PaletteCommand(title: 'تبديل المظهر', description: 'فاتح أو داكن', icon: Icons.palette_rounded, run: BishoThemeController.toggle, keywords: 'theme appearance'),
+    ];
+
+    final controller = TextEditingController();
+    var query = '';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final filtered = EditorCommandPalette.filter(
+            commands,
+            query: query,
+            searchableText: (command) => command.searchableText,
+          );
+          return AlertDialog(
+            title: const Row(children: [
+              Icon(Icons.keyboard_command_key_rounded, color: Color(0xFF38BDF8)),
+              SizedBox(width: 9),
+              Text('لوحة الأوامر'),
+            ]),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 390,
+              child: Column(children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  onChanged: (value) => setDialogState(() => query = value),
+                  decoration: InputDecoration(
+                    hintText: 'ابحث عن أمر…',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: query.isEmpty ? null : IconButton(
+                      onPressed: () {
+                        controller.clear();
+                        setDialogState(() => query = '');
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? const Center(child: Text('لا توجد أوامر مطابقة'))
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final command = filtered[index];
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(command.icon, color: const Color(0xFF38BDF8)),
+                              title: Text(command.title),
+                              subtitle: Text(command.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              onTap: () async {
+                                Navigator.pop(dialogContext);
+                                await command.run();
+                              },
+                            );
+                          },
+                        ),
+                ),
+                const SizedBox(height: 5),
+                const Text('اكتب للبحث ثم اختر الأمر المطلوب', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              ]),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إغلاق')),
+            ],
+          );
+        },
+      ),
+    );
+    controller.dispose();
+  }
+
   Future<void> searchCode({bool startInReplaceMode = false}) async {
     final findController = TextEditingController();
     final replaceController = TextEditingController();
@@ -5221,6 +5336,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               onPressed: searchCode,
               icon: const Icon(Icons.search_rounded),
               tooltip: 'بحث في المشروع والكود',
+            ),
+            IconButton(
+              onPressed: _openCommandPalette,
+              icon: const Icon(Icons.keyboard_command_key_rounded, color: Color(0xFF38BDF8)),
+              tooltip: 'لوحة الأوامر',
             ),
             IconButton(
               onPressed: saveCurrentToDisk,
