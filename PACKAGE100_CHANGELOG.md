@@ -1,0 +1,33 @@
+# Bisho IDE — Package 100 development continuation
+
+## Phase 5 — Cloud Build Center
+- Added GitHub Actions job-level progress calculation and display.
+- Added progress model tests.
+- Kept APK download gated on successful workflow completion and existing checksum verification.
+
+## Phase 6 — Local ARM64 engine integration
+- Hardened parsing of native engine diagnostic responses.
+- Made read-only engine probing return structured failures instead of leaking channel exceptions.
+- Changed health readiness to require zero warnings as well as zero failures.
+- Added regression tests for malformed diagnostics and engine readiness.
+- Did not modify the existing ARM64 engine, Alpine RootFS 3.24.4, PRoot 5.1.0, package database, installer, or execution flow.
+
+## Phase 7 — Editor experience
+- Fixed split-editor word-wrap state scope.
+- Added a split-editor-specific word-wrap toggle.
+
+## Phase 8 — Security review
+- Re-inspected SAF child-name validation and overwrite handling.
+- Re-inspected GitHub PAT storage: token remains in Flutter Secure Storage and is excluded from cloud build preferences.
+- No credential values were added to logs or the new progress model.
+
+## Phase 9 — Validation
+- Added tests for the new progress model, malformed engine diagnostic payloads, and engine-health readiness.
+- Fixed the analyzer error `undefined_identifier: _wordWrap` identified in the preceding GitHub Actions run.
+- The existing run failed at `flutter analyze`; tests and APK compilation were skipped.
+- No tests have been executed for this continuation, so no test success is claimed.
+
+## Workflow constraints
+- Development commits are on `work/ten-phase-continuation` to avoid triggering the branch-specific build workflow during editing.
+- No build or APK generation was initiated by this continuation.
+- Merge back to the integration branch and full validation remain pending.
