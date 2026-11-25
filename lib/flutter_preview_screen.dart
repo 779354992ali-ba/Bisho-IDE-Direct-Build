@@ -156,7 +156,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       final saved = prefs.getString(_localBuildModePreferenceKey);
       if (!mounted || _localBuildModeChanged) return;
       if (saved == 'debug' || saved == 'release') {
-        setState(() => _localBuildMode = saved);
+        setState(() => _localBuildMode = saved!);
       }
     } catch (_) {
       // A missing preference must not block local build setup.
