@@ -19,6 +19,13 @@ class EditorQuickFixEngine {
   const EditorQuickFixEngine._();
 
   static EditorQuickFixPreview preview(String source, String language) {
+    if (source.isEmpty) {
+      return const EditorQuickFixPreview(
+        source: '',
+        updatedSource: '',
+        fixes: [],
+      );
+    }
     var updated = source.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final fixes = <String>[];
     final diagnostics = EditorSyntaxDiagnostics.analyze(updated, language);
