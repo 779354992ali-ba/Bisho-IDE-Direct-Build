@@ -4667,8 +4667,7622 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         ? selection.extentOffset.clamp(0, source.length).toInt()
         : source.length;
     final beforeCursor = source.substring(0, cursor);
-    final match = RegExp(r'[A-Za-z_][A-Za-z0-9_]*$').firstMatch(beforeCursor);
-    final prefix = match?.group(0) ?? '';
+    final match = RegExp(r'[A-Za-z_][A-Za-z0-9_]*
+    final Map<String, List<String>> completions = {
+      'Dart': [
+        'void main() {\n  \n}',
+        'print()',
+        'debugPrint()',
+        'final ',
+        'const ',
+        'late final ',
+        'class ',
+        'abstract class ',
+        'Future<void> ',
+        'async',
+        'await ',
+        'try {\n  \n} catch (error, stackTrace) {\n  debugPrint(error.toString());\n}',
+        'if (mounted) {\n  setState(() {\n    \n  });\n}',
+        'Widget build(BuildContext context) {\n  return const SizedBox.shrink();\n}',
+        'StatelessWidget',
+        'StatefulWidget',
+        'ListView.builder(',
+        'FutureBuilder<',
+        'StreamBuilder<',
+        'for (var i = 0; i < items.length; i++) {\n  \n}',
+      ],
+      'JavaScript': [
+        'console.log()',
+        'const ',
+        'let ',
+        'function ',
+        'async function ',
+        'if () {\n  \n}',
+        'for (let i = 0; i < ; i++) {\n  \n}',
+        'try {\n  \n} catch (error) {\n  console.error(error);\n}',
+      ],
+      'TypeScript': [
+        'console.log()',
+        'const ',
+        'let ',
+        'interface ',
+        'type ',
+        'function ',
+        'async function ',
+        'Promise<void>',
+      ],
+      'Python': [
+        'print()',
+        'def ',
+        'class ',
+        'if __name__ == "__main__":\n    ',
+        'for item in items:\n    ',
+        'with open("file.txt", "r", encoding="utf-8") as file:\n    content = file.read()',
+        'try:\n    \nexcept Exception as error:\n    print(error)',
+        'import ',
+      ],
+      'HTML': [
+        '<!DOCTYPE html>\n<html lang="ar">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title></title>\n</head>\n<body>\n  \n</body>\n</html>',
+        '<div></div>',
+        '<p></p>',
+        '<script>\n\n</script>',
+        '<style>\n\n</style>',
+      ],
+      'CSS': [
+        'display: flex;',
+        'display: grid;',
+        'margin: ;',
+        'padding: ;',
+        'color: ;',
+        '@media (max-width: 600px) {\n  \n}',
+      ],
+      'SQL': [
+        'SELECT * FROM ;',
+        'SELECT  FROM  WHERE ;',
+        'INSERT INTO  () VALUES ();',
+        'UPDATE  SET  =  WHERE ;',
+        'CREATE TABLE  (\n  id INTEGER PRIMARY KEY\n);',
+      ],
+      'Java': [
+        'public static void main(String[] args) {\n    \n}',
+        'System.out.println()',
+        'private final ',
+        'try {\n    \n} catch (Exception error) {\n    error.printStackTrace();\n}',
+        '@Override',
+        'class ',
+      ],
+      'Kotlin': [
+        'fun main() {\n    \n}',
+        'fun ',
+        'suspend fun ',
+        'data class ',
+        'sealed class ',
+        'val ',
+        'var ',
+        'when (value) {\n    else -> {}\n}',
+        'try {\n    \n} catch (error: Exception) {\n    error.printStackTrace()\n}',
+      ],
+      'C++': [
+        '#include <iostream>',
+        'int main() {\n    std::cout << "Hello" << std::endl;\n    return 0;\n}',
+        'std::vector<int> ',
+        'std::string ',
+        'for (int i = 0; i < ; ++i) {\n    \n}',
+        'class ',
+      ],
+      'Bash': [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'if [[  ]]; then\n  \nfi',
+        'for item in "\${items[@]}"; do\n  \n done',
+        'function () {\n  \n}',
+      ],
+      'Markdown': ['# ', '## ', '- ', '1. ', '```\n\n```', '> '],
+      'YAML': ['name: ', 'version: ', 'dependencies:\n  ', 'scripts:\n  '],
+      'JSON': ['{\n  "": ""\n}', '[\n  \n]'],
+      'XML': ['<?xml version="1.0" encoding="UTF-8"?>\n<root>\n</root>', '<root></root>'],
+    };
+
+    final candidates = completions[tab.language] ??
+        <String>['// TODO: ', 'if () {\n  \n}', 'class ', 'function '];
+    final options = EditorCompletionEngine.rank(
+      language: tab.language,
+      prefix: prefix,
+      snippets: [
+        ...contextual,
+        ...candidates,
+        ...EditorCompletionEngine.identifiersIn(
+          source,
+          language: tab.language,
+        ),
+      ],
+      maximumResults: 50,
+    );
+
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('إكمال تلقائي — ${tab.language}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 320,
+          child: options.isEmpty
+              ? const Center(child: Text('لا توجد اقتراحات مطابقة'))
+              : ListView.separated(
+                  itemCount: options.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.code, size: 18),
+                    title: Text(
+                      options[index].replaceAll('\n', ' ↵ '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: TextDirection.ltr,
+                    ),
+                    onTap: () => Navigator.pop(dialogContext, options[index]),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+        ],
+      ),
+    );
+
+    if (chosen == null || !mounted) return;
+    // Do not apply a stale completion if the document changed while the
+    // suggestion dialog was open. This preserves newer user edits.
+    if (controller.text != source) {
+      setState(() {
+        status = 'تغير محتوى المحرر أثناء عرض الاقتراح؛ لم يتم إدراج الإكمال.';
+      });
+      return;
+    }
+    final currentSelection = controller.selection;
+    final hasSelection =
+        currentSelection.isValid && !currentSelection.isCollapsed;
+    final replaceStart = hasSelection
+        ? currentSelection.start.clamp(0, source.length).toInt()
+        : (match?.start ?? cursor);
+    final replaceEnd = hasSelection
+        ? currentSelection.end.clamp(0, source.length).toInt()
+        : cursor;
+    final updated = source.replaceRange(replaceStart, replaceEnd, chosen);
+    controller.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: replaceStart + chosen.length),
+    );
+    setState(() {
+      tab.isSaved = false;
+      status = 'تم إدراج الإكمال';
+    });
+    _scheduleTabStateSave();
+  }
+
+  Future<void> copyCode() async {
+    final controller = activeTab.controller;
+    final selection = controller.selection;
+    final text = selection.isValid && !selection.isCollapsed
+        ? controller.text.substring(selection.start, selection.end)
+        : controller.text;
+    await Clipboard.setData(ClipboardData(text: text));
+    showMessage(selection.isValid && !selection.isCollapsed
+        ? 'تم نسخ النص المحدد'
+        : 'تم نسخ الكود كاملاً');
+  }
+
+  void openFlutterPreview() {
+    Navigator.push(
+      context,
+      _DarkPageRoute(
+        builder: (_) => FlutterPreviewScreen(
+          projectName: projectName,
+          projectUri: projectUri,
+          safFiles: safFiles,
+          onPickProject: openProjectFolder,
+          projectUriProvider: () => projectUri,
+          projectNameProvider: () => projectName,
+        ),
+      ),
+    );
+  }
+
+  Future<void> openLanguagePreview() async {
+    final tab = activeTab;
+    final engine = LanguageEngineManager.engineForFile(tab.fileName);
+
+    switch (engine) {
+      case LanguageEngine.webProject:
+        // إذا فتح المستخدم ملف HTML منفرداً، نطلب منه اختيار مجلد المشروع
+        // مرة واحدة ثم نتابع المعاينة تلقائياً بدلاً من إيقافه برسالة فقط.
+        if (projectUri == null || projectUri!.isEmpty) {
+          showMessage('اختر مجلد المشروع الذي يحتوي ملف HTML وموارده');
+          await openProjectFolder();
+          if (!mounted || projectUri == null || projectUri!.isEmpty) return;
+        }
+
+        final htmlUri = tab.fileUri;
+        if (htmlUri == null || htmlUri.isEmpty) {
+          showMessage(
+            'هذا الملف غير مرتبط بموقع داخل المشروع. افتحه من مستكشف المشروع أو احفظه داخله أولاً.',
+          );
+          return;
+        }
+
+        // تحقق من أن ملف HTML موجود فعلاً داخل جذر المشروع المختار.
+        try {
+          final rootItem = await safFiles.getItem(projectUri!);
+          if (rootItem == null || !rootItem.isDir) {
+            showMessage('تعذر الوصول إلى مجلد المشروع؛ اختره مرة أخرى');
+            return;
+          }
+          final projectTree = await collectSubtree(rootItem);
+          final fileBelongsToProject = projectTree.any(
+            (entry) => entry.uri == htmlUri && !entry.isDir,
+          );
+          if (!fileBelongsToProject) {
+            showMessage(
+              'ملف HTML ليس داخل مجلد المشروع المختار. اختر المجلد الأب الصحيح.',
+            );
+            return;
+          }
+        } catch (error) {
+          showMessage('تعذر فحص ملفات المشروع: $error');
+          return;
+        }
+
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          _DarkPageRoute(
+            builder: (_) => HtmlPreviewScreen(
+              htmlCode: tab.controller.text,
+              projectUri: projectUri,
+              htmlFileUri: htmlUri,
+            ),
+          ),
+        );
+        return;
+
+      case LanguageEngine.webCode:
+        final mode =
+            LanguageEngineManager.webModeForFile(tab.fileName);
+
+        if (mode == null) {
+          showMessage('نوع ملف الويب غير مدعوم');
+          return;
+        }
+
+        await Navigator.push(
+          context,
+          _DarkPageRoute(
+            builder: (_) => WebCodeRunnerScreen(
+              code: tab.controller.text,
+              fileName: tab.fileName,
+              mode: mode,
+            ),
+          ),
+        );
+        return;
+
+      case LanguageEngine.jsonViewer:
+        await Navigator.push(
+          context,
+          _DarkPageRoute(
+            builder: (_) => WebCodeRunnerScreen(
+              code: tab.controller.text,
+              fileName: tab.fileName,
+              mode: 'json',
+            ),
+          ),
+        );
+        return;
+
+      case LanguageEngine.unsupported:
+        _showExecutionCapabilityDialog(tab.fileName);
+        return;
+    }
+  }
+
+  void _showExecutionCapabilityDialog(String fileName) {
+    final capability = LanguageEngineManager.capabilitiesForFile(fileName);
+    final language = capability?.language ?? 'هذه اللغة';
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFF38BDF8)),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('تشغيل هذا النوع من الملفات')),
+        ]),
+        content: Text(
+          'يدعم Bisho IDE تحرير $language وتلوين الكود، لكن لا يحتوي حالياً '
+          'على مترجم أو مفسّر محلي لهذا النوع.\n\n'
+          'يمكنك متابعة التحرير والحفظ واستخدام أدوات الفحص المتاحة. '
+          'لن يبدأ التطبيق عملية تشغيل وهمية أو يعرض نتيجة غير حقيقية.',
+          style: const TextStyle(height: 1.55),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('حسناً'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _openDiagnosticsPanel();
+            },
+            icon: const Icon(Icons.rule_rounded),
+            label: const Text('فحص الكود'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget buildExplorerNode(String directoryUri, int depth) {
+    return FutureBuilder<List<SafDocumentFile>>(
+      key: ValueKey('$_explorerRevision-$directoryUri'),
+      future: safFiles.listDirectory(directoryUri),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(8),
+            child: LinearProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const ListTile(
+            dense: true,
+            title: Text('تعذر قراءة المجلد'),
+          );
+        }
+
+        final items =
+            List<SafDocumentFile>.from(snapshot.data ?? []);
+
+        final filter = _explorerFilter.trim().toLowerCase();
+        const explorerTypeExtensions = <String, Set<String>>{
+          'code': {'dart', 'py', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'java', 'kt', 'kts', 'swift', 'c', 'h', 'cpp', 'hpp', 'go', 'rs', 'php', 'sh', 'bash'},
+          'config': {'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'properties', 'gradle'},
+          'web': {'html', 'htm', 'css', 'scss', 'sass', 'md', 'markdown'},
+          'media': {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp3', 'wav', 'mp4', 'webm'},
+        };
+        items.removeWhere((item) {
+          if (item.isDir) return false;
+          if (filter.isNotEmpty && !item.name.toLowerCase().contains(filter)) return true;
+          final allowed = explorerTypeExtensions[_explorerTypeFilter];
+          if (allowed == null) return false;
+          final dot = item.name.lastIndexOf('.');
+          final extension = dot < 0 ? '' : item.name.substring(dot + 1).toLowerCase();
+          return !allowed.contains(extension);
+        });
+
+        items.sort((a, b) {
+          if (a.isDir && !b.isDir) return -1;
+          if (!a.isDir && b.isDir) return 1;
+
+          return a.name.toLowerCase().compareTo(
+                b.name.toLowerCase(),
+              );
+        });
+
+        if (items.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              filter.isEmpty ? 'المجلد فارغ' : 'لا توجد عناصر تطابق البحث',
+              style: TextStyle(color: Colors.white54),
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: items.map((entity) {
+            if (entity.isDir) {
+              final isSelectedDirectory =
+                  selectedDirectoryUri == entity.uri;
+
+              return Padding(
+                padding: EdgeInsets.only(right: depth * 5.0),
+                child: ExpansionTile(
+                  key: PageStorageKey<String>(entity.uri),
+                  dense: true,
+                  tilePadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                  ),
+                  leading: Icon(
+                    isSelectedDirectory
+                        ? Icons.folder_special
+                        : Icons.folder,
+                    color: isSelectedDirectory
+                        ? const Color(0xFF38BDF8)
+                        : const Color(0xFFFBBF24),
+                    size: 20,
+                  ),
+                  title: Text(
+                    entity.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isSelectedDirectory
+                          ? const Color(0xFF38BDF8)
+                          : null,
+                      fontWeight: isSelectedDirectory
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, size: 18),
+                    onSelected: (value) {
+                      if (value == 'select') {
+                        selectCreationDirectory(
+                          entity.uri,
+                          entity.name,
+                        );
+                      }
+
+                      if (value == 'rename') {
+                        renameEntity(entity);
+                      }
+
+                      if (value == 'delete') {
+                        deleteEntity(entity);
+                      }
+                      if (value == 'copy') {
+                        copyOrMoveEntity(entity, move: false);
+                      }
+                      if (value == 'move') {
+                        copyOrMoveEntity(entity, move: true);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'select',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.drive_file_move,
+                              size: 18,
+                            ),
+                            SizedBox(width: 8),
+                            Text('تعيين كمجلد عمل'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(value: 'copy', child: Text('نسخ إلى مجلد…')),
+                      const PopupMenuItem(value: 'move', child: Text('نقل إلى مجلد…')),
+                      const PopupMenuItem(
+                        value: 'rename',
+                        child: Text('إعادة تسمية'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('حذف'),
+                      ),
+                    ],
+                  ),
+                  children: [
+                    buildExplorerNode(entity.uri, depth + 1),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(right: depth * 5.0),
+              child: ListTile(
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                ),
+                leading: LanguageBrandBadge(
+                  language: LanguageIdentity.fromFileName(entity.name).name,
+                  size: 25,
+                ),
+                title: Text(
+                  entity.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                onTap: () => openProjectFile(entity, directoryUri),
+                trailing: PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, size: 18),
+                  onSelected: (value) {
+                    if (value == 'rename') {
+                      renameEntity(entity);
+                    }
+
+                    if (value == 'delete') {
+                      deleteEntity(entity);
+                    }
+                    if (value == 'copy') {
+                      copyOrMoveEntity(entity, move: false);
+                    }
+                    if (value == 'move') {
+                      copyOrMoveEntity(entity, move: true);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'copy', child: Text('نسخ إلى مجلد…')),
+                    PopupMenuItem(value: 'move', child: Text('نقل إلى مجلد…')),
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Text('إعادة تسمية'),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('حذف'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget buildExplorer() {
+    return Container(
+      width: 300,
+      color: const Color(0xFF0F1A2A),
+      child: Column(
+        children: [
+          Container(
+            height: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFF16263B),
+              border: Border(bottom: BorderSide(color: Color(0xFF30445E))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF38BDF8).withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.folder_copy_rounded, color: Color(0xFF38BDF8), size: 19),
+                ),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    'مستكشف الملفات',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: createProjectFile,
+                  icon: const Icon(Icons.note_add, size: 19),
+                  tooltip: 'ملف جديد',
+                ),
+                IconButton(
+                  onPressed: createProjectFolder,
+                  icon: const Icon(Icons.create_new_folder, size: 19),
+                  tooltip: 'مجلد جديد',
+                ),
+                IconButton(
+                  onPressed: refreshExplorer,
+                  icon: const Icon(Icons.refresh, size: 19),
+                  tooltip: 'تحديث المستكشف',
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          if (projectUri != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 7, 8, 5),
+              child: TextField(
+                controller: _explorerFilterController,
+                onChanged: (value) => setState(() => _explorerFilter = value),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'تصفية الملفات والمجلدات',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: _explorerFilter.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'مسح التصفية',
+                          icon: const Icon(Icons.close, size: 17),
+                          onPressed: () {
+                            _explorerFilterController.clear();
+                            setState(() => _explorerFilter = '');
+                          },
+                        ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ),
+          if (projectUri != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: DropdownButtonFormField<String>(
+                initialValue: _explorerTypeFilter,
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'نوع الملفات',
+                  prefixIcon: Icon(Icons.filter_alt_outlined, size: 18),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('كل الملفات')),
+                  DropdownMenuItem(value: 'code', child: Text('ملفات البرمجة')),
+                  DropdownMenuItem(value: 'config', child: Text('ملفات الإعدادات')),
+                  DropdownMenuItem(value: 'web', child: Text('الويب والتوثيق')),
+                  DropdownMenuItem(value: 'media', child: Text('الصور والوسائط')),
+                ],
+                onChanged: (value) => setState(() => _explorerTypeFilter = value ?? 'all'),
+              ),
+            ),
+          if (projectUri == null)
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.folder_open,
+                        size: 38,
+                        color: Colors.white54,
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'لم يتم فتح مشروع',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton(
+                        onPressed: openProjectFolder,
+                        child: const Text('فتح مجلد'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: Column(
+                children: [
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(
+                      Icons.folder,
+                      color: Color(0xFFFBBF24),
+                    ),
+                    title: Text(
+                      projectName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: IconButton(
+                      onPressed: openProjectFolder,
+                      icon: const Icon(Icons.folder_open, size: 18),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(
+                        color: selectedDirectoryUri != null
+                            ? const Color(0xFF38BDF8)
+                            : const Color(0xFF334155),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          selectedDirectoryUri != null
+                              ? Icons.folder_special
+                              : Icons.home_work,
+                          size: 15,
+                          color: const Color(0xFF38BDF8),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            'العمل: $creationDirectoryName',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        if (selectedDirectoryUri != null)
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints(
+                              minWidth: 26,
+                              minHeight: 26,
+                            ),
+                            padding: EdgeInsets.zero,
+                            tooltip: 'العودة إلى جذر المشروع',
+                            onPressed: resetCreationDirectory,
+                            icon: const Icon(
+                              Icons.home,
+                              size: 17,
+                              color: Colors.white70,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: buildExplorerNode(projectUri!, 0),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildTabBar() {
+    return Container(
+      height: 56,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0C1727),
+        border: Border(bottom: BorderSide(color: Color(0xFF30445E))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: tabs.length,
+              itemBuilder: (context, index) {
+                final tab = tabs[index];
+                final selected = index == activeIndex;
+
+                return InkWell(
+                  onTap: () => selectTab(index),
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 100,
+                      maxWidth: 180,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFF182A40)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF3B7198)
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        LanguageBrandBadge(
+                          language: LanguageIdentity.fromFileName(tab.fileName).name,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            tab.fileName,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: selected ? const Color(0xFFE6F4FF) : const Color(0xFF9AABC0),
+                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (!tab.isSaved)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 4),
+                            child: Icon(
+                              Icons.circle,
+                              size: 7,
+                              color: Colors.amber,
+                            ),
+                          ),
+                        GestureDetector(
+                          onTap: () => closeTab(index),
+                          child: const Padding(
+                            padding: EdgeInsets.all(5),
+                            child: Icon(
+                              Icons.close,
+                              size: 14,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          IconButton(
+            onPressed: createNewTab,
+            icon: const Icon(
+              Icons.add,
+              color: Color(0xFF38BDF8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openEditorFullScreen() {
+    if (_editorFullScreen || tabs.isEmpty) return;
+
+    // Remove the embedded CodeField first. A CodeController should not be
+    // attached to two CodeFields at the same time while the route animates.
+    setState(() => _editorFullScreen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context)
+          .push(
+            _DarkPageRoute<void>(
+              builder: (_) => EditorFullScreenScreen(
+                tab: activeTab,
+                fontSize: _editorFontSize,
+                onSave: saveCurrentToDisk,
+                onFontSizeChange: changeEditorFontSize,
+                onShowCompletions: showCodeCompletions,
+                onSearch: (replaceMode) =>
+                    searchCode(startInReplaceMode: replaceMode),
+                onPreview: openLanguagePreview,
+                onFlutterPreview: openFlutterPreview,
+              ),
+            ),
+          )
+          .whenComplete(() {
+            if (mounted) setState(() => _editorFullScreen = false);
+          });
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _explorerFilterController.dispose();
+    _isDisposing = true;
+    _tabStateSaveTimer?.cancel();
+    // Capture the final editor state before releasing the controllers.
+    saveTabStateSilently();
+    for (final tab in tabs) {
+      tab.controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (tabs.isEmpty) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 14),
+              Text(
+                isRestoring ? 'جاري استعادة مساحة العمل...' : 'جاري تجهيز المحرر...',
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_editorFullScreen) {
+      // The actual editor is displayed by EditorFullScreenScreen on its own
+      // route. Keep this route lightweight while it is underneath.
+      return const Scaffold(
+        backgroundColor: Color(0xFF080D19),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final tab = activeTab;
+    final selection = tab.controller.selection;
+    final cursorOffset = selection.isValid
+        ? selection.extentOffset.clamp(0, tab.controller.text.length).toInt()
+        : tab.controller.text.length;
+    final cursorPosition = _cursorLineColumn(tab.controller.text, cursorOffset);
+    final cursorLine = cursorPosition.$1;
+    final cursorColumn = cursorPosition.$2;
+
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _confirmApplicationExit();
+      },
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+        drawer: _editorFullScreen || !explorerVisible
+            ? null
+            : Drawer(
+                width: 320,
+                backgroundColor: const Color(0xFF111827),
+                child: Theme(
+                  data: BishoTheme.darkTheme,
+                  child: SafeArea(child: buildExplorer()),
+                ),
+              ),
+        appBar: _editorFullScreen ? null : AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: false,
+          titleSpacing: 14,
+          shape: const Border(
+            bottom: BorderSide(color: Color(0xFF26374E), width: 0.8),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.code_rounded, color: Color(0xFF38BDF8), size: 25),
+              SizedBox(width: 9),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Bisho IDE', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  SizedBox(height: 1),
+                  Text('بيئة التطوير', style: TextStyle(color: Color(0xFF91A4BE), fontSize: 9, fontWeight: FontWeight.w500)),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              onPressed: searchCode,
+              icon: const Icon(Icons.search_rounded),
+              tooltip: 'بحث في المشروع والكود',
+            ),
+            IconButton(
+              onPressed: _openCommandPalette,
+              icon: const Icon(Icons.keyboard_command_key_rounded, color: Color(0xFF38BDF8)),
+              tooltip: 'لوحة الأوامر',
+            ),
+            IconButton(
+              onPressed: saveCurrentToDisk,
+              icon: const Icon(Icons.save_rounded),
+              tooltip: 'حفظ الملف',
+            ),
+            IconButton(
+              onPressed: _showTerminalPanel,
+              icon: const Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
+              tooltip: 'فتح الطرفية',
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'المزيد من الأدوات',
+              icon: const Icon(Icons.more_vert_rounded),
+              onSelected: (value) {
+                if (value == 'new') createNewTab();
+                if (value == 'new_project') createNewProject();
+                if (value == 'open') openFile();
+                if (value == 'folder') openProjectFolder();
+                if (value == 'projects') showProjectManager();
+                if (value == 'export') exportFile();
+                if (value == 'export_project') exportProjectArchive();
+                if (value == 'import_zip') importProjectArchive();
+                if (value == 'search') searchCode();
+                if (value == 'copy') copyCode();
+                if (value == 'saveall') saveAllTabs();
+                if (value == 'terminal') _showTerminalPanel();
+                if (value == 'complete') showCodeCompletions();
+                if (value == 'fullscreen') _openEditorFullScreen();
+                if (value == 'theme') BishoThemeController.toggle();
+                if (value == 'exit') _confirmApplicationExit();
+              },
+              itemBuilder: (context) => [
+                _bishoMenuItem('new', Icons.note_add_rounded, 'ملف جديد'),
+                _bishoMenuItem('new_project', Icons.create_new_folder_rounded, 'إنشاء مشروع جديد'),
+                _bishoMenuItem('open', Icons.file_open_rounded, 'فتح ملف'),
+                _bishoMenuItem('folder', Icons.folder_open_rounded, 'فتح مجلد مشروع'),
+                _bishoMenuItem('projects', Icons.workspaces_rounded, 'مدير المشاريع الذكي'),
+                const PopupMenuDivider(),
+                _bishoMenuItem('export', Icons.download_rounded, 'تصدير الملف'),
+                _bishoMenuItem('export_project', Icons.archive_rounded, 'تصدير المشروع ZIP كاملاً'),
+                _bishoMenuItem('import_zip', Icons.unarchive_rounded, 'استيراد مشروع ZIP'),
+                const PopupMenuDivider(),
+                _bishoMenuItem('search', Icons.search_rounded, 'بحث'),
+                _bishoMenuItem('copy', Icons.copy_rounded, 'نسخ الكود'),
+                _bishoMenuItem('complete', Icons.auto_awesome_rounded, 'الإكمال التلقائي'),
+                _bishoMenuItem('saveall', Icons.save_rounded, 'حفظ جميع الملفات'),
+                _bishoMenuItem('terminal', Icons.terminal_rounded, 'فتح الطرفية'),
+                _bishoMenuItem('fullscreen', Icons.fullscreen_rounded, 'فتح المحرر في شاشة كاملة'),
+                _bishoMenuItem('theme', Icons.palette_outlined, 'تبديل المظهر'),
+                const PopupMenuDivider(),
+                _bishoMenuItem('exit', Icons.exit_to_app_rounded, 'الخروج من التطبيق', color: Colors.orangeAccent),
+              ],
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: Column(
+          children: [
+            if (_editorFullScreen)
+              Container(
+                height: 48,
+                color: const Color(0xFF151C30),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => setState(() => _editorFullScreen = false),
+                      icon: const Icon(Icons.fullscreen_exit),
+                      tooltip: 'العودة إلى واجهة IDE',
+                    ),
+                    Expanded(
+                      child: Text(
+                        tab.fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: saveCurrentToDisk,
+                      icon: const Icon(Icons.save),
+                      tooltip: 'حفظ الملف',
+                    ),
+                  ],
+                ),
+              ),
+            if (!_editorFullScreen) ...[
+            Theme(data: BishoTheme.darkTheme, child: buildTabBar()),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(color: Theme.of(context).colorScheme.outline),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.insert_drive_file_outlined, size: 16, color: Color(0xFF94A3B8)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      tab.fileName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  DropdownButton<String>(
+                    borderRadius: BorderRadius.circular(12),
+                    isDense: true,
+                    value: tab.language,
+                    dropdownColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    underline: const SizedBox(),
+                    items: languages.keys.map((language) {
+                      return DropdownMenuItem<String>(
+                        value: language,
+                        child: Text(language),
+                      );
+                    }).toList(),
+                    onChanged: changeLanguage,
+                  ),
+                ],
+              ),
+            ),
+
+            Expanded(
+              child: Theme(
+                data: BishoTheme.darkTheme,
+                child: _buildToolsDashboard(tab),
+              ),
+            ),
+            if (!_editorFullScreen && _bottomPanelVisible)
+              Theme(data: BishoTheme.darkTheme, child: buildBottomPanel(tab)),
+            if (!_editorFullScreen)
+              Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: const BoxDecoration(
+                color: Color(0xFF101B2D),
+                border: Border(top: BorderSide(color: Color(0xFF26374E))),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.circle,
+                    color: tab.isSaved ? Colors.green : Colors.amber,
+                    size: 9,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      status,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
+                  Text(
+                    'Ln $cursorLine, Col $cursorColumn',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    tab.language,
+                    style: const TextStyle(
+                      color: Color(0xFF38BDF8),
+                      fontSize: 10,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    tab.isSaved ? 'محفوظ' : 'غير محفوظ',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+
+  Widget _buildToolsDashboard(EditorTab tab) {
+    final selection = tab.controller.selection;
+    final cursorOffset = selection.isValid
+        ? selection.extentOffset.clamp(0, tab.controller.text.length).toInt()
+        : tab.controller.text.length;
+    final cursorPosition = _cursorLineColumn(tab.controller.text, cursorOffset);
+    const cyan = Color(0xFF38BDF8);
+    const blue = Color(0xFF60A5FA);
+    const violet = Color(0xFFA78BFA);
+    const green = Color(0xFF34D399);
+    const amber = Color(0xFFFBBF24);
+    const red = Color(0xFFFB7185);
+
+    // Keep every existing command reachable; this is a presentation-only
+    // regrouping. Action callbacks and their underlying services are unchanged.
+    final projectActions = <_DashboardAction>[
+      _DashboardAction(Icons.create_new_folder_rounded, 'إنشاء مشروع', createNewProject, cyan),
+      _DashboardAction(Icons.folder_open_rounded, 'فتح مجلد مشروع', openProjectFolder, cyan),
+      _DashboardAction(Icons.workspaces_rounded, 'مدير المشاريع الذكي', showProjectManager, violet),
+      _DashboardAction(Icons.drive_folder_upload_rounded, 'استيراد مشروع', importExistingProject, green),
+      _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, cyan),
+      _DashboardAction(Icons.file_open_rounded, 'فتح ملف', openFile, cyan),
+      _DashboardAction(Icons.save_rounded, 'حفظ الملف', saveCurrentToDisk, cyan),
+      _DashboardAction(Icons.save_as_rounded, 'حفظ جميع الملفات', saveAllTabs, green),
+      _DashboardAction(Icons.download_rounded, 'تصدير ملف', exportFile, blue),
+      _DashboardAction(Icons.archive_rounded, 'تصدير المشروع ZIP', exportProjectArchive, blue),
+      _DashboardAction(Icons.unarchive_rounded, 'استيراد مشروع ZIP', importProjectArchive, green),
+      _DashboardAction(Icons.backup_rounded, 'إنشاء نسخة احتياطية', exportProjectBackup, green),
+      _DashboardAction(Icons.settings_backup_restore_rounded, 'استعادة نسخة احتياطية', restoreProjectBackup, green),
+      _DashboardAction(Icons.history_rounded, 'سجل النسخ الاحتياطية', manageProjectBackups, green),
+    ];
+
+    final buildActions = <_DashboardAction>[
+      _DashboardAction(Icons.build_circle_rounded, 'مركز البناء والمحرك', openFlutterPreview, blue),
+    ];
+
+    final editingActions = <_DashboardAction>[
+      _DashboardAction(Icons.search_rounded, 'البحث في الكود', searchCode, cyan),
+      _DashboardAction(Icons.vertical_split_rounded, 'تقسيم المحرر', _openSplitEditor, violet),
+      _DashboardAction(Icons.find_replace_rounded, 'البحث والاستبدال', () => searchCode(startInReplaceMode: true), violet),
+      _DashboardAction(Icons.manage_search_rounded, 'بحث متقدم (Regex)', _openAdvancedSearch, cyan),
+      _DashboardAction(Icons.undo_rounded, 'تراجع', undoCodeEdit, red),
+      _DashboardAction(Icons.redo_rounded, 'إعادة', redoCodeEdit, green),
+      _DashboardAction(Icons.auto_awesome_rounded, 'الإكمال التلقائي', showCodeCompletions, violet),
+      _DashboardAction(Icons.copy_all_rounded, 'تكرار الأسطر', duplicateSelectedLines, cyan),
+      _DashboardAction(Icons.arrow_upward_rounded, 'نقل السطر لأعلى', moveCurrentLineUp, cyan),
+      _DashboardAction(Icons.arrow_downward_rounded, 'نقل السطر لأسفل', moveCurrentLineDown, cyan),
+      _DashboardAction(Icons.comment_rounded, 'تعليق أو إلغاء التعليق', toggleSelectedLineComments, green),
+      _DashboardAction(Icons.compare_arrows_rounded, 'الانتقال للقوس المطابق', jumpToMatchingBracket, cyan),
+      _DashboardAction(Icons.copy_rounded, 'نسخ الكود', copyCode, blue),
+      _DashboardAction(Icons.text_increase_rounded, 'تكبير خط المحرر', () => changeEditorFontSize(1), cyan),
+      _DashboardAction(Icons.text_decrease_rounded, 'تصغير خط المحرر', () => changeEditorFontSize(-1), cyan),
+      _DashboardAction(Icons.difference_rounded, 'مقارنة النص', _openTextDiffDialog, violet),
+    ];
+
+    final qualityActions = <_DashboardAction>[
+      _DashboardAction(Icons.auto_fix_high_rounded, 'مساعد إصلاح الأخطاء', _openDiagnosticsPanel, amber),
+      _DashboardAction(Icons.auto_fix_high_rounded, 'إصلاحات مقترحة بمعاينة', _openFixAssistant, amber),
+      _DashboardAction(Icons.format_align_left_rounded, 'تنسيق الكود', _openFormatPreview, cyan),
+      _DashboardAction(Icons.restore_rounded, 'سجل إصدارات الملف', _openVersionHistory, green),
+      _DashboardAction(Icons.health_and_safety_rounded, 'فحص جودة المشروع', _openProjectInsightsPanel, green),
+      _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
+      _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
+      _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, blue),
+    ];
+
+    final preferenceActions = <_DashboardAction>[
+      _DashboardAction(Icons.tune_rounded, 'إعدادات مساحة العمل', _showWorkspaceSettings, blue),
+      _DashboardAction(Icons.palette_rounded, 'تبديل المظهر الفاتح والداكن', _showDashboardThemeInfo, violet),
+      _DashboardAction(Icons.bug_report_outlined, 'لوحة المشكلات', _openDiagnosticsPanel, amber),
+    ];
+
+    final allActions = <_DashboardAction>[
+      ...projectActions,
+      ...buildActions,
+      ...editingActions,
+      ...qualityActions,
+      ...preferenceActions,
+    ];
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF101D32), Color(0xFF0B1220), Color(0xFF080E19)],
+          stops: [0, .38, 1],
+        ),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 30),
+        children: [
+          _dashboardFileStrip(tab),
+          if (_splitTabId != null) ...[
+            const SizedBox(height: 12),
+            _buildSplitEditorPanel(),
+          ],
+          const SizedBox(height: 13),
+          _dashboardHero(tab),
+          const SizedBox(height: 16),
+          _dashboardPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: cyan.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(Icons.code_rounded, color: cyan, size: 23),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('مساحة العمل', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(
+                        projectName == 'لا يوجد مشروع' ? 'ابدأ مشروعاً جديداً أو افتح ملفاتك' : projectName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF9BAFCB)),
+                      ),
+                    ],
+                  )),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: tab.isSaved ? green.withValues(alpha: .12) : amber.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.circle, size: 7, color: tab.isSaved ? green : amber),
+                      const SizedBox(width: 6),
+                      Text(tab.isSaved ? 'محفوظ' : 'غير محفوظ',
+                        style: TextStyle(fontSize: 10, color: tab.isSaved ? green : amber, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(child: _dashboardProjectCard(
+                    icon: Icons.folder_special_rounded,
+                    title: projectName == 'لا يوجد مشروع' ? 'المشروع الحالي' : projectName,
+                    subtitle: projectUri ?? 'لا يوجد مجلد مشروع مرتبط حالياً',
+                    onTap: projectUri != null ? openProjectFolder : createNewProject,
+                    accent: cyan,
+                  )),
+                ]),
+                const SizedBox(height: 8),
+                _workspaceMetricsPanel(),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          _dashboardActionSection(
+            icon: Icons.folder_copy_rounded,
+            title: 'المشاريع والملفات',
+            subtitle: 'إنشاء وفتح واستيراد وحفظ وتصدير ونسخ احتياطي',
+            actions: projectActions,
+            initiallyExpanded: true,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.build_circle_rounded,
+            title: 'البناء والمحرك المحلي والسحابي',
+            subtitle: 'إدارة المحرك وفحصه وتشغيل البناء ومتابعة APK',
+            actions: buildActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.edit_note_rounded,
+            title: 'أدوات تحرير الكود',
+            subtitle: 'البحث والتعديل والتنقل والإكمال وأدوات النص',
+            actions: editingActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.fact_check_rounded,
+            title: 'الفحص والأدوات',
+            subtitle: 'تحليل الكود وجودة المشروع واللغات والإضافات',
+            actions: qualityActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.settings_rounded,
+            title: 'التفضيلات والإعدادات',
+            subtitle: 'تخصيص مساحة العمل ومظهر التطبيق',
+            actions: preferenceActions,
+          ),
+          const SizedBox(height: 14),
+          _dashboardPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _dashboardSectionTitle(Icons.flash_on_rounded, 'بدء سريع'),
+                const SizedBox(height: 10),
+                LayoutBuilder(builder: (context, constraints) {
+                  final width = (constraints.maxWidth - 9) / 2;
+                  final quickActions = <_DashboardAction>[
+                    _DashboardAction(Icons.create_new_folder_rounded, 'مشروع جديد', createNewProject, cyan),
+                    _DashboardAction(Icons.folder_open_rounded, 'فتح مشروع', openProjectFolder, green),
+                    _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, blue),
+                    _DashboardAction(Icons.search_rounded, 'بحث في الكود', searchCode, violet),
+                  ];
+                  return Wrap(
+                    spacing: 9,
+                    runSpacing: 9,
+                    children: quickActions.map((action) => SizedBox(
+                      width: width,
+                      child: _dashboardFeatureCard(action),
+                    )).toList(),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _dashboardPanel(
+            child: Row(children: [
+              const Icon(Icons.insert_drive_file_outlined, color: cyan, size: 19),
+              const SizedBox(width: 9),
+              Expanded(child: Text(tab.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+              Text(tab.language, style: const TextStyle(color: cyan, fontSize: 11, fontWeight: FontWeight.w700)),
+              const SizedBox(width: 10),
+              Text('Ln ${cursorPosition.$1}, Col ${cursorPosition.$2}',
+                style: const TextStyle(color: Color(0xFF9BAFCB), fontSize: 10, fontFamily: 'monospace')),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => _showAllDashboardTools(allActions),
+            icon: const Icon(Icons.apps_rounded),
+            label: const Text('عرض جميع الأدوات في قائمة واحدة'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardHero(EditorTab tab) {
+    const cyan = Color(0xFF38BDF8);
+    const violet = Color(0xFFA78BFA);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [Color(0xFF173D61), Color(0xFF18264B), Color(0xFF251D49)],
+        ),
+        border: Border.all(color: const Color(0xFF47739C).withValues(alpha: .65)),
+        boxShadow: const [BoxShadow(color: Color(0x26038BCE), blurRadius: 22, offset: Offset(0, 8))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 46, height: 46,
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .10), borderRadius: BorderRadius.circular(15)),
+            child: const Icon(Icons.terminal_rounded, color: cyan, size: 27)),
+          const SizedBox(width: 12),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('مرحباً بك في Bisho IDE', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+            SizedBox(height: 4),
+            Text('بيئة عملك البرمجية — أنشئ، حرّر، وابنِ تطبيقاتك', maxLines: 2,
+              style: TextStyle(color: Color(0xFFC5D8EF), fontSize: 11, height: 1.35)),
+          ])),
+          Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFF34D399), shape: BoxShape.circle)),
+        ]),
+        const SizedBox(height: 17),
+        Row(children: [
+          Expanded(child: _heroMetric(Icons.folder_special_rounded, 'المشروع', projectName == 'لا يوجد مشروع' ? 'غير محدد' : projectName)),
+          const SizedBox(width: 8),
+          Expanded(child: _heroMetric(Icons.description_rounded, 'الملف المفتوح', tab.fileName)),
+          const SizedBox(width: 8),
+          Expanded(child: _heroMetric(Icons.code_rounded, 'اللغة', tab.language)),
+        ]),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(child: FilledButton.icon(
+            onPressed: projectUri == null ? createNewProject : openProjectFolder,
+            icon: Icon(projectUri == null ? Icons.add_rounded : Icons.folder_open_rounded, size: 18),
+            label: Text(projectUri == null ? 'ابدأ مشروعاً' : 'فتح المشروع'),
+            style: FilledButton.styleFrom(backgroundColor: cyan, foregroundColor: const Color(0xFF06243A),
+              minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
+          const SizedBox(width: 9),
+          Expanded(child: OutlinedButton.icon(
+            onPressed: createNewTab,
+            icon: const Icon(Icons.note_add_rounded, size: 18),
+            label: const Text('ملف جديد'),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFF7897BC)),
+              minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Icon(Icons.tips_and_updates_outlined, size: 14, color: violet),
+          const SizedBox(width: 6),
+          Expanded(child: Text(tab.isSaved ? 'مساحة العمل جاهزة — جميع التغييرات محفوظة' : 'لديك تغييرات غير محفوظة في الملف الحالي',
+            style: TextStyle(color: tab.isSaved ? const Color(0xFFB8F5DC) : const Color(0xFFFFD58A), fontSize: 10.5))),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _heroMetric(IconData icon, String label, String value) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
+    decoration: BoxDecoration(color: Colors.black.withValues(alpha: .16), borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.white.withValues(alpha: .09))),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Icon(icon, size: 13, color: const Color(0xFF8DDCFF)), const SizedBox(width: 5),
+        Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Color(0xFFB8CBE1), fontSize: 9)))]),
+      const SizedBox(height: 5),
+      Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700)),
+    ]),
+  );
+
+  Widget _dashboardActionSection({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required List<_DashboardAction> actions,
+    bool initiallyExpanded = false,
+  }) {
+    return _dashboardPanel(
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          splashColor: const Color(0xFF38BDF8).withValues(alpha: .06),
+          highlightColor: Colors.transparent,
+        ),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          maintainState: true,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 8, bottom: 4),
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF38BDF8).withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: const Color(0xFF38BDF8), size: 20),
+          ),
+          title: Text(title, style: const TextStyle(
+            color: Color(0xFFE5EDF7), fontSize: 13, fontWeight: FontWeight.w700)),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          children: [
+            LayoutBuilder(builder: (context, constraints) {
+              final width = (constraints.maxWidth - 9) / 2;
+              return Wrap(
+                spacing: 9,
+                runSpacing: 9,
+                children: [
+                  for (final action in actions)
+                    SizedBox(width: width, child: _dashboardFeatureCard(action)),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardFeatureCard(_DashboardAction action) {
+    return Material(
+      color: const Color(0xFF17263A),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: action.onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 72),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: const Color(0xFF344B68)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 35,
+              height: 35,
+              decoration: BoxDecoration(
+                color: action.color.withValues(alpha: .13),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(action.icon, color: action.color, size: 19),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              action.label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.start,
+              style: const TextStyle(color: Color(0xFFE5EDF7), fontSize: 11, height: 1.28, fontWeight: FontWeight.w600),
+            )),
+            const Icon(Icons.chevron_left_rounded, size: 17, color: Color(0xFF71839D)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardFileStrip(EditorTab tab) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    decoration: BoxDecoration(
+      color: const Color(0xFF111D30),
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: const Color(0xFF26374E)),
+    ),
+    child: Row(children: [
+      Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF38BDF8).withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF38BDF8)),
+      ),
+      const SizedBox(width: 10),
+      Expanded(child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('الملف النشط', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+          const SizedBox(height: 3),
+          Text(tab.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFFE7EFFB), fontSize: 12, fontWeight: FontWeight.w700)),
+        ],
+      )),
+      IconButton(
+        tooltip: 'إنشاء تبويب جديد',
+        onPressed: createNewTab,
+        icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF38BDF8), size: 25),
+      ),
+    ]),
+  );
+
+  // ignore: unused_element
+  Widget _dashboardGlowPanel({required Widget child}) => Container(
+    padding: const EdgeInsets.all(9),
+    decoration: BoxDecoration(borderRadius: BorderRadius.circular(25),
+      gradient: const LinearGradient(colors: [Color(0xFF0789D7), Color(0xFF202A73), Color(0xFF8C20D8)]),
+      boxShadow: [BoxShadow(color: const Color(0xFF087FEA).withValues(alpha: .22), blurRadius: 18, spreadRadius: 1)]),
+    child: Container(padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(color: const Color(0xFF0A142A), borderRadius: BorderRadius.circular(19)),
+      child: child),
+  );
+
+  // ignore: unused_element
+  Widget _dashboardSquareAction(IconData icon, String label, Color color, VoidCallback onTap) =>
+    Material(color: const Color(0xFF111E37), borderRadius: BorderRadius.circular(19),
+      child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(19),
+        child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(19),
+          border: Border.all(color: color.withValues(alpha: .42))),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, color: color, size: 31), const SizedBox(height: 8),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+          ]))));
+
+  // ignore: unused_element
+  Widget _dashboardPillButton(String label, IconData icon, VoidCallback onTap) =>
+    OutlinedButton.icon(onPressed: onTap, icon: Icon(icon, size: 19), label: Text(label),
+      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDCE8F7),
+        side: const BorderSide(color: Color(0xFF3155A7)), shape: const StadiumBorder()));
+
+  void _showAllDashboardTools(List<_DashboardAction> actions) {
+    var query = '';
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final needle = query.trim().toLowerCase();
+          final filtered = needle.isEmpty
+              ? actions
+              : actions
+                  .where((a) => a.label.toLowerCase().contains(needle))
+                  .toList();
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * .78,
+                child: Column(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: Text(
+                        'جميع أدوات Bisho IDE',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: TextField(
+                        onChanged: (value) => setSheetState(() => query = value),
+                        textInputAction: TextInputAction.search,
+                        decoration: const InputDecoration(
+                          hintText: 'ابحث عن أداة...',
+                          prefixIcon: Icon(Icons.search_rounded),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('لا توجد أدوات مطابقة'))
+                          : GridView.builder(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: filtered.length,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                 crossAxisSpacing: 10,
+                                 mainAxisSpacing: 10,
+                                 childAspectRatio: 1.65,
+                              ),
+                              itemBuilder: (_, index) {
+                                final action = filtered[index];
+                                return _dashboardToolCard(
+                                  _DashboardAction(action.icon, action.label, () {
+                                    Navigator.pop(sheetContext);
+                                    action.onTap();
+                                  }, action.color),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _workspaceMetricsPanel() {
+    final metrics = WorkspaceMetrics.fromSources(
+      tabs.map((tab) => tab.controller.text),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _dashboardSectionTitle(Icons.insights_rounded, 'ملخص مساحة العمل'),
+        const SizedBox(height: 11),
+        Row(
+          children: [
+            _metricTile('التبويبات', metrics.fileCount.toString(), Icons.tab),
+            _metricTile('الأسطر', metrics.lineCount.toString(), Icons.format_align_left),
+            _metricTile('الكلمات', metrics.wordCount.toString(), Icons.text_fields),
+            _metricTile('الأحرف', metrics.characterCount.toString(), Icons.notes),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Text(
+          'الإحصائيات محسوبة من محتوى التبويبات المفتوحة فقط',
+          style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 10),
+        ),
+      ],
+    );
+  }
+
+  Widget _metricTile(String label, String value, IconData icon) => Expanded(
+    child: Column(
+      children: [
+        Icon(icon, size: 17, color: const Color(0xFF38BDF8)),
+        const SizedBox(height: 5),
+        Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 2),
+        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+      ],
+    ),
+  );
+
+  Future<void> _openTextDiffDialog() async {
+    final previousController = TextEditingController();
+    ProjectTextDiffReport? report;
+    final currentText = activeTab.controller.text;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('مقارنة النص الحالي بنسخة سابقة'),
+            content: SizedBox(
+              width: 620,
+              height: 460,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (report == null) ...[
+                    const Text('الصق النص السابق هنا، وسيتم مقارنته بمحتوى التبويب الحالي.'),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: previousController,
+                        expands: true,
+                        minLines: null,
+                        maxLines: null,
+                        textAlignVertical: TextAlignVertical.top,
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                        decoration: const InputDecoration(
+                          hintText: 'النص السابق...',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    Wrap(spacing: 12, runSpacing: 6, children: [
+                      Text('إضافات: ${report!.addedCount}', style: const TextStyle(color: Color(0xFF19D889))),
+                      Text('حذف: ${report!.removedCount}', style: const TextStyle(color: Color(0xFFFF657A))),
+                      Text('دون تغيير: ${report!.unchangedCount}', style: const TextStyle(color: Color(0xFF9BAFCB))),
+                    ]),
+                    if (report!.usedFallback)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text('مقارنة كبيرة: عُرضت الفروقات بتقريب آمن لتقليل استهلاك الذاكرة.',
+                          style: TextStyle(color: Color(0xFFFFC247), fontSize: 11)),
+                      ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(color: const Color(0xFF080F20),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: ListView.builder(
+                          itemCount: report!.lines.length,
+                          itemBuilder: (_, index) {
+                            final line = report!.lines[index];
+                            final added = line.kind == TextDiffKind.added;
+                            final removed = line.kind == TextDiffKind.removed;
+                            final prefix = added ? '+' : removed ? '-' : ' ';
+                            final color = added ? const Color(0xFF19D889)
+                                : removed ? const Color(0xFFFF657A) : const Color(0xFF9BAFCB);
+                            return Container(
+                              color: added ? const Color(0x2219D889)
+                                  : removed ? const Color(0x22FF657A) : Colors.transparent,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              child: Text('$prefix ${line.oldLine ?? '-'}:${line.newLine ?? '-'}  ${line.text.isEmpty ? ' ' : line.text}',
+                                style: TextStyle(color: color, fontFamily: 'monospace', fontSize: 11),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              if (report != null)
+                TextButton(onPressed: () => setDialogState(() => report = null),
+                  child: const Text('تغيير النص السابق')),
+              TextButton(onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إغلاق')),
+              if (report == null)
+                FilledButton.icon(
+                  onPressed: () => setDialogState(() {
+                    report = const ProjectTextDiff().compare(
+                      previousController.text, currentText);
+                  }),
+                  icon: const Icon(Icons.difference_rounded),
+                  label: const Text('اعرض الفروقات'),
+                ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      previousController.dispose();
+    }
+  }
+
+  void _openProjectInsightsPanel() {
+    final files = <String, String>{};
+    for (final tab in tabs) {
+      final path = tab.fileName.replaceAll('\\\\', '/');
+      if (path.isNotEmpty && !files.containsKey(path)) {
+        files[path] = tab.controller.text;
+      }
+    }
+    final report = const ProjectInsightsAnalyzer().analyze(files);
+    ProjectInsightCategory? selectedCategory;
+
+    String categoryLabel(ProjectInsightCategory category) {
+      switch (category) {
+        case ProjectInsightCategory.structure:
+          return 'هيكل المشروع';
+        case ProjectInsightCategory.imports:
+          return 'الاستيرادات';
+        case ProjectInsightCategory.maintenance:
+          return 'الصيانة';
+        case ProjectInsightCategory.security:
+          return 'الأمان';
+        case ProjectInsightCategory.dependencies:
+          return 'الحزم';
+        case ProjectInsightCategory.style:
+          return 'تنسيق الكود';
+      }
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refreshSheet) {
+          final visibleInsights = report.insights.where((issue) =>
+              selectedCategory == null || issue.category == selectedCategory).toList();
+          final categories = ProjectInsightCategory.values
+              .where((category) => report.insights.any((issue) => issue.category == category))
+              .toList();
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .78,
+              child: Column(children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+                  child: Row(children: [
+                    const Icon(Icons.health_and_safety_rounded, color: Color(0xFF19D889)),
+                    const SizedBox(width: 9),
+                    const Expanded(child: Text('فحص الملفات المفتوحة',
+                      style: TextStyle(fontWeight: FontWeight.w800))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF38BDF8).withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(20)),
+                      child: Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
+                        style: const TextStyle(fontSize: 10, color: Color(0xFF38BDF8),
+                          fontWeight: FontWeight.w700)),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close)),
+                  ]),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('تحليل محلي للملفات المفتوحة فقط — لا يتم تعديل أي ملف.',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                  )),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(children: [
+                    _insightCount('أخطاء', report.count(ProjectInsightSeverity.error),
+                      const Color(0xFFFF647C)),
+                    _insightCount('تحذيرات', report.count(ProjectInsightSeverity.warning),
+                      const Color(0xFFFFC247)),
+                    _insightCount('ملاحظات', report.count(ProjectInsightSeverity.info),
+                      const Color(0xFF38BDF8)),
+                  ])),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
+                  child: Row(children: [
+                    const Icon(Icons.speed_rounded, size: 17, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 7),
+                    const Expanded(child: Text('مؤشر جودة إرشادي للملفات المفتوحة',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    Text('${report.qualityScore}/100 · ${report.qualityLabel}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
+                        color: report.qualityScore >= 90
+                            ? const Color(0xFF19D889)
+                            : report.qualityScore >= 75
+                                ? const Color(0xFFFFC247)
+                                : const Color(0xFFFF647C))),
+                  ]),
+                ),
+                if (categories.isNotEmpty)
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: const Text('الكل'),
+                            selected: selectedCategory == null,
+                            onSelected: (_) => refreshSheet(() => selectedCategory = null),
+                          ),
+                        ),
+                        ...categories.map((category) => Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: Text(categoryLabel(category)),
+                            selected: selectedCategory == category,
+                            onSelected: (_) => refreshSheet(
+                              () => selectedCategory = category),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                const Divider(height: 12),
+                Expanded(
+                  child: visibleInsights.isEmpty
+                      ? const Center(child: Text('لا توجد ملاحظات في هذا التصنيف.'))
+                      : ListView.separated(
+                          itemCount: visibleInsights.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, index) {
+                            final issue = visibleInsights[index];
+                            final color = issue.severity == ProjectInsightSeverity.error
+                                ? const Color(0xFFFF647C)
+                                : issue.severity == ProjectInsightSeverity.warning
+                                    ? const Color(0xFFFFC247)
+                                    : const Color(0xFF38BDF8);
+                            EditorTab? matchingTab;
+                            for (final candidate in tabs) {
+                              if (candidate.fileName.replaceAll('\\\\', '/') == issue.path) {
+                                matchingTab = candidate;
+                                break;
+                              }
+                            }
+                            final targetTab = matchingTab;
+                            final canNavigate = targetTab != null && issue.line > 0;
+
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(
+                                issue.severity == ProjectInsightSeverity.error
+                                    ? Icons.error_outline
+                                    : issue.severity == ProjectInsightSeverity.warning
+                                        ? Icons.warning_amber_rounded
+                                        : Icons.info_outline,
+                                color: color),
+                              title: Text(issue.message,
+                                style: const TextStyle(fontSize: 12)),
+                              subtitle: Text(
+                                issue.line > 0 ? '${issue.path}:${issue.line}' : issue.path,
+                                style: const TextStyle(fontSize: 10,
+                                  color: Color(0xFF94A3B8))),
+                              trailing: canNavigate
+                                  ? const Icon(Icons.my_location_outlined,
+                                      size: 17, color: Color(0xFF38BDF8))
+                                  : null,
+                              onTap: canNavigate ? () {
+                                                                final offset = EditorDiagnosticNavigation.offsetForLineColumn(
+                                  targetTab.controller.text, issue.line, 1);
+                                if (offset == null) return;
+                                final tabIndex = tabs.indexOf(targetTab);
+                                Navigator.pop(sheetContext);
+                                setState(() {
+                                  activeIndex = tabIndex;
+                                  targetTab.controller.selection =
+                                      TextSelection.collapsed(offset: offset);
+                                });
+                                _scheduleTabStateSave();
+                              } : null,
+                            );
+                          },
+                        ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Text(
+                    'الفحص يغطي التبويبات المفتوحة فقط. اضغط على التشخيص ذي الموقع للانتقال إليه.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                  )),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _insightCount(String label, int count, Color color) => Expanded(
+    child: Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(color: color.withValues(alpha: .10), borderRadius: BorderRadius.circular(10)),
+      child: Column(children: [
+        Text('$count', style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFFCBD5E1))),
+      ]),
+    ),
+  );
+
+  String _diagnosticAdvice(String message) {
+    final value = message.toLowerCase();
+    if (value.contains('قوس') || value.contains('bracket') ||
+        value.contains('parenthesis') || value.contains('delimiter')) {
+      return 'راجع أقواس الفتح والإغلاق بالترتيب، وتأكد أن كل قوس له نظير من النوع نفسه.';
+    }
+    if (value.contains('اقتباس') || value.contains('string') ||
+        value.contains('quote') || value.contains('علامة تنصيص')) {
+      return 'تحقق من إغلاق علامات التنصيص، ومن عدم وجود علامة اقتباس غير مهروبة داخل النص.';
+    }
+    if (value.contains('استيراد') || value.contains('import') ||
+        value.contains('package:')) {
+      return 'تحقق من اسم الحزمة ومسار الملف، وتأكد من وجود الاعتماد في pubspec.yaml عند الحاجة.';
+    }
+    if (value.contains('نقطة فاصلة') || value.contains('semicolon') ||
+        value.contains('الفاصلة المنقوطة')) {
+      return 'راجع نهاية التعليمة؛ بعض اللغات تتطلب فاصلة منقوطة وبعضها لا يتطلبها.';
+    }
+    if (value.contains('indent') || value.contains('مسافة بادئة') ||
+        value.contains('إزاحة')) {
+      return 'وحّد المسافات البادئة داخل الكتلة، وتأكد من تطابق مستوى الإزاحة مع الأقواس.';
+    }
+    if (value.contains('غير معروف') || value.contains('unexpected') ||
+        value.contains('unexpected token')) {
+      return 'راجع الرمز السابق لموضع المشكلة؛ قد يكون هناك عامل أو فاصلة أو قوس مفقود.';
+    }
+    return 'اقرأ رسالة الفحص وحدد أول موضع غير متوقع، ثم راجع السطر السابق والسياق المحيط قبل تعديل الملف.';
+  }
+
+  void _applyAssistantText(EditorTab tab, String value, String message) {
+    if (!mounted || !tabs.contains(tab)) return;
+    final caret = tab.controller.selection.baseOffset.clamp(0, value.length).toInt();
+    tab.controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: caret),
+    );
+    setState(() {
+      tab.isSaved = false;
+      status = message;
+    });
+    showMessage(message);
+  }
+
+  void _openAdvancedSearch() {
+    final tab = activeTab;
+    showAdvancedSearchSheet(
+      context,
+      fileName: tab.fileName,
+      text: tab.controller.text,
+      onJump: (start, end) {
+        if (!mounted || !tabs.contains(tab)) return;
+        final length = tab.controller.text.length;
+        tab.controller.selection = TextSelection(
+          baseOffset: start.clamp(0, length).toInt(),
+          extentOffset: end.clamp(0, length).toInt(),
+        );
+      },
+      onReplace: (value) =>
+          _applyAssistantText(tab, value, 'تم الاستبدال؛ يمكنك التراجع'),
+    );
+  }
+
+  void _openFixAssistant() {
+    final tab = activeTab;
+    showFixAssistantSheet(
+      context,
+      fileName: tab.fileName,
+      source: tab.controller.text,
+      language: tab.language,
+      onApply: (value) =>
+          _applyAssistantText(tab, value, 'تم تطبيق الإصلاحات المختارة'),
+    );
+  }
+
+  void _openFormatPreview() {
+    final tab = activeTab;
+    showFormatPreviewSheet(
+      context,
+      fileName: tab.fileName,
+      source: tab.controller.text,
+      language: tab.language,
+      onApply: (value) => _applyAssistantText(tab, value, 'تم تنسيق الكود'),
+    );
+  }
+
+  Future<void> _openVersionHistory() async {
+    final tab = activeTab;
+    final history = await _ensureVersionHistory();
+    if (!mounted) return;
+    if (history == null) {
+      showMessage('تعذر الوصول إلى مساحة سجل الإصدارات');
+      return;
+    }
+    await showVersionHistorySheet(
+      context,
+      history: history,
+      historyKey: _versionKeyFor(tab),
+      fileName: tab.fileName,
+      currentText: tab.controller.text,
+      onRestore: (value) => _applyAssistantText(
+        tab,
+        value,
+        'تمت استعادة الإصدار؛ احفظ الملف لتثبيته',
+      ),
+    );
+  }
+
+  void _openDiagnosticsPanel() {
+    final tab = activeTab;
+    final diagnostics = _getCurrentDiagnostics(tab);
+    final structural = EditorSyntaxDiagnostics.analyze(
+      tab.controller.text,
+      tab.language,
+    );
+    final parserCount = (diagnostics.length - structural.length)
+        .clamp(0, diagnostics.length)
+        .toInt();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * .62,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.bug_report_outlined, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text('مشكلات ${tab.fileName}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700))),
+                    Text('${diagnostics.length}', style: const TextStyle(color: Color(0xFF94A3B8))),
+                    IconButton(
+                      tooltip: 'نسخ تقرير المشكلات ونصائح الإصلاح',
+                      onPressed: () async {
+                        final report = diagnostics.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final message = entry.value;
+                          if (index >= parserCount) {
+                            final issue = structural[index - parserCount];
+                            return '${issue.line}:${issue.column} — ${issue.message}\n${_diagnosticAdvice(issue.message)}';
+                          }
+                          return '$message\n${_diagnosticAdvice(message)}';
+                        }).join('\n\n');
+                        await Clipboard.setData(ClipboardData(
+                          text: report.isEmpty ? 'لا توجد مشكلات في الفحص الحالي.' : report,
+                        ));
+                        if (mounted) showMessage('تم نسخ تقرير المشكلات ونصائح الإصلاح');
+                      },
+                      icon: const Icon(Icons.copy_all_rounded),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close)),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: diagnostics.isEmpty
+                    ? const Center(child: Text('لا توجد مشكلات معروفة في الفحص الحالي'))
+                    : ListView.separated(
+                        itemCount: diagnostics.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          if (index < parserCount) {
+                            return ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.error_outline, color: Colors.orange),
+                              title: Text(diagnostics[index], style: const TextStyle(fontSize: 12)),
+                              subtitle: Text('فحص محلي\n${_diagnosticAdvice(diagnostics[index])}', maxLines: 3, overflow: TextOverflow.ellipsis),
+                            );
+                          }
+                          final issue = structural[index - parserCount];
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+                            title: Text(issue.message, style: const TextStyle(fontSize: 12)),
+                            subtitle: Text('السطر ${issue.line}، العمود ${issue.column}\n${_diagnosticAdvice(issue.message)}', maxLines: 3, overflow: TextOverflow.ellipsis),
+                            trailing: const Icon(Icons.my_location, size: 17),
+                            onTap: () {
+                              final offset = issue.offset
+                                  .clamp(0, tab.controller.text.length)
+                                  .toInt();
+                              tab.controller.selection = TextSelection.collapsed(offset: offset);
+                              _scheduleTabStateSave();
+                              Navigator.pop(sheetContext);
+                              _openEditorFullScreen();
+                            },
+                          );
+                        },
+                      ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  'الفحص بنيوي ومحلي؛ اضغط على المشكلة ذات الموقع للانتقال إليها. لا يحل محل محلل المترجم الرسمي.',
+                  style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: .55)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showWorkspaceSettings() async {
+    var draftFontSize = _editorFontSize;
+    var draftExplorerVisible = explorerVisible;
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, refreshSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Icon(Icons.tune_rounded, color: Color(0xFF38BDF8)),
+                  const SizedBox(width: 9),
+                  const Expanded(child: Text('إعدادات مساحة العمل',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                  IconButton(onPressed: () => Navigator.pop(sheetContext, false),
+                    icon: const Icon(Icons.close)),
+                ]),
+                const SizedBox(height: 14),
+                _dashboardPanel(
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.folder_copy_rounded, color: Color(0xFF38BDF8)),
+                    title: const Text('إظهار مستكشف الملفات',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    subtitle: const Text('عرض شجرة ملفات المشروع بجانب مساحة العمل',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                    value: draftExplorerVisible,
+                    onChanged: (value) => refreshSheet(() => draftExplorerVisible = value),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _dashboardPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.text_fields_rounded, color: Color(0xFF38BDF8)),
+                        const SizedBox(width: 9),
+                        const Expanded(child: Text('حجم خط المحرر',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                        Text('${draftFontSize.round()} px',
+                          style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                      ]),
+                      const SizedBox(height: 5),
+                      const Text('اضبط حجم النص لتسهيل القراءة والكتابة',
+                        style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                      Slider(
+                        min: 10, max: 24, divisions: 14,
+                        value: draftFontSize,
+                        onChanged: (value) => refreshSheet(() => draftFontSize = value),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(width: double.infinity, child: FilledButton.icon(
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                  icon: const Icon(Icons.save_rounded), label: const Text('حفظ الإعدادات'),
+                )),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    setState(() {
+      _editorFontSize = draftFontSize.clamp(10.0, 24.0).toDouble();
+      explorerVisible = draftExplorerVisible;
+    });
+    await _saveEditorPreferences();
+    showMessage('تم حفظ إعدادات مساحة العمل');
+  }
+
+  Widget _dashboardPanel({required Widget child}) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: const Color(0xFF131F30),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: const Color(0xFF30445E), width: 1),
+    ),
+    child: child,
+  );
+
+  Widget _dashboardToolCard(_DashboardAction action) => Material(
+    color: const Color(0xFF101D36),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(19)),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(onTap: action.onTap, borderRadius: BorderRadius.circular(19),
+      child: Container(
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(19),
+          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+            colors: [action.color.withValues(alpha: .17), const Color(0xFF111B34), const Color(0xFF0C142A)]),
+          border: Border.all(color: action.color.withValues(alpha: .38)),
+          boxShadow: [BoxShadow(color: action.color.withValues(alpha: .10), blurRadius: 12)]),
+        constraints: const BoxConstraints(minHeight: 104),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
+        child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(action.icon, size: 27, color: action.color),
+          const SizedBox(height: 6),
+          Flexible(child: Text(action.label, maxLines: 2, softWrap: true,
+            overflow: TextOverflow.visible, textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFFEAF2FF),
+              fontSize: 10, height: 1.16, fontWeight: FontWeight.w600))),
+        ]),
+      ),
+    ),
+  );
+
+  Widget _dashboardSectionTitle(IconData icon, String title) => Row(children: [
+    Icon(icon, color: const Color(0xFF38BDF8), size: 20),
+    const SizedBox(width: 8),
+    Expanded(child: Text(title, style: const TextStyle(
+      color: Color(0xFFE5EDF7), fontSize: 14, fontWeight: FontWeight.w700))),
+  ]);
+
+  Widget _dashboardProjectCard({required IconData icon, required String title,
+    required String subtitle, required VoidCallback onTap, required Color accent}) =>
+    Material(
+      color: const Color(0xFF101B34),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(19)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accent.withValues(alpha: .38)),
+            boxShadow: [BoxShadow(color: accent.withValues(alpha: .10), blurRadius: 13)],
+          ),
+          child: Row(children: [
+            Container(width: 42, height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1B293D),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, color: accent, size: 23),
+            ),
+            const SizedBox(width: 11),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFFE5EDF7),
+                  fontWeight: FontWeight.w700, fontSize: 12)),
+              const SizedBox(height: 4),
+              Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10)),
+            ])),
+            Icon(Icons.chevron_left_rounded, color: accent),
+          ]),
+        ),
+      ),
+    );
+
+  void _showDashboardThemeInfo() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('مظهر التطبيق',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 5),
+              const Text('اختر المظهر المناسب، وسيُحفظ اختيارك تلقائيًا.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+              const SizedBox(height: 14),
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: BishoThemeController.mode,
+                builder: (context, mode, _) => Column(
+                  children: [
+                    _themeModeTile(sheetContext, ThemeMode.system, mode,
+                      Icons.brightness_auto_rounded, 'حسب إعدادات الجهاز',
+                      'يتبع الوضع الفاتح أو الداكن في Android'),
+                    _themeModeTile(sheetContext, ThemeMode.dark, mode,
+                      Icons.dark_mode_rounded, 'داكن',
+                      'ألوان مريحة للعمل في الإضاءة المنخفضة'),
+                    _themeModeTile(sheetContext, ThemeMode.light, mode,
+                      Icons.light_mode_rounded, 'فاتح',
+                      'واجهة واضحة في الإضاءة القوية'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _themeModeTile(
+    BuildContext sheetContext,
+    ThemeMode value,
+    ThemeMode selected,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
+    final active = value == selected;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Material(
+        color: active
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: .10)
+            : Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(13),
+        child: ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
+            side: BorderSide(
+              color: active ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          leading: Icon(icon, color: active
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 10)),
+          trailing: active
+              ? Icon(Icons.check_circle_rounded,
+                  color: Theme.of(context).colorScheme.primary)
+              : const Icon(Icons.circle_outlined),
+          onTap: () async {
+            await BishoThemeController.set(value);
+            if (sheetContext.mounted) Navigator.pop(sheetContext);
+          },
+        ),
+      ),
+    );
+  }
+
+  static const String _enabledExtensionsKey = 'bisho_enabled_editor_extensions_v1';
+  static const String _customExtensionsKey = 'bisho_custom_editor_extensions_v1';
+
+  Future<void> _showPluginsHub() async {
+    final entries = <_EditorExtensionEntry>[
+      _EditorExtensionEntry('json_format', 'تنسيق JSON', 'ترتيب المسافات وإظهار بنية JSON بوضوح', 'تنسيق البيانات', Icons.data_object_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('json_minify', 'ضغط JSON', 'إزالة المسافات غير الضرورية لتقليل الحجم', 'تنسيق البيانات', Icons.compress_rounded, const Color(0xFF8B42F5)),
+      _EditorExtensionEntry('base64_encode', 'ترميز Base64', 'تحويل النص إلى Base64', 'الترميز والتحويل', Icons.lock_rounded, const Color(0xFF19D889)),
+      _EditorExtensionEntry('base64_decode', 'فك Base64', 'استعادة النص من Base64', 'الترميز والتحويل', Icons.lock_open_rounded, const Color(0xFFFFC247)),
+      _EditorExtensionEntry('url_encode', 'ترميز URL', 'تهيئة النص للاستخدام داخل عناوين URL', 'الترميز والتحويل', Icons.link_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('url_decode', 'فك URL', 'فك ترميز النص الموجود داخل عنوان URL', 'الترميز والتحويل', Icons.link_off_rounded, const Color(0xFF247BFF)),
+      _EditorExtensionEntry('sort_lines', 'ترتيب الأسطر', 'ترتيب الأسطر أبجدياً داخل التحديد أو الملف', 'تحرير النص', Icons.sort_by_alpha_rounded, const Color(0xFF8B42F5)),
+      _EditorExtensionEntry('unique_lines', 'حذف الأسطر المكررة', 'إزالة الأسطر المتكررة مع الاحتفاظ بأول ظهور', 'تحرير النص', Icons.filter_alt_rounded, const Color(0xFF19D889)),
+      _EditorExtensionEntry('trim_trailing_whitespace', 'تنظيف نهايات الأسطر', 'إزالة المسافات وعلامات الجدولة غير الضرورية من نهاية كل سطر', 'تنظيف النص', Icons.cleaning_services_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('normalize_line_endings', 'توحيد نهايات الأسطر', 'تحويل CRLF وCR إلى LF لتوحيد تنسيق الملف', 'تنظيف النص', Icons.format_line_spacing_rounded, const Color(0xFF247BFF)),
+      _EditorExtensionEntry('tabs_to_spaces', 'تحويل TAB إلى مسافات', 'استبدال كل علامة TAB بأربع مسافات', 'تنظيف النص', Icons.space_bar_rounded, const Color(0xFFFFC247)),
+    ];
+    final prefs = await SharedPreferences.getInstance();
+    final customPacks = prefs.getStringList(_customExtensionsKey) ?? <String>[];
+    for (final packedEntry in customPacks) {
+      try {
+        final decoded = jsonDecode(packedEntry);
+        if (decoded is! Map<String, dynamic>) continue;
+        final manifest = EditorExtensionManifest.decode(jsonEncode({
+          'format': EditorExtensionManifest.format,
+          'version': EditorExtensionManifest.version,
+          'extensions': [decoded],
+        }));
+        final extension = manifest.extensions.single;
+        entries.add(_EditorExtensionEntry(
+          extension.id,
+          extension.title,
+          extension.description,
+          extension.category,
+          Icons.extension_rounded,
+          const Color(0xFF38BDF8),
+          operationId: extension.operation,
+        ));
+      } catch (_) {
+        // Ignore invalid legacy entries; importing never enables code execution.
+      }
+    }
+    final stored = prefs.getStringList(_enabledExtensionsKey);
+    var enabled = stored == null
+        ? entries.where((entry) => entry.operationId == null)
+            .map((entry) => entry.id).toSet()
+        : stored.toSet();
+    if (!mounted) return;
+    final searchController = TextEditingController();
+    var query = '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, refreshSheet) {
+          final normalized = query.trim().toLowerCase();
+          final filtered = entries.where((entry) =>
+            normalized.isEmpty ||
+            entry.title.toLowerCase().contains(normalized) ||
+            entry.description.toLowerCase().contains(normalized) ||
+            entry.category.toLowerCase().contains(normalized),
+          ).toList();
+          final activeCount = entries.where((entry) => enabled.contains(entry.id)).length;
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .78,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                    child: Row(children: [
+                      const Icon(Icons.extension_rounded, color: Color(0xFF38BDF8)),
+                      const SizedBox(width: 9),
+                      const Expanded(child: Text('مدير الإضافات والأدوات',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                      Text('${activeCount}/${entries.length}',
+                        style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                      IconButton(onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close)),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: TextField(
+                      controller: searchController,
+                      onChanged: (value) => refreshSheet(() => query = value),
+                      decoration: InputDecoration(
+                        hintText: 'ابحث عن إضافة أو وظيفة...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: query.isEmpty ? null : IconButton(
+                          onPressed: () {
+                            searchController.clear();
+                            refreshSheet(() => query = '');
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(children: [
+                      const Expanded(child: Text('اضغط على الإضافة لتشغيلها، أو استخدم المفتاح لتفعيلها وتعطيلها.',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10))),
+                      TextButton(
+                        onPressed: () async {
+                          enabled = entries.map((entry) => entry.id).toSet();
+                          await prefs.setStringList(_enabledExtensionsKey, enabled.toList());
+                          refreshSheet(() {});
+                        },
+                        child: const Text('تفعيل الكل'),
+                      ),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await _importEditorExtensionPack();
+                          if (!mounted) return;
+                          Navigator.pop(sheetContext);
+                          await _showPluginsHub();
+                        },
+                        icon: const Icon(Icons.file_upload_outlined, size: 17),
+                        label: const Text('استيراد حزمة إضافات JSON'),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: filtered.isEmpty
+                      ? const Center(child: Text('لا توجد إضافات مطابقة للبحث.'))
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 5),
+                          itemBuilder: (_, index) {
+                            final entry = filtered[index];
+                            final isEnabled = enabled.contains(entry.id);
+                            return Card(
+                              color: const Color(0xFF101D36),
+                              margin: EdgeInsets.zero,
+                              child: ListTile(
+                                dense: true,
+                                leading: CircleAvatar(
+                                  backgroundColor: entry.color.withValues(alpha: .14),
+                                  child: Icon(entry.icon, color: entry.color, size: 20),
+                                ),
+                                title: Text(entry.title,
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                subtitle: Text('${entry.category} • ${entry.description}',
+                                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                                trailing: Switch(
+                                  value: isEnabled,
+                                  onChanged: (value) async {
+                                    if (value) {
+                                      enabled.add(entry.id);
+                                    } else {
+                                      enabled.remove(entry.id);
+                                    }
+                                    await prefs.setStringList(_enabledExtensionsKey, enabled.toList());
+                                    refreshSheet(() {});
+                                  },
+                                ),
+                                onTap: isEnabled ? () {
+                                  Navigator.pop(sheetContext);
+                                  _runEditorExtension(entry.operationId ?? entry.id);
+                                } : null,
+                              ),
+                            );
+                          },
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    searchController.dispose();
+  }
+
+  Future<void> _importEditorExtensionPack() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+        allowMultiple: false,
+      );
+      if (picked == null || picked.files.isEmpty) return;
+      final bytes = picked.files.single.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw const FormatException('تعذر قراءة ملف الحزمة.');
+      }
+      final manifest = EditorExtensionManifest.decode(utf8.decode(bytes));
+      final prefs = await SharedPreferences.getInstance();
+      final current = prefs.getStringList(_customExtensionsKey) ?? <String>[];
+      final existingIds = <String>{
+        'json_format', 'json_minify', 'base64_encode', 'base64_decode',
+        'url_encode', 'url_decode', 'sort_lines', 'unique_lines',
+        'trim_trailing_whitespace', 'normalize_line_endings', 'tabs_to_spaces',
+      };
+      for (final item in current) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map<String, dynamic> && decoded['id'] is String) {
+            existingIds.add(decoded['id'] as String);
+          }
+        } catch (_) {
+          // Invalid old entries are ignored and replaced by a valid import.
+        }
+      }
+      final duplicates = manifest.extensions
+          .where((extension) => existingIds.contains(extension.id))
+          .map((extension) => extension.id)
+          .toList();
+      if (duplicates.isNotEmpty) {
+        throw FormatException('معرّفات موجودة مسبقاً: ${duplicates.join(', ')}');
+      }
+      if (current.length + manifest.extensions.length > 60) {
+        throw const FormatException('وصلت إلى الحد الأقصى وهو 60 إضافة مخصصة.');
+      }
+      final merged = [
+        ...current,
+        ...manifest.extensions.map((extension) => jsonEncode(extension.toJson())),
+      ];
+      await prefs.setStringList(_customExtensionsKey, merged);
+      showMessage('تم استيراد ${manifest.extensions.length} إضافة. راجع تفعيلها من مدير الإضافات.');
+    } catch (error) {
+      showMessage('تعذر استيراد حزمة الإضافات: $error');
+    }
+  }
+
+  Future<void> _runEditorExtension(String operation) async {
+    if (tabs.isEmpty) {
+      showMessage('افتح ملفاً أولاً لاستخدام الإضافة');
+      return;
+    }
+    final tab = activeTab;
+    final controller = tab.controller;
+    final source = controller.text;
+    final selection = controller.selection;
+    final hasSelection = selection.isValid && !selection.isCollapsed;
+    final start = hasSelection ? selection.start : 0;
+    final end = hasSelection ? selection.end : source.length;
+    final input = source.substring(start, end);
+    String output;
+    String success;
+
+    try {
+      switch (operation) {
+        case 'json_format':
+          output = const JsonEncoder.withIndent('  ').convert(jsonDecode(input));
+          success = 'تم تنسيق JSON';
+          break;
+        case 'json_minify':
+          output = jsonEncode(jsonDecode(input));
+          success = 'تم ضغط JSON وإزالة المسافات';
+          break;
+        case 'base64_encode':
+          output = base64Encode(utf8.encode(input));
+          success = 'تم ترميز النص بصيغة Base64';
+          break;
+        case 'base64_decode':
+          output = utf8.decode(base64Decode(input.trim()));
+          success = 'تم فك ترميز Base64';
+          break;
+        case 'url_encode':
+          output = Uri.encodeComponent(input);
+          success = 'تم ترميز النص للرابط';
+          break;
+        case 'url_decode':
+          output = Uri.decodeComponent(input);
+          success = 'تم فك ترميز الرابط';
+          break;
+        case 'sort_lines':
+          final lines = input.split('\n')..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          output = lines.join('\n');
+          success = 'تم ترتيب الأسطر أبجدياً';
+          break;
+        case 'unique_lines':
+          final seen = <String>{};
+          output = input.split('\n').where((line) => seen.add(line)).join('\n');
+          success = 'تم حذف الأسطر المكررة';
+          break;
+        case 'trim_trailing_whitespace':
+          output = input.split('\n')
+              .map((line) => line.replaceFirst(RegExp(r'[ \t]+$'), ''))
+              .join('\n');
+          success = 'تم تنظيف المسافات من نهايات الأسطر';
+          break;
+        case 'normalize_line_endings':
+          output = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+          success = 'تم توحيد نهايات الأسطر إلى LF';
+          break;
+        case 'tabs_to_spaces':
+          output = input.replaceAll('\t', '    ');
+          success = 'تم تحويل علامات TAB إلى أربع مسافات';
+          break;
+        default:
+          return;
+      }
+    } catch (error) {
+      showMessage('تعذر تنفيذ الإضافة: ${error is FormatException ? error.message : error}');
+      return;
+    }
+
+    if (output == input) {
+      showMessage('لا توجد تغييرات مطلوبة');
+      return;
+    }
+
+    final updated = source.replaceRange(start, end, output);
+    final previewLines = output.split('\n');
+    final originalLines = input.split('\n');
+    final previewAccepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.preview_rounded, color: Color(0xFF38BDF8)),
+            const SizedBox(width: 8),
+            Expanded(child: Text('معاينة قبل التطبيق')),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(success, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    Chip(
+                      avatar: const Icon(Icons.remove_circle_outline, size: 16),
+                      label: Text('${originalLines.length} سطر قبل'),
+                    ),
+                    Chip(
+                      avatar: const Icon(Icons.add_circle_outline, size: 16),
+                      label: Text('${previewLines.length} سطر بعد'),
+                    ),
+                    Chip(label: Text('${output.length} حرف في الناتج')),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text('النص قبل التعديل', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 120),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF475569)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      input.length > 2500
+                          ? '${input.substring(0, 2500)}\n… تم اختصار النص السابق.'
+                          : input,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('النص بعد التعديل', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B1220),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      output.length > 6000
+                          ? '${output.substring(0, 6000)}\n\n… تم اختصار المعاينة؛ سيُطبّق الناتج كاملاً.'
+                          : output,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: Color(0xFFE2E8F0),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'لن يتغير الملف حتى تضغط «تطبيق». يمكنك الإلغاء للعودة دون أي تعديل.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('تطبيق التغييرات'),
+          ),
+        ],
+      ),
+    );
+
+    if (previewAccepted != true || !mounted) return;
+    if (!tabs.contains(tab) || controller.text != source) {
+      showMessage('تغير الملف أثناء المعاينة؛ أعد تشغيل الإضافة لتجنب استبدال تعديلات أحدث');
+      return;
+    }
+
+    controller.value = controller.value.copyWith(
+      text: updated,
+      selection: TextSelection.collapsed(offset: start + output.length),
+      composing: TextRange.empty,
+    );
+    tab.isSaved = false;
+    _scheduleTabStateSave();
+    if (mounted) setState(() {});
+    showMessage(success);
+  }
+
+
+  void _showLanguageCapabilities() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * .72,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.code_rounded, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 9),
+                    const Expanded(child: Text('دليل اللغات والقدرات',
+                      style: TextStyle(fontWeight: FontWeight.w700))),
+                    IconButton(onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close)),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: LanguageEngineManager.capabilities.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, index) {
+                    final capability = LanguageEngineManager.capabilities[index];
+                    final hasPreviewRoute = capability.extensions.any((extension) =>
+                        LanguageEngineManager.engineForFile('sample.$extension') !=
+                        LanguageEngine.unsupported);
+                    final notes = capability.note.isNotEmpty
+                        ? capability.note
+                        : capability.executionEngine
+                            ? 'توجد معاينة أو بيئة تنفيذ محددة لهذه اللغة.'
+                            : hasPreviewRoute
+                                ? 'توجد أداة عرض أو تحقق للملفات، دون تشغيل برنامج مستقل.'
+                                : 'تحرير وتلوين؛ لا يوجد محرك تشغيل مضمّن حالياً.';
+                    return ExpansionTile(
+                      title: Text(capability.language,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      subtitle: Text(notes, style: const TextStyle(fontSize: 10)),
+                      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      children: [
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              Chip(label: Text(capability.syntaxHighlighting ? 'تلوين مدعوم' : 'نص عادي')),
+                              Chip(label: Text(capability.structuralDiagnostics ? 'فحص بنيوي' : 'بدون فحص بنيوي')),
+                              Chip(label: Text(hasPreviewRoute ? 'معاينة/عرض متاح' : 'لا يوجد محرك تشغيل')),
+                            ],
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'الامتدادات: ${capability.extensions.map((extension) => ".$extension").join("، ")}',
+                            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditorInfoDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('معلومات المحرر'),
+        content: const Text('يوفر Bisho IDE أدوات إنشاء الملفات والمشاريع، والحفظ والتصدير، والبحث والاستبدال، والتنقل بين الأسطر، وإكمال الكود، ومعاينة اللغات المدعومة. نضيف الميزات تدريجياً بعد اختبارها.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget toolButton(
+    IconData icon,
+    String label,
+    VoidCallback action,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: InkWell(
+        onTap: action,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: const Color(0xFF38BDF8),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+  // ignore: unused_element
+class _DashboardWavePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final blue = Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6
+      ..shader = const LinearGradient(colors: [Color(0x0012AFFF), Color(0xFF087DFF), Color(0xFF12AFFF)])
+        .createShader(Offset.zero & size);
+    final purple = Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5
+      ..shader = const LinearGradient(colors: [Color(0x002D65FF), Color(0xFF8B24FF), Color(0xFFB21FFF)])
+        .createShader(Offset.zero & size);
+    final a = Path()..moveTo(0, size.height * .18)
+      ..cubicTo(size.width * .22, size.height * .62, size.width * .36, size.height * .80, size.width * .58, size.height * .52)
+      ..cubicTo(size.width * .76, size.height * .27, size.width * .88, size.height * .20, size.width, size.height * .42);
+    final b = Path()..moveTo(0, size.height * .38)
+      ..cubicTo(size.width * .22, size.height * .82, size.width * .42, size.height * .93, size.width * .62, size.height * .67)
+      ..cubicTo(size.width * .78, size.height * .44, size.width * .91, size.height * .32, size.width, size.height * .56);
+    canvas.drawPath(a, blue);
+    canvas.drawPath(b, purple);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _EditorExtensionEntry {
+  final String id;
+  final String title;
+  final String description;
+  final String category;
+  final IconData icon;
+  final Color color;
+  final String? operationId;
+
+  const _EditorExtensionEntry(
+    this.id, this.title, this.description, this.category, this.icon, this.color, {
+    this.operationId,
+  });
+}
+
+class _DashboardAction {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+  const _DashboardAction(this.icon, this.label, this.onTap, this.color);
+}
+
+/// شاشة مستقلة للطرفية تستغل كامل مساحة التطبيق بدلاً من لوحة سفلية قصيرة.
+class TerminalFullScreenScreen extends StatelessWidget {
+  const TerminalFullScreenScreen({
+    super.key,
+    required this.files,
+    required this.projectUri,
+    required this.projectName,
+    required this.onOpenFile,
+  });
+
+  final SafFileService files;
+  final String? projectUri;
+  final String projectName;
+  final Future<void> Function(SafDocumentFile file, String parentUri) onOpenFile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF080D19),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
+          title: const Row(
+            children: [
+              Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
+              SizedBox(width: 9),
+              Text('طرفية Bisho', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            ],
+          ),
+          leading: IconButton(
+            tooltip: 'العودة إلى المحرر',
+            icon: const Icon(Icons.fullscreen_exit_rounded),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: BishoTerminalPanel(
+                files: files,
+                projectUri: projectUri,
+                projectName: projectName,
+                onOpenFile: onOpenFile,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// شاشة مستقلة للمحرر؛ تستخدم نفس CodeController حتى تبقى التعديلات
+/// والتبويبات والحالة محفوظة عند الرجوع إلى الواجهة الرئيسية.
+class EditorFullScreenScreen extends StatefulWidget {
+  const EditorFullScreenScreen({
+    super.key,
+    required this.tab,
+    required this.fontSize,
+    required this.onSave,
+    required this.onFontSizeChange,
+    required this.onShowCompletions,
+    required this.onSearch,
+    required this.onPreview,
+    required this.onFlutterPreview,
+  });
+
+  final EditorTab tab;
+  final double fontSize;
+  final Future<void> Function() onSave;
+  final void Function(double delta) onFontSizeChange;
+  final Future<void> Function() onShowCompletions;
+  final Future<void> Function(bool replaceMode) onSearch;
+  final Future<void> Function() onPreview;
+  final void Function() onFlutterPreview;
+
+  @override
+  State<EditorFullScreenScreen> createState() =>
+      _EditorFullScreenScreenState();
+}
+
+class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
+  static const String _wordWrapPreferenceKey = 'bisho_editor_word_wrap';
+  late double _fontSize;
+  bool _wordWrap = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fontSize = widget.fontSize;
+    _restoreWordWrapPreference();
+  }
+
+  Future<void> _restoreWordWrapPreference() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final savedValue = preferences.getBool(_wordWrapPreferenceKey) ?? false;
+      if (!mounted) return;
+      setState(() => _wordWrap = savedValue);
+    } catch (_) {
+      // Word wrap remains available with its default when preferences fail.
+    }
+  }
+
+  Future<void> _toggleWordWrap() async {
+    final nextValue = !_wordWrap;
+    setState(() => _wordWrap = nextValue);
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_wordWrapPreferenceKey, nextValue);
+    } catch (_) {
+      // The current session setting remains active if persistence is unavailable.
+    }
+  }
+
+  void _changeFontSize(double delta) {
+    widget.onFontSizeChange(delta);
+    setState(() {
+      _fontSize = (_fontSize + delta).clamp(10.0, 24.0).toDouble();
+    });
+  }
+
+  void _insertSymbol(String symbol) {
+    final controller = widget.tab.controller;
+    final nextValue = EditorSymbolInsert.apply(
+      text: controller.text,
+      selection: controller.selection,
+      symbol: symbol,
+    );
+    controller.value = nextValue;
+  }
+
+  void _moveCursor({int horizontal = 0, int vertical = 0}) {
+    final controller = widget.tab.controller;
+    final text = controller.text;
+    final selection = controller.selection;
+    final current = selection.isValid
+        ? selection.extentOffset.clamp(0, text.length).toInt()
+        : text.length;
+
+    int target;
+    if (horizontal != 0) {
+      target = (current + horizontal).clamp(0, text.length).toInt();
+    } else {
+      final lineStart = text.lastIndexOf('\\n', current - 1) + 1;
+      final lineEndFound = text.indexOf('\\n', current);
+      final lineEnd = lineEndFound == -1 ? text.length : lineEndFound;
+      final column = current - lineStart;
+      if (vertical < 0) {
+        if (lineStart == 0) return;
+        final previousEnd = lineStart - 1;
+        final previousStart = text.lastIndexOf('\\n', previousEnd - 1) + 1;
+        target = (previousStart + column).clamp(previousStart, previousEnd).toInt();
+      } else {
+        if (lineEnd == text.length) return;
+        final nextStart = lineEnd + 1;
+        final nextEndFound = text.indexOf('\\n', nextStart);
+        final nextEnd = nextEndFound == -1 ? text.length : nextEndFound;
+        target = (nextStart + column).clamp(nextStart, nextEnd).toInt();
+      }
+    }
+    controller.selection = TextSelection.collapsed(offset: target);
+  }
+
+  void _setCursor(int offset, {bool extendSelection = false}) {
+    final controller = widget.tab.controller;
+    final safe = offset.clamp(0, controller.text.length).toInt();
+    final current = controller.selection;
+    controller.selection = extendSelection && current.isValid
+        ? TextSelection(baseOffset: current.baseOffset, extentOffset: safe)
+        : TextSelection.collapsed(offset: safe);
+  }
+
+  void _selectCurrentWord() {
+    final controller = widget.tab.controller;
+    final offset = controller.selection.isValid
+        ? controller.selection.extentOffset
+        : controller.text.length;
+    final selected = EditorTextNavigation.selectCurrentWord(controller.text, offset);
+    controller.selection = selected;
+  }
+
+  Future<void> _copySelection() async {
+    final controller = widget.tab.controller;
+    final selection = controller.selection;
+    final text = selection.isValid && !selection.isCollapsed
+        ? controller.text.substring(selection.start, selection.end)
+        : controller.text;
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  Future<void> _cutSelection() async {
+    final controller = widget.tab.controller;
+    final selection = controller.selection;
+    if (!selection.isValid || selection.isCollapsed) return;
+    final selectedText = controller.text.substring(selection.start, selection.end);
+    await Clipboard.setData(ClipboardData(text: selectedText));
+    controller.value = EditorTextNavigation.replaceSelection(
+      controller.text,
+      selection,
+      '',
+    );
+  }
+
+  Future<void> _pasteClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final pasted = data?.text;
+    if (pasted == null) return;
+    final controller = widget.tab.controller;
+    final selection = controller.selection;
+    controller.value = EditorTextNavigation.replaceSelection(
+      controller.text,
+      selection,
+      pasted,
+    );
+  }
+
+  KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    final control = keyboard.isControlPressed || keyboard.isMetaPressed;
+    final controller = widget.tab.controller;
+    final selection = controller.selection;
+    final offset = selection.isValid
+        ? selection.extentOffset.clamp(0, controller.text.length).toInt()
+        : controller.text.length;
+    final extend = event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+        event.logicalKey == LogicalKeyboardKey.shiftRight ||
+        keyboard.isShiftPressed;
+
+    if (control && event.logicalKey == LogicalKeyboardKey.keyS) {
+      widget.onSave();
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.keyF) {
+      widget.onSearch(false);
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.keyH) {
+      widget.onSearch(true);
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.space) {
+      widget.onShowCompletions();
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.keyD) {
+      _selectCurrentWord();
+      return KeyEventResult.handled;
+    }
+    if (control && (event.logicalKey == LogicalKeyboardKey.equal ||
+        event.logicalKey == LogicalKeyboardKey.add)) {
+      _changeFontSize(1);
+      return KeyEventResult.handled;
+    }
+    if (control && (event.logicalKey == LogicalKeyboardKey.minus ||
+        event.logicalKey == LogicalKeyboardKey.numpadSubtract)) {
+      _changeFontSize(-1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.home) {
+      _setCursor(control ? 0 : EditorTextNavigation.lineStart(controller.text, offset),
+          extendSelection: extend);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.end) {
+      _setCursor(control ? controller.text.length :
+          EditorTextNavigation.lineEnd(controller.text, offset),
+          extendSelection: extend);
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      _setCursor(EditorTextNavigation.moveByWord(controller.text, offset, forward: false),
+          extendSelection: extend);
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _setCursor(EditorTextNavigation.moveByWord(controller.text, offset, forward: true),
+          extendSelection: extend);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _buildCursorPad() {
+    Widget arrow(IconData icon, String tooltip, int horizontal, int vertical) {
+      return Tooltip(
+        message: tooltip,
+        child: Material(
+          color: const Color(0xFF1B293D),
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _moveCursor(horizontal: horizontal, vertical: vertical),
+            child: SizedBox(
+              width: 38,
+              height: 34,
+              child: Icon(icon, size: 18, color: const Color(0xFFBAE6FD)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: const BoxDecoration(
+        color: Color(0xFF111827),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF26334D)),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.my_location, size: 16, color: Color(0xFF38BDF8)),
+          const SizedBox(width: 7),
+          const Expanded(
+            child: Text(
+              'التحكم بالمؤشر',
+              style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+            ),
+          ),
+          arrow(Icons.keyboard_arrow_left, 'تحريك المؤشر يساراً', -1, 0),
+          const SizedBox(width: 5),
+          arrow(Icons.keyboard_arrow_up, 'السطر السابق', 0, -1),
+          const SizedBox(width: 5),
+          arrow(Icons.keyboard_arrow_down, 'السطر التالي', 0, 1),
+          const SizedBox(width: 5),
+          arrow(Icons.keyboard_arrow_right, 'تحريك المؤشر يميناً', 1, 0),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileSymbolBar() {
+    const symbols = <String>[
+      'TAB', '(', '{', '[', ';', ':', '=', '=>', '.', ',', '->',
+      "'", '"', '`', '&&', '||', '!',
+    ];
+    return Container(
+      height: 48,
+      decoration: const BoxDecoration(
+        color: Color(0xFF111827),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF26334D)),
+        ),
+      ),
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          itemCount: symbols.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (context, index) {
+            final symbol = symbols[index];
+            final label = symbol == 'TAB' ? '⇥' : symbol;
+            return Material(
+              color: const Color(0xFF1B293D),
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _insertSymbol(symbol),
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 38),
+                  padding: const EdgeInsets.symmetric(horizontal: 9),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF304158)),
+                  ),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFFBAE6FD),
+                      fontFamily: 'monospace',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tab = widget.tab;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF080D19),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
+          leading: IconButton(
+            tooltip: 'العودة إلى Bisho IDE',
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                tab.fileName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                tab.language,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF38BDF8)),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'معاينة / تشغيل الملف الحالي',
+              onPressed: widget.onPreview,
+              icon: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF19D889)),
+            ),
+            IconButton(
+              tooltip: 'بناء ومعاينة Flutter',
+              onPressed: widget.onFlutterPreview,
+              icon: const Icon(Icons.phone_android_rounded, color: Color(0xFF38BDF8)),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'أدوات التحرير',
+              onSelected: (action) {
+                switch (action) {
+                  case 'select_word':
+                    _selectCurrentWord();
+                    break;
+                  case 'copy':
+                    _copySelection();
+                    break;
+                  case 'cut':
+                    _cutSelection();
+                    break;
+                  case 'paste':
+                    _pasteClipboard();
+                    break;
+                  case 'wrap':
+                    _toggleWordWrap();
+                    break;
+                  case 'complete':
+                    widget.onShowCompletions();
+                    break;
+                  case 'smaller':
+                    _changeFontSize(-1);
+                    break;
+                  case 'larger':
+                    _changeFontSize(1);
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'select_word',
+                  child: Row(
+                    children: [
+                      Icon(Icons.select_all, size: 20),
+                      const SizedBox(width: 12),
+                      Text('تحديد الكلمة الحالية (Ctrl+D)'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'copy',
+                  child: Row(
+                    children: [
+                      Icon(Icons.copy, size: 20),
+                      const SizedBox(width: 12),
+                      Text('نسخ المحدد'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'cut',
+                  child: Row(
+                    children: [
+                      Icon(Icons.content_cut, size: 20),
+                      const SizedBox(width: 12),
+                      Text('قص المحدد'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'paste',
+                  child: Row(
+                    children: [
+                      Icon(Icons.content_paste, size: 20),
+                      const SizedBox(width: 12),
+                      Text('لصق'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'complete',
+                  child: Row(children: [
+                    Icon(Icons.auto_awesome, size: 20),
+                    SizedBox(width: 12),
+                    Text('الإكمال التلقائي'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'smaller',
+                  child: Row(children: [
+                    Icon(Icons.text_decrease, size: 20),
+                    SizedBox(width: 12),
+                    Text('تصغير الخط'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'larger',
+                  child: Row(children: [
+                    Icon(Icons.text_increase, size: 20),
+                    SizedBox(width: 12),
+                    Text('تكبير الخط'),
+                  ]),
+                ),
+                PopupMenuItem(
+                  value: 'wrap',
+                  child: Row(
+                    children: [
+                      Icon(_wordWrap ? Icons.wrap_text : Icons.notes, size: 20),
+                      const SizedBox(width: 12),
+                      Text(_wordWrap ? 'تعطيل التفاف الأسطر' : 'تفعيل التفاف الأسطر'),
+                    ],
+                  ),
+                ),
+              ],
+              icon: const Icon(Icons.edit_note),
+            ),
+            IconButton(
+              tooltip: 'حفظ الملف',
+              onPressed: widget.onSave,
+              icon: const Icon(Icons.save_rounded),
+            ),
+          ],
+        ),
+
+        body: SafeArea(
+          child: Focus(
+            onKeyEvent: _handleEditorKey,
+            child: Column(
+            children: [
+              _buildMobileSymbolBar(),
+              _buildCursorPad(),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+                  child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF080D19),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF26334D)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: CodeTheme(
+                data: CodeThemeData(styles: monokaiSublimeTheme),
+                child: CodeField(
+                  key: ValueKey('fullscreen-${tab.id}'),
+                  controller: tab.controller,
+                  expands: true,
+                  wrap: _wordWrap,
+                  padding: const EdgeInsets.all(14),
+                  textStyle: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: _fontSize,
+                  ),
+                  gutterStyle: const GutterStyle(
+                    showLineNumbers: true,
+                    showErrors: true,
+                    showFoldingHandles: true,
+                  ),
+                ),
+              ),
+            ),
+                ),
+              ),
+            ],
+          ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+).firstMatch(beforeCursor);
+    final memberMatch = RegExp(
+      r'([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)?
+    final Map<String, List<String>> completions = {
+      'Dart': [
+        'void main() {\n  \n}',
+        'print()',
+        'debugPrint()',
+        'final ',
+        'const ',
+        'late final ',
+        'class ',
+        'abstract class ',
+        'Future<void> ',
+        'async',
+        'await ',
+        'try {\n  \n} catch (error, stackTrace) {\n  debugPrint(error.toString());\n}',
+        'if (mounted) {\n  setState(() {\n    \n  });\n}',
+        'Widget build(BuildContext context) {\n  return const SizedBox.shrink();\n}',
+        'StatelessWidget',
+        'StatefulWidget',
+        'ListView.builder(',
+        'FutureBuilder<',
+        'StreamBuilder<',
+        'for (var i = 0; i < items.length; i++) {\n  \n}',
+      ],
+      'JavaScript': [
+        'console.log()',
+        'const ',
+        'let ',
+        'function ',
+        'async function ',
+        'if () {\n  \n}',
+        'for (let i = 0; i < ; i++) {\n  \n}',
+        'try {\n  \n} catch (error) {\n  console.error(error);\n}',
+      ],
+      'TypeScript': [
+        'console.log()',
+        'const ',
+        'let ',
+        'interface ',
+        'type ',
+        'function ',
+        'async function ',
+        'Promise<void>',
+      ],
+      'Python': [
+        'print()',
+        'def ',
+        'class ',
+        'if __name__ == "__main__":\n    ',
+        'for item in items:\n    ',
+        'with open("file.txt", "r", encoding="utf-8") as file:\n    content = file.read()',
+        'try:\n    \nexcept Exception as error:\n    print(error)',
+        'import ',
+      ],
+      'HTML': [
+        '<!DOCTYPE html>\n<html lang="ar">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title></title>\n</head>\n<body>\n  \n</body>\n</html>',
+        '<div></div>',
+        '<p></p>',
+        '<script>\n\n</script>',
+        '<style>\n\n</style>',
+      ],
+      'CSS': [
+        'display: flex;',
+        'display: grid;',
+        'margin: ;',
+        'padding: ;',
+        'color: ;',
+        '@media (max-width: 600px) {\n  \n}',
+      ],
+      'SQL': [
+        'SELECT * FROM ;',
+        'SELECT  FROM  WHERE ;',
+        'INSERT INTO  () VALUES ();',
+        'UPDATE  SET  =  WHERE ;',
+        'CREATE TABLE  (\n  id INTEGER PRIMARY KEY\n);',
+      ],
+      'Java': [
+        'public static void main(String[] args) {\n    \n}',
+        'System.out.println()',
+        'private final ',
+        'try {\n    \n} catch (Exception error) {\n    error.printStackTrace();\n}',
+        '@Override',
+        'class ',
+      ],
+      'Kotlin': [
+        'fun main() {\n    \n}',
+        'fun ',
+        'suspend fun ',
+        'data class ',
+        'sealed class ',
+        'val ',
+        'var ',
+        'when (value) {\n    else -> {}\n}',
+        'try {\n    \n} catch (error: Exception) {\n    error.printStackTrace()\n}',
+      ],
+      'C++': [
+        '#include <iostream>',
+        'int main() {\n    std::cout << "Hello" << std::endl;\n    return 0;\n}',
+        'std::vector<int> ',
+        'std::string ',
+        'for (int i = 0; i < ; ++i) {\n    \n}',
+        'class ',
+      ],
+      'Bash': [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'if [[  ]]; then\n  \nfi',
+        'for item in "\${items[@]}"; do\n  \n done',
+        'function () {\n  \n}',
+      ],
+      'Markdown': ['# ', '## ', '- ', '1. ', '```\n\n```', '> '],
+      'YAML': ['name: ', 'version: ', 'dependencies:\n  ', 'scripts:\n  '],
+      'JSON': ['{\n  "": ""\n}', '[\n  \n]'],
+      'XML': ['<?xml version="1.0" encoding="UTF-8"?>\n<root>\n</root>', '<root></root>'],
+    };
+
+    final candidates = completions[tab.language] ??
+        <String>['// TODO: ', 'if () {\n  \n}', 'class ', 'function '];
+    final options = EditorCompletionEngine.rank(
+      language: tab.language,
+      prefix: prefix,
+      snippets: [
+        ...candidates,
+        ...EditorCompletionEngine.identifiersIn(
+          source,
+          language: tab.language,
+        ),
+      ],
+      maximumResults: 50,
+    );
+
+    final chosen = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('إكمال تلقائي — ${tab.language}'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 320,
+          child: options.isEmpty
+              ? const Center(child: Text('لا توجد اقتراحات مطابقة'))
+              : ListView.separated(
+                  itemCount: options.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.code, size: 18),
+                    title: Text(
+                      options[index].replaceAll('\n', ' ↵ '),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textDirection: TextDirection.ltr,
+                    ),
+                    onTap: () => Navigator.pop(dialogContext, options[index]),
+                  ),
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إلغاء'),
+          ),
+        ],
+      ),
+    );
+
+    if (chosen == null || !mounted) return;
+    // Do not apply a stale completion if the document changed while the
+    // suggestion dialog was open. This preserves newer user edits.
+    if (controller.text != source) {
+      setState(() {
+        status = 'تغير محتوى المحرر أثناء عرض الاقتراح؛ لم يتم إدراج الإكمال.';
+      });
+      return;
+    }
+    final currentSelection = controller.selection;
+    final hasSelection =
+        currentSelection.isValid && !currentSelection.isCollapsed;
+    final replaceStart = hasSelection
+        ? currentSelection.start.clamp(0, source.length).toInt()
+        : (match?.start ?? cursor);
+    final replaceEnd = hasSelection
+        ? currentSelection.end.clamp(0, source.length).toInt()
+        : cursor;
+    final updated = source.replaceRange(replaceStart, replaceEnd, chosen);
+    controller.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: replaceStart + chosen.length),
+    );
+    setState(() {
+      tab.isSaved = false;
+      status = 'تم إدراج الإكمال';
+    });
+    _scheduleTabStateSave();
+  }
+
+  Future<void> copyCode() async {
+    final controller = activeTab.controller;
+    final selection = controller.selection;
+    final text = selection.isValid && !selection.isCollapsed
+        ? controller.text.substring(selection.start, selection.end)
+        : controller.text;
+    await Clipboard.setData(ClipboardData(text: text));
+    showMessage(selection.isValid && !selection.isCollapsed
+        ? 'تم نسخ النص المحدد'
+        : 'تم نسخ الكود كاملاً');
+  }
+
+  void openFlutterPreview() {
+    Navigator.push(
+      context,
+      _DarkPageRoute(
+        builder: (_) => FlutterPreviewScreen(
+          projectName: projectName,
+          projectUri: projectUri,
+          safFiles: safFiles,
+          onPickProject: openProjectFolder,
+          projectUriProvider: () => projectUri,
+          projectNameProvider: () => projectName,
+        ),
+      ),
+    );
+  }
+
+  Future<void> openLanguagePreview() async {
+    final tab = activeTab;
+    final engine = LanguageEngineManager.engineForFile(tab.fileName);
+
+    switch (engine) {
+      case LanguageEngine.webProject:
+        // إذا فتح المستخدم ملف HTML منفرداً، نطلب منه اختيار مجلد المشروع
+        // مرة واحدة ثم نتابع المعاينة تلقائياً بدلاً من إيقافه برسالة فقط.
+        if (projectUri == null || projectUri!.isEmpty) {
+          showMessage('اختر مجلد المشروع الذي يحتوي ملف HTML وموارده');
+          await openProjectFolder();
+          if (!mounted || projectUri == null || projectUri!.isEmpty) return;
+        }
+
+        final htmlUri = tab.fileUri;
+        if (htmlUri == null || htmlUri.isEmpty) {
+          showMessage(
+            'هذا الملف غير مرتبط بموقع داخل المشروع. افتحه من مستكشف المشروع أو احفظه داخله أولاً.',
+          );
+          return;
+        }
+
+        // تحقق من أن ملف HTML موجود فعلاً داخل جذر المشروع المختار.
+        try {
+          final rootItem = await safFiles.getItem(projectUri!);
+          if (rootItem == null || !rootItem.isDir) {
+            showMessage('تعذر الوصول إلى مجلد المشروع؛ اختره مرة أخرى');
+            return;
+          }
+          final projectTree = await collectSubtree(rootItem);
+          final fileBelongsToProject = projectTree.any(
+            (entry) => entry.uri == htmlUri && !entry.isDir,
+          );
+          if (!fileBelongsToProject) {
+            showMessage(
+              'ملف HTML ليس داخل مجلد المشروع المختار. اختر المجلد الأب الصحيح.',
+            );
+            return;
+          }
+        } catch (error) {
+          showMessage('تعذر فحص ملفات المشروع: $error');
+          return;
+        }
+
+        if (!mounted) return;
+        await Navigator.push(
+          context,
+          _DarkPageRoute(
+            builder: (_) => HtmlPreviewScreen(
+              htmlCode: tab.controller.text,
+              projectUri: projectUri,
+              htmlFileUri: htmlUri,
+            ),
+          ),
+        );
+        return;
+
+      case LanguageEngine.webCode:
+        final mode =
+            LanguageEngineManager.webModeForFile(tab.fileName);
+
+        if (mode == null) {
+          showMessage('نوع ملف الويب غير مدعوم');
+          return;
+        }
+
+        await Navigator.push(
+          context,
+          _DarkPageRoute(
+            builder: (_) => WebCodeRunnerScreen(
+              code: tab.controller.text,
+              fileName: tab.fileName,
+              mode: mode,
+            ),
+          ),
+        );
+        return;
+
+      case LanguageEngine.jsonViewer:
+        await Navigator.push(
+          context,
+          _DarkPageRoute(
+            builder: (_) => WebCodeRunnerScreen(
+              code: tab.controller.text,
+              fileName: tab.fileName,
+              mode: 'json',
+            ),
+          ),
+        );
+        return;
+
+      case LanguageEngine.unsupported:
+        _showExecutionCapabilityDialog(tab.fileName);
+        return;
+    }
+  }
+
+  void _showExecutionCapabilityDialog(String fileName) {
+    final capability = LanguageEngineManager.capabilitiesForFile(fileName);
+    final language = capability?.language ?? 'هذه اللغة';
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFF38BDF8)),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('تشغيل هذا النوع من الملفات')),
+        ]),
+        content: Text(
+          'يدعم Bisho IDE تحرير $language وتلوين الكود، لكن لا يحتوي حالياً '
+          'على مترجم أو مفسّر محلي لهذا النوع.\n\n'
+          'يمكنك متابعة التحرير والحفظ واستخدام أدوات الفحص المتاحة. '
+          'لن يبدأ التطبيق عملية تشغيل وهمية أو يعرض نتيجة غير حقيقية.',
+          style: const TextStyle(height: 1.55),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('حسناً'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(dialogContext);
+              _openDiagnosticsPanel();
+            },
+            icon: const Icon(Icons.rule_rounded),
+            label: const Text('فحص الكود'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void showMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Widget buildExplorerNode(String directoryUri, int depth) {
+    return FutureBuilder<List<SafDocumentFile>>(
+      key: ValueKey('$_explorerRevision-$directoryUri'),
+      future: safFiles.listDirectory(directoryUri),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.all(8),
+            child: LinearProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const ListTile(
+            dense: true,
+            title: Text('تعذر قراءة المجلد'),
+          );
+        }
+
+        final items =
+            List<SafDocumentFile>.from(snapshot.data ?? []);
+
+        final filter = _explorerFilter.trim().toLowerCase();
+        const explorerTypeExtensions = <String, Set<String>>{
+          'code': {'dart', 'py', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'java', 'kt', 'kts', 'swift', 'c', 'h', 'cpp', 'hpp', 'go', 'rs', 'php', 'sh', 'bash'},
+          'config': {'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'properties', 'gradle'},
+          'web': {'html', 'htm', 'css', 'scss', 'sass', 'md', 'markdown'},
+          'media': {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp3', 'wav', 'mp4', 'webm'},
+        };
+        items.removeWhere((item) {
+          if (item.isDir) return false;
+          if (filter.isNotEmpty && !item.name.toLowerCase().contains(filter)) return true;
+          final allowed = explorerTypeExtensions[_explorerTypeFilter];
+          if (allowed == null) return false;
+          final dot = item.name.lastIndexOf('.');
+          final extension = dot < 0 ? '' : item.name.substring(dot + 1).toLowerCase();
+          return !allowed.contains(extension);
+        });
+
+        items.sort((a, b) {
+          if (a.isDir && !b.isDir) return -1;
+          if (!a.isDir && b.isDir) return 1;
+
+          return a.name.toLowerCase().compareTo(
+                b.name.toLowerCase(),
+              );
+        });
+
+        if (items.isEmpty) {
+          return Padding(
+            padding: const EdgeInsets.all(8),
+            child: Text(
+              filter.isEmpty ? 'المجلد فارغ' : 'لا توجد عناصر تطابق البحث',
+              style: TextStyle(color: Colors.white54),
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: items.map((entity) {
+            if (entity.isDir) {
+              final isSelectedDirectory =
+                  selectedDirectoryUri == entity.uri;
+
+              return Padding(
+                padding: EdgeInsets.only(right: depth * 5.0),
+                child: ExpansionTile(
+                  key: PageStorageKey<String>(entity.uri),
+                  dense: true,
+                  tilePadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                  ),
+                  leading: Icon(
+                    isSelectedDirectory
+                        ? Icons.folder_special
+                        : Icons.folder,
+                    color: isSelectedDirectory
+                        ? const Color(0xFF38BDF8)
+                        : const Color(0xFFFBBF24),
+                    size: 20,
+                  ),
+                  title: Text(
+                    entity.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: isSelectedDirectory
+                          ? const Color(0xFF38BDF8)
+                          : null,
+                      fontWeight: isSelectedDirectory
+                          ? FontWeight.bold
+                          : FontWeight.normal,
+                    ),
+                  ),
+                  trailing: PopupMenuButton<String>(
+                    icon: const Icon(Icons.more_vert, size: 18),
+                    onSelected: (value) {
+                      if (value == 'select') {
+                        selectCreationDirectory(
+                          entity.uri,
+                          entity.name,
+                        );
+                      }
+
+                      if (value == 'rename') {
+                        renameEntity(entity);
+                      }
+
+                      if (value == 'delete') {
+                        deleteEntity(entity);
+                      }
+                      if (value == 'copy') {
+                        copyOrMoveEntity(entity, move: false);
+                      }
+                      if (value == 'move') {
+                        copyOrMoveEntity(entity, move: true);
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'select',
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.drive_file_move,
+                              size: 18,
+                            ),
+                            SizedBox(width: 8),
+                            Text('تعيين كمجلد عمل'),
+                          ],
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(value: 'copy', child: Text('نسخ إلى مجلد…')),
+                      const PopupMenuItem(value: 'move', child: Text('نقل إلى مجلد…')),
+                      const PopupMenuItem(
+                        value: 'rename',
+                        child: Text('إعادة تسمية'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('حذف'),
+                      ),
+                    ],
+                  ),
+                  children: [
+                    buildExplorerNode(entity.uri, depth + 1),
+                  ],
+                ),
+              );
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(right: depth * 5.0),
+              child: ListTile(
+                dense: true,
+                visualDensity: VisualDensity.compact,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                ),
+                leading: LanguageBrandBadge(
+                  language: LanguageIdentity.fromFileName(entity.name).name,
+                  size: 25,
+                ),
+                title: Text(
+                  entity.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12),
+                ),
+                onTap: () => openProjectFile(entity, directoryUri),
+                trailing: PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, size: 18),
+                  onSelected: (value) {
+                    if (value == 'rename') {
+                      renameEntity(entity);
+                    }
+
+                    if (value == 'delete') {
+                      deleteEntity(entity);
+                    }
+                    if (value == 'copy') {
+                      copyOrMoveEntity(entity, move: false);
+                    }
+                    if (value == 'move') {
+                      copyOrMoveEntity(entity, move: true);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'copy', child: Text('نسخ إلى مجلد…')),
+                    PopupMenuItem(value: 'move', child: Text('نقل إلى مجلد…')),
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Text('إعادة تسمية'),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('حذف'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  Widget buildExplorer() {
+    return Container(
+      width: 300,
+      color: const Color(0xFF0F1A2A),
+      child: Column(
+        children: [
+          Container(
+            height: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFF16263B),
+              border: Border(bottom: BorderSide(color: Color(0xFF30445E))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF38BDF8).withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.folder_copy_rounded, color: Color(0xFF38BDF8), size: 19),
+                ),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    'مستكشف الملفات',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: createProjectFile,
+                  icon: const Icon(Icons.note_add, size: 19),
+                  tooltip: 'ملف جديد',
+                ),
+                IconButton(
+                  onPressed: createProjectFolder,
+                  icon: const Icon(Icons.create_new_folder, size: 19),
+                  tooltip: 'مجلد جديد',
+                ),
+                IconButton(
+                  onPressed: refreshExplorer,
+                  icon: const Icon(Icons.refresh, size: 19),
+                  tooltip: 'تحديث المستكشف',
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          if (projectUri != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 7, 8, 5),
+              child: TextField(
+                controller: _explorerFilterController,
+                onChanged: (value) => setState(() => _explorerFilter = value),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'تصفية الملفات والمجلدات',
+                  prefixIcon: const Icon(Icons.search, size: 18),
+                  suffixIcon: _explorerFilter.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: 'مسح التصفية',
+                          icon: const Icon(Icons.close, size: 17),
+                          onPressed: () {
+                            _explorerFilterController.clear();
+                            setState(() => _explorerFilter = '');
+                          },
+                        ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ),
+          if (projectUri != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: DropdownButtonFormField<String>(
+                initialValue: _explorerTypeFilter,
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'نوع الملفات',
+                  prefixIcon: Icon(Icons.filter_alt_outlined, size: 18),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('كل الملفات')),
+                  DropdownMenuItem(value: 'code', child: Text('ملفات البرمجة')),
+                  DropdownMenuItem(value: 'config', child: Text('ملفات الإعدادات')),
+                  DropdownMenuItem(value: 'web', child: Text('الويب والتوثيق')),
+                  DropdownMenuItem(value: 'media', child: Text('الصور والوسائط')),
+                ],
+                onChanged: (value) => setState(() => _explorerTypeFilter = value ?? 'all'),
+              ),
+            ),
+          if (projectUri == null)
+            Expanded(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.folder_open,
+                        size: 38,
+                        color: Colors.white54,
+                      ),
+                      const SizedBox(height: 10),
+                      const Text(
+                        'لم يتم فتح مشروع',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const SizedBox(height: 10),
+                      FilledButton(
+                        onPressed: openProjectFolder,
+                        child: const Text('فتح مجلد'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: Column(
+                children: [
+                  ListTile(
+                    dense: true,
+                    leading: const Icon(
+                      Icons.folder,
+                      color: Color(0xFFFBBF24),
+                    ),
+                    title: Text(
+                      projectName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                    trailing: IconButton(
+                      onPressed: openProjectFolder,
+                      icon: const Icon(Icons.folder_open, size: 18),
+                    ),
+                  ),
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 3,
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1E293B),
+                      borderRadius: BorderRadius.circular(7),
+                      border: Border.all(
+                        color: selectedDirectoryUri != null
+                            ? const Color(0xFF38BDF8)
+                            : const Color(0xFF334155),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          selectedDirectoryUri != null
+                              ? Icons.folder_special
+                              : Icons.home_work,
+                          size: 15,
+                          color: const Color(0xFF38BDF8),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            'العمل: $creationDirectoryName',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 10),
+                          ),
+                        ),
+                        if (selectedDirectoryUri != null)
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints(
+                              minWidth: 26,
+                              minHeight: 26,
+                            ),
+                            padding: EdgeInsets.zero,
+                            tooltip: 'العودة إلى جذر المشروع',
+                            onPressed: resetCreationDirectory,
+                            icon: const Icon(
+                              Icons.home,
+                              size: 17,
+                              color: Colors.white70,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: buildExplorerNode(projectUri!, 0),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildTabBar() {
+    return Container(
+      height: 56,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0C1727),
+        border: Border(bottom: BorderSide(color: Color(0xFF30445E))),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: tabs.length,
+              itemBuilder: (context, index) {
+                final tab = tabs[index];
+                final selected = index == activeIndex;
+
+                return InkWell(
+                  onTap: () => selectTab(index),
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 100,
+                      maxWidth: 180,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 9),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFF182A40)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF3B7198)
+                            : Colors.transparent,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        LanguageBrandBadge(
+                          language: LanguageIdentity.fromFileName(tab.fileName).name,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 5),
+                        Flexible(
+                          child: Text(
+                            tab.fileName,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: selected ? const Color(0xFFE6F4FF) : const Color(0xFF9AABC0),
+                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        if (!tab.isSaved)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 4),
+                            child: Icon(
+                              Icons.circle,
+                              size: 7,
+                              color: Colors.amber,
+                            ),
+                          ),
+                        GestureDetector(
+                          onTap: () => closeTab(index),
+                          child: const Padding(
+                            padding: EdgeInsets.all(5),
+                            child: Icon(
+                              Icons.close,
+                              size: 14,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          IconButton(
+            onPressed: createNewTab,
+            icon: const Icon(
+              Icons.add,
+              color: Color(0xFF38BDF8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openEditorFullScreen() {
+    if (_editorFullScreen || tabs.isEmpty) return;
+
+    // Remove the embedded CodeField first. A CodeController should not be
+    // attached to two CodeFields at the same time while the route animates.
+    setState(() => _editorFullScreen = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(context)
+          .push(
+            _DarkPageRoute<void>(
+              builder: (_) => EditorFullScreenScreen(
+                tab: activeTab,
+                fontSize: _editorFontSize,
+                onSave: saveCurrentToDisk,
+                onFontSizeChange: changeEditorFontSize,
+                onShowCompletions: showCodeCompletions,
+                onSearch: (replaceMode) =>
+                    searchCode(startInReplaceMode: replaceMode),
+                onPreview: openLanguagePreview,
+                onFlutterPreview: openFlutterPreview,
+              ),
+            ),
+          )
+          .whenComplete(() {
+            if (mounted) setState(() => _editorFullScreen = false);
+          });
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _explorerFilterController.dispose();
+    _isDisposing = true;
+    _tabStateSaveTimer?.cancel();
+    // Capture the final editor state before releasing the controllers.
+    saveTabStateSilently();
+    for (final tab in tabs) {
+      tab.controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (tabs.isEmpty) {
+      return Scaffold(
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const CircularProgressIndicator(),
+              const SizedBox(height: 14),
+              Text(
+                isRestoring ? 'جاري استعادة مساحة العمل...' : 'جاري تجهيز المحرر...',
+                style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_editorFullScreen) {
+      // The actual editor is displayed by EditorFullScreenScreen on its own
+      // route. Keep this route lightweight while it is underneath.
+      return const Scaffold(
+        backgroundColor: Color(0xFF080D19),
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    final tab = activeTab;
+    final selection = tab.controller.selection;
+    final cursorOffset = selection.isValid
+        ? selection.extentOffset.clamp(0, tab.controller.text.length).toInt()
+        : tab.controller.text.length;
+    final cursorPosition = _cursorLineColumn(tab.controller.text, cursorOffset);
+    final cursorLine = cursorPosition.$1;
+    final cursorColumn = cursorPosition.$2;
+
+    return PopScope<Object?>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) _confirmApplicationExit();
+      },
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+        drawer: _editorFullScreen || !explorerVisible
+            ? null
+            : Drawer(
+                width: 320,
+                backgroundColor: const Color(0xFF111827),
+                child: Theme(
+                  data: BishoTheme.darkTheme,
+                  child: SafeArea(child: buildExplorer()),
+                ),
+              ),
+        appBar: _editorFullScreen ? null : AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: false,
+          titleSpacing: 14,
+          shape: const Border(
+            bottom: BorderSide(color: Color(0xFF26374E), width: 0.8),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.code_rounded, color: Color(0xFF38BDF8), size: 25),
+              SizedBox(width: 9),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Bisho IDE', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  SizedBox(height: 1),
+                  Text('بيئة التطوير', style: TextStyle(color: Color(0xFF91A4BE), fontSize: 9, fontWeight: FontWeight.w500)),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              onPressed: searchCode,
+              icon: const Icon(Icons.search_rounded),
+              tooltip: 'بحث في المشروع والكود',
+            ),
+            IconButton(
+              onPressed: _openCommandPalette,
+              icon: const Icon(Icons.keyboard_command_key_rounded, color: Color(0xFF38BDF8)),
+              tooltip: 'لوحة الأوامر',
+            ),
+            IconButton(
+              onPressed: saveCurrentToDisk,
+              icon: const Icon(Icons.save_rounded),
+              tooltip: 'حفظ الملف',
+            ),
+            IconButton(
+              onPressed: _showTerminalPanel,
+              icon: const Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
+              tooltip: 'فتح الطرفية',
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'المزيد من الأدوات',
+              icon: const Icon(Icons.more_vert_rounded),
+              onSelected: (value) {
+                if (value == 'new') createNewTab();
+                if (value == 'new_project') createNewProject();
+                if (value == 'open') openFile();
+                if (value == 'folder') openProjectFolder();
+                if (value == 'projects') showProjectManager();
+                if (value == 'export') exportFile();
+                if (value == 'export_project') exportProjectArchive();
+                if (value == 'import_zip') importProjectArchive();
+                if (value == 'search') searchCode();
+                if (value == 'copy') copyCode();
+                if (value == 'saveall') saveAllTabs();
+                if (value == 'terminal') _showTerminalPanel();
+                if (value == 'complete') showCodeCompletions();
+                if (value == 'fullscreen') _openEditorFullScreen();
+                if (value == 'theme') BishoThemeController.toggle();
+                if (value == 'exit') _confirmApplicationExit();
+              },
+              itemBuilder: (context) => [
+                _bishoMenuItem('new', Icons.note_add_rounded, 'ملف جديد'),
+                _bishoMenuItem('new_project', Icons.create_new_folder_rounded, 'إنشاء مشروع جديد'),
+                _bishoMenuItem('open', Icons.file_open_rounded, 'فتح ملف'),
+                _bishoMenuItem('folder', Icons.folder_open_rounded, 'فتح مجلد مشروع'),
+                _bishoMenuItem('projects', Icons.workspaces_rounded, 'مدير المشاريع الذكي'),
+                const PopupMenuDivider(),
+                _bishoMenuItem('export', Icons.download_rounded, 'تصدير الملف'),
+                _bishoMenuItem('export_project', Icons.archive_rounded, 'تصدير المشروع ZIP كاملاً'),
+                _bishoMenuItem('import_zip', Icons.unarchive_rounded, 'استيراد مشروع ZIP'),
+                const PopupMenuDivider(),
+                _bishoMenuItem('search', Icons.search_rounded, 'بحث'),
+                _bishoMenuItem('copy', Icons.copy_rounded, 'نسخ الكود'),
+                _bishoMenuItem('complete', Icons.auto_awesome_rounded, 'الإكمال التلقائي'),
+                _bishoMenuItem('saveall', Icons.save_rounded, 'حفظ جميع الملفات'),
+                _bishoMenuItem('terminal', Icons.terminal_rounded, 'فتح الطرفية'),
+                _bishoMenuItem('fullscreen', Icons.fullscreen_rounded, 'فتح المحرر في شاشة كاملة'),
+                _bishoMenuItem('theme', Icons.palette_outlined, 'تبديل المظهر'),
+                const PopupMenuDivider(),
+                _bishoMenuItem('exit', Icons.exit_to_app_rounded, 'الخروج من التطبيق', color: Colors.orangeAccent),
+              ],
+            ),
+            const SizedBox(width: 4),
+          ],
+        ),
+        body: Column(
+          children: [
+            if (_editorFullScreen)
+              Container(
+                height: 48,
+                color: const Color(0xFF151C30),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      onPressed: () => setState(() => _editorFullScreen = false),
+                      icon: const Icon(Icons.fullscreen_exit),
+                      tooltip: 'العودة إلى واجهة IDE',
+                    ),
+                    Expanded(
+                      child: Text(
+                        tab.fileName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: saveCurrentToDisk,
+                      icon: const Icon(Icons.save),
+                      tooltip: 'حفظ الملف',
+                    ),
+                  ],
+                ),
+              ),
+            if (!_editorFullScreen) ...[
+            Theme(data: BishoTheme.darkTheme, child: buildTabBar()),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(color: Theme.of(context).colorScheme.outline),
+                ),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.insert_drive_file_outlined, size: 16, color: Color(0xFF94A3B8)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      tab.fileName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  DropdownButton<String>(
+                    borderRadius: BorderRadius.circular(12),
+                    isDense: true,
+                    value: tab.language,
+                    dropdownColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    underline: const SizedBox(),
+                    items: languages.keys.map((language) {
+                      return DropdownMenuItem<String>(
+                        value: language,
+                        child: Text(language),
+                      );
+                    }).toList(),
+                    onChanged: changeLanguage,
+                  ),
+                ],
+              ),
+            ),
+
+            Expanded(
+              child: Theme(
+                data: BishoTheme.darkTheme,
+                child: _buildToolsDashboard(tab),
+              ),
+            ),
+            if (!_editorFullScreen && _bottomPanelVisible)
+              Theme(data: BishoTheme.darkTheme, child: buildBottomPanel(tab)),
+            if (!_editorFullScreen)
+              Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: const BoxDecoration(
+                color: Color(0xFF101B2D),
+                border: Border(top: BorderSide(color: Color(0xFF26374E))),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.circle,
+                    color: tab.isSaved ? Colors.green : Colors.amber,
+                    size: 9,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      status,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10),
+                    ),
+                  ),
+                  Text(
+                    'Ln $cursorLine, Col $cursorColumn',
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 10,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    tab.language,
+                    style: const TextStyle(
+                      color: Color(0xFF38BDF8),
+                      fontSize: 10,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    tab.isSaved ? 'محفوظ' : 'غير محفوظ',
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          ],
+        ),
+      ),
+      ),
+    );
+  }
+
+  Widget _buildToolsDashboard(EditorTab tab) {
+    final selection = tab.controller.selection;
+    final cursorOffset = selection.isValid
+        ? selection.extentOffset.clamp(0, tab.controller.text.length).toInt()
+        : tab.controller.text.length;
+    final cursorPosition = _cursorLineColumn(tab.controller.text, cursorOffset);
+    const cyan = Color(0xFF38BDF8);
+    const blue = Color(0xFF60A5FA);
+    const violet = Color(0xFFA78BFA);
+    const green = Color(0xFF34D399);
+    const amber = Color(0xFFFBBF24);
+    const red = Color(0xFFFB7185);
+
+    // Keep every existing command reachable; this is a presentation-only
+    // regrouping. Action callbacks and their underlying services are unchanged.
+    final projectActions = <_DashboardAction>[
+      _DashboardAction(Icons.create_new_folder_rounded, 'إنشاء مشروع', createNewProject, cyan),
+      _DashboardAction(Icons.folder_open_rounded, 'فتح مجلد مشروع', openProjectFolder, cyan),
+      _DashboardAction(Icons.workspaces_rounded, 'مدير المشاريع الذكي', showProjectManager, violet),
+      _DashboardAction(Icons.drive_folder_upload_rounded, 'استيراد مشروع', importExistingProject, green),
+      _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, cyan),
+      _DashboardAction(Icons.file_open_rounded, 'فتح ملف', openFile, cyan),
+      _DashboardAction(Icons.save_rounded, 'حفظ الملف', saveCurrentToDisk, cyan),
+      _DashboardAction(Icons.save_as_rounded, 'حفظ جميع الملفات', saveAllTabs, green),
+      _DashboardAction(Icons.download_rounded, 'تصدير ملف', exportFile, blue),
+      _DashboardAction(Icons.archive_rounded, 'تصدير المشروع ZIP', exportProjectArchive, blue),
+      _DashboardAction(Icons.unarchive_rounded, 'استيراد مشروع ZIP', importProjectArchive, green),
+      _DashboardAction(Icons.backup_rounded, 'إنشاء نسخة احتياطية', exportProjectBackup, green),
+      _DashboardAction(Icons.settings_backup_restore_rounded, 'استعادة نسخة احتياطية', restoreProjectBackup, green),
+      _DashboardAction(Icons.history_rounded, 'سجل النسخ الاحتياطية', manageProjectBackups, green),
+    ];
+
+    final buildActions = <_DashboardAction>[
+      _DashboardAction(Icons.build_circle_rounded, 'مركز البناء والمحرك', openFlutterPreview, blue),
+    ];
+
+    final editingActions = <_DashboardAction>[
+      _DashboardAction(Icons.search_rounded, 'البحث في الكود', searchCode, cyan),
+      _DashboardAction(Icons.vertical_split_rounded, 'تقسيم المحرر', _openSplitEditor, violet),
+      _DashboardAction(Icons.find_replace_rounded, 'البحث والاستبدال', () => searchCode(startInReplaceMode: true), violet),
+      _DashboardAction(Icons.manage_search_rounded, 'بحث متقدم (Regex)', _openAdvancedSearch, cyan),
+      _DashboardAction(Icons.undo_rounded, 'تراجع', undoCodeEdit, red),
+      _DashboardAction(Icons.redo_rounded, 'إعادة', redoCodeEdit, green),
+      _DashboardAction(Icons.auto_awesome_rounded, 'الإكمال التلقائي', showCodeCompletions, violet),
+      _DashboardAction(Icons.copy_all_rounded, 'تكرار الأسطر', duplicateSelectedLines, cyan),
+      _DashboardAction(Icons.arrow_upward_rounded, 'نقل السطر لأعلى', moveCurrentLineUp, cyan),
+      _DashboardAction(Icons.arrow_downward_rounded, 'نقل السطر لأسفل', moveCurrentLineDown, cyan),
+      _DashboardAction(Icons.comment_rounded, 'تعليق أو إلغاء التعليق', toggleSelectedLineComments, green),
+      _DashboardAction(Icons.compare_arrows_rounded, 'الانتقال للقوس المطابق', jumpToMatchingBracket, cyan),
+      _DashboardAction(Icons.copy_rounded, 'نسخ الكود', copyCode, blue),
+      _DashboardAction(Icons.text_increase_rounded, 'تكبير خط المحرر', () => changeEditorFontSize(1), cyan),
+      _DashboardAction(Icons.text_decrease_rounded, 'تصغير خط المحرر', () => changeEditorFontSize(-1), cyan),
+      _DashboardAction(Icons.difference_rounded, 'مقارنة النص', _openTextDiffDialog, violet),
+    ];
+
+    final qualityActions = <_DashboardAction>[
+      _DashboardAction(Icons.auto_fix_high_rounded, 'مساعد إصلاح الأخطاء', _openDiagnosticsPanel, amber),
+      _DashboardAction(Icons.auto_fix_high_rounded, 'إصلاحات مقترحة بمعاينة', _openFixAssistant, amber),
+      _DashboardAction(Icons.format_align_left_rounded, 'تنسيق الكود', _openFormatPreview, cyan),
+      _DashboardAction(Icons.restore_rounded, 'سجل إصدارات الملف', _openVersionHistory, green),
+      _DashboardAction(Icons.health_and_safety_rounded, 'فحص جودة المشروع', _openProjectInsightsPanel, green),
+      _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
+      _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
+      _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, blue),
+    ];
+
+    final preferenceActions = <_DashboardAction>[
+      _DashboardAction(Icons.tune_rounded, 'إعدادات مساحة العمل', _showWorkspaceSettings, blue),
+      _DashboardAction(Icons.palette_rounded, 'تبديل المظهر الفاتح والداكن', _showDashboardThemeInfo, violet),
+      _DashboardAction(Icons.bug_report_outlined, 'لوحة المشكلات', _openDiagnosticsPanel, amber),
+    ];
+
+    final allActions = <_DashboardAction>[
+      ...projectActions,
+      ...buildActions,
+      ...editingActions,
+      ...qualityActions,
+      ...preferenceActions,
+    ];
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF101D32), Color(0xFF0B1220), Color(0xFF080E19)],
+          stops: [0, .38, 1],
+        ),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 30),
+        children: [
+          _dashboardFileStrip(tab),
+          if (_splitTabId != null) ...[
+            const SizedBox(height: 12),
+            _buildSplitEditorPanel(),
+          ],
+          const SizedBox(height: 13),
+          _dashboardHero(tab),
+          const SizedBox(height: 16),
+          _dashboardPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: cyan.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(Icons.code_rounded, color: cyan, size: 23),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('مساحة العمل', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(
+                        projectName == 'لا يوجد مشروع' ? 'ابدأ مشروعاً جديداً أو افتح ملفاتك' : projectName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF9BAFCB)),
+                      ),
+                    ],
+                  )),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: tab.isSaved ? green.withValues(alpha: .12) : amber.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.circle, size: 7, color: tab.isSaved ? green : amber),
+                      const SizedBox(width: 6),
+                      Text(tab.isSaved ? 'محفوظ' : 'غير محفوظ',
+                        style: TextStyle(fontSize: 10, color: tab.isSaved ? green : amber, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(child: _dashboardProjectCard(
+                    icon: Icons.folder_special_rounded,
+                    title: projectName == 'لا يوجد مشروع' ? 'المشروع الحالي' : projectName,
+                    subtitle: projectUri ?? 'لا يوجد مجلد مشروع مرتبط حالياً',
+                    onTap: projectUri != null ? openProjectFolder : createNewProject,
+                    accent: cyan,
+                  )),
+                ]),
+                const SizedBox(height: 8),
+                _workspaceMetricsPanel(),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          _dashboardActionSection(
+            icon: Icons.folder_copy_rounded,
+            title: 'المشاريع والملفات',
+            subtitle: 'إنشاء وفتح واستيراد وحفظ وتصدير ونسخ احتياطي',
+            actions: projectActions,
+            initiallyExpanded: true,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.build_circle_rounded,
+            title: 'البناء والمحرك المحلي والسحابي',
+            subtitle: 'إدارة المحرك وفحصه وتشغيل البناء ومتابعة APK',
+            actions: buildActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.edit_note_rounded,
+            title: 'أدوات تحرير الكود',
+            subtitle: 'البحث والتعديل والتنقل والإكمال وأدوات النص',
+            actions: editingActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.fact_check_rounded,
+            title: 'الفحص والأدوات',
+            subtitle: 'تحليل الكود وجودة المشروع واللغات والإضافات',
+            actions: qualityActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.settings_rounded,
+            title: 'التفضيلات والإعدادات',
+            subtitle: 'تخصيص مساحة العمل ومظهر التطبيق',
+            actions: preferenceActions,
+          ),
+          const SizedBox(height: 14),
+          _dashboardPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _dashboardSectionTitle(Icons.flash_on_rounded, 'بدء سريع'),
+                const SizedBox(height: 10),
+                LayoutBuilder(builder: (context, constraints) {
+                  final width = (constraints.maxWidth - 9) / 2;
+                  final quickActions = <_DashboardAction>[
+                    _DashboardAction(Icons.create_new_folder_rounded, 'مشروع جديد', createNewProject, cyan),
+                    _DashboardAction(Icons.folder_open_rounded, 'فتح مشروع', openProjectFolder, green),
+                    _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, blue),
+                    _DashboardAction(Icons.search_rounded, 'بحث في الكود', searchCode, violet),
+                  ];
+                  return Wrap(
+                    spacing: 9,
+                    runSpacing: 9,
+                    children: quickActions.map((action) => SizedBox(
+                      width: width,
+                      child: _dashboardFeatureCard(action),
+                    )).toList(),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _dashboardPanel(
+            child: Row(children: [
+              const Icon(Icons.insert_drive_file_outlined, color: cyan, size: 19),
+              const SizedBox(width: 9),
+              Expanded(child: Text(tab.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+              Text(tab.language, style: const TextStyle(color: cyan, fontSize: 11, fontWeight: FontWeight.w700)),
+              const SizedBox(width: 10),
+              Text('Ln ${cursorPosition.$1}, Col ${cursorPosition.$2}',
+                style: const TextStyle(color: Color(0xFF9BAFCB), fontSize: 10, fontFamily: 'monospace')),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => _showAllDashboardTools(allActions),
+            icon: const Icon(Icons.apps_rounded),
+            label: const Text('عرض جميع الأدوات في قائمة واحدة'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardHero(EditorTab tab) {
+    const cyan = Color(0xFF38BDF8);
+    const violet = Color(0xFFA78BFA);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [Color(0xFF173D61), Color(0xFF18264B), Color(0xFF251D49)],
+        ),
+        border: Border.all(color: const Color(0xFF47739C).withValues(alpha: .65)),
+        boxShadow: const [BoxShadow(color: Color(0x26038BCE), blurRadius: 22, offset: Offset(0, 8))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 46, height: 46,
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .10), borderRadius: BorderRadius.circular(15)),
+            child: const Icon(Icons.terminal_rounded, color: cyan, size: 27)),
+          const SizedBox(width: 12),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('مرحباً بك في Bisho IDE', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+            SizedBox(height: 4),
+            Text('بيئة عملك البرمجية — أنشئ، حرّر، وابنِ تطبيقاتك', maxLines: 2,
+              style: TextStyle(color: Color(0xFFC5D8EF), fontSize: 11, height: 1.35)),
+          ])),
+          Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFF34D399), shape: BoxShape.circle)),
+        ]),
+        const SizedBox(height: 17),
+        Row(children: [
+          Expanded(child: _heroMetric(Icons.folder_special_rounded, 'المشروع', projectName == 'لا يوجد مشروع' ? 'غير محدد' : projectName)),
+          const SizedBox(width: 8),
+          Expanded(child: _heroMetric(Icons.description_rounded, 'الملف المفتوح', tab.fileName)),
+          const SizedBox(width: 8),
+          Expanded(child: _heroMetric(Icons.code_rounded, 'اللغة', tab.language)),
+        ]),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(child: FilledButton.icon(
+            onPressed: projectUri == null ? createNewProject : openProjectFolder,
+            icon: Icon(projectUri == null ? Icons.add_rounded : Icons.folder_open_rounded, size: 18),
+            label: Text(projectUri == null ? 'ابدأ مشروعاً' : 'فتح المشروع'),
+            style: FilledButton.styleFrom(backgroundColor: cyan, foregroundColor: const Color(0xFF06243A),
+              minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
+          const SizedBox(width: 9),
+          Expanded(child: OutlinedButton.icon(
+            onPressed: createNewTab,
+            icon: const Icon(Icons.note_add_rounded, size: 18),
+            label: const Text('ملف جديد'),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFF7897BC)),
+              minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Icon(Icons.tips_and_updates_outlined, size: 14, color: violet),
+          const SizedBox(width: 6),
+          Expanded(child: Text(tab.isSaved ? 'مساحة العمل جاهزة — جميع التغييرات محفوظة' : 'لديك تغييرات غير محفوظة في الملف الحالي',
+            style: TextStyle(color: tab.isSaved ? const Color(0xFFB8F5DC) : const Color(0xFFFFD58A), fontSize: 10.5))),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _heroMetric(IconData icon, String label, String value) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
+    decoration: BoxDecoration(color: Colors.black.withValues(alpha: .16), borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.white.withValues(alpha: .09))),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Icon(icon, size: 13, color: const Color(0xFF8DDCFF)), const SizedBox(width: 5),
+        Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Color(0xFFB8CBE1), fontSize: 9)))]),
+      const SizedBox(height: 5),
+      Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700)),
+    ]),
+  );
+
+  Widget _dashboardActionSection({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required List<_DashboardAction> actions,
+    bool initiallyExpanded = false,
+  }) {
+    return _dashboardPanel(
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          splashColor: const Color(0xFF38BDF8).withValues(alpha: .06),
+          highlightColor: Colors.transparent,
+        ),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          maintainState: true,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 8, bottom: 4),
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF38BDF8).withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: const Color(0xFF38BDF8), size: 20),
+          ),
+          title: Text(title, style: const TextStyle(
+            color: Color(0xFFE5EDF7), fontSize: 13, fontWeight: FontWeight.w700)),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          children: [
+            LayoutBuilder(builder: (context, constraints) {
+              final width = (constraints.maxWidth - 9) / 2;
+              return Wrap(
+                spacing: 9,
+                runSpacing: 9,
+                children: [
+                  for (final action in actions)
+                    SizedBox(width: width, child: _dashboardFeatureCard(action)),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardFeatureCard(_DashboardAction action) {
+    return Material(
+      color: const Color(0xFF17263A),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: action.onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 72),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: const Color(0xFF344B68)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 35,
+              height: 35,
+              decoration: BoxDecoration(
+                color: action.color.withValues(alpha: .13),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(action.icon, color: action.color, size: 19),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              action.label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.start,
+              style: const TextStyle(color: Color(0xFFE5EDF7), fontSize: 11, height: 1.28, fontWeight: FontWeight.w600),
+            )),
+            const Icon(Icons.chevron_left_rounded, size: 17, color: Color(0xFF71839D)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardFileStrip(EditorTab tab) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    decoration: BoxDecoration(
+      color: const Color(0xFF111D30),
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: const Color(0xFF26374E)),
+    ),
+    child: Row(children: [
+      Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF38BDF8).withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF38BDF8)),
+      ),
+      const SizedBox(width: 10),
+      Expanded(child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('الملف النشط', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+          const SizedBox(height: 3),
+          Text(tab.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFFE7EFFB), fontSize: 12, fontWeight: FontWeight.w700)),
+        ],
+      )),
+      IconButton(
+        tooltip: 'إنشاء تبويب جديد',
+        onPressed: createNewTab,
+        icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF38BDF8), size: 25),
+      ),
+    ]),
+  );
+
+  // ignore: unused_element
+  Widget _dashboardGlowPanel({required Widget child}) => Container(
+    padding: const EdgeInsets.all(9),
+    decoration: BoxDecoration(borderRadius: BorderRadius.circular(25),
+      gradient: const LinearGradient(colors: [Color(0xFF0789D7), Color(0xFF202A73), Color(0xFF8C20D8)]),
+      boxShadow: [BoxShadow(color: const Color(0xFF087FEA).withValues(alpha: .22), blurRadius: 18, spreadRadius: 1)]),
+    child: Container(padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(color: const Color(0xFF0A142A), borderRadius: BorderRadius.circular(19)),
+      child: child),
+  );
+
+  // ignore: unused_element
+  Widget _dashboardSquareAction(IconData icon, String label, Color color, VoidCallback onTap) =>
+    Material(color: const Color(0xFF111E37), borderRadius: BorderRadius.circular(19),
+      child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(19),
+        child: Container(decoration: BoxDecoration(borderRadius: BorderRadius.circular(19),
+          border: Border.all(color: color.withValues(alpha: .42))),
+          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, color: color, size: 31), const SizedBox(height: 8),
+            Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+          ]))));
+
+  // ignore: unused_element
+  Widget _dashboardPillButton(String label, IconData icon, VoidCallback onTap) =>
+    OutlinedButton.icon(onPressed: onTap, icon: Icon(icon, size: 19), label: Text(label),
+      style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDCE8F7),
+        side: const BorderSide(color: Color(0xFF3155A7)), shape: const StadiumBorder()));
+
+  void _showAllDashboardTools(List<_DashboardAction> actions) {
+    var query = '';
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          final needle = query.trim().toLowerCase();
+          final filtered = needle.isEmpty
+              ? actions
+              : actions
+                  .where((a) => a.label.toLowerCase().contains(needle))
+                  .toList();
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+              ),
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * .78,
+                child: Column(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: Text(
+                        'جميع أدوات Bisho IDE',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: TextField(
+                        onChanged: (value) => setSheetState(() => query = value),
+                        textInputAction: TextInputAction.search,
+                        decoration: const InputDecoration(
+                          hintText: 'ابحث عن أداة...',
+                          prefixIcon: Icon(Icons.search_rounded),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('لا توجد أدوات مطابقة'))
+                          : GridView.builder(
+                              padding: const EdgeInsets.all(12),
+                              itemCount: filtered.length,
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: 2,
+                                 crossAxisSpacing: 10,
+                                 mainAxisSpacing: 10,
+                                 childAspectRatio: 1.65,
+                              ),
+                              itemBuilder: (_, index) {
+                                final action = filtered[index];
+                                return _dashboardToolCard(
+                                  _DashboardAction(action.icon, action.label, () {
+                                    Navigator.pop(sheetContext);
+                                    action.onTap();
+                                  }, action.color),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _workspaceMetricsPanel() {
+    final metrics = WorkspaceMetrics.fromSources(
+      tabs.map((tab) => tab.controller.text),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _dashboardSectionTitle(Icons.insights_rounded, 'ملخص مساحة العمل'),
+        const SizedBox(height: 11),
+        Row(
+          children: [
+            _metricTile('التبويبات', metrics.fileCount.toString(), Icons.tab),
+            _metricTile('الأسطر', metrics.lineCount.toString(), Icons.format_align_left),
+            _metricTile('الكلمات', metrics.wordCount.toString(), Icons.text_fields),
+            _metricTile('الأحرف', metrics.characterCount.toString(), Icons.notes),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Text(
+          'الإحصائيات محسوبة من محتوى التبويبات المفتوحة فقط',
+          style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 10),
+        ),
+      ],
+    );
+  }
+
+  Widget _metricTile(String label, String value, IconData icon) => Expanded(
+    child: Column(
+      children: [
+        Icon(icon, size: 17, color: const Color(0xFF38BDF8)),
+        const SizedBox(height: 5),
+        Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 2),
+        Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+      ],
+    ),
+  );
+
+  Future<void> _openTextDiffDialog() async {
+    final previousController = TextEditingController();
+    ProjectTextDiffReport? report;
+    final currentText = activeTab.controller.text;
+    try {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('مقارنة النص الحالي بنسخة سابقة'),
+            content: SizedBox(
+              width: 620,
+              height: 460,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (report == null) ...[
+                    const Text('الصق النص السابق هنا، وسيتم مقارنته بمحتوى التبويب الحالي.'),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: TextField(
+                        controller: previousController,
+                        expands: true,
+                        minLines: null,
+                        maxLines: null,
+                        textAlignVertical: TextAlignVertical.top,
+                        style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                        decoration: const InputDecoration(
+                          hintText: 'النص السابق...',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                    ),
+                  ] else ...[
+                    Wrap(spacing: 12, runSpacing: 6, children: [
+                      Text('إضافات: ${report!.addedCount}', style: const TextStyle(color: Color(0xFF19D889))),
+                      Text('حذف: ${report!.removedCount}', style: const TextStyle(color: Color(0xFFFF657A))),
+                      Text('دون تغيير: ${report!.unchangedCount}', style: const TextStyle(color: Color(0xFF9BAFCB))),
+                    ]),
+                    if (report!.usedFallback)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 6),
+                        child: Text('مقارنة كبيرة: عُرضت الفروقات بتقريب آمن لتقليل استهلاك الذاكرة.',
+                          style: TextStyle(color: Color(0xFFFFC247), fontSize: 11)),
+                      ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(color: const Color(0xFF080F20),
+                          borderRadius: BorderRadius.circular(10)),
+                        child: ListView.builder(
+                          itemCount: report!.lines.length,
+                          itemBuilder: (_, index) {
+                            final line = report!.lines[index];
+                            final added = line.kind == TextDiffKind.added;
+                            final removed = line.kind == TextDiffKind.removed;
+                            final prefix = added ? '+' : removed ? '-' : ' ';
+                            final color = added ? const Color(0xFF19D889)
+                                : removed ? const Color(0xFFFF657A) : const Color(0xFF9BAFCB);
+                            return Container(
+                              color: added ? const Color(0x2219D889)
+                                  : removed ? const Color(0x22FF657A) : Colors.transparent,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              child: Text('$prefix ${line.oldLine ?? '-'}:${line.newLine ?? '-'}  ${line.text.isEmpty ? ' ' : line.text}',
+                                style: TextStyle(color: color, fontFamily: 'monospace', fontSize: 11),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              if (report != null)
+                TextButton(onPressed: () => setDialogState(() => report = null),
+                  child: const Text('تغيير النص السابق')),
+              TextButton(onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إغلاق')),
+              if (report == null)
+                FilledButton.icon(
+                  onPressed: () => setDialogState(() {
+                    report = const ProjectTextDiff().compare(
+                      previousController.text, currentText);
+                  }),
+                  icon: const Icon(Icons.difference_rounded),
+                  label: const Text('اعرض الفروقات'),
+                ),
+            ],
+          ),
+        ),
+      );
+    } finally {
+      previousController.dispose();
+    }
+  }
+
+  void _openProjectInsightsPanel() {
+    final files = <String, String>{};
+    for (final tab in tabs) {
+      final path = tab.fileName.replaceAll('\\\\', '/');
+      if (path.isNotEmpty && !files.containsKey(path)) {
+        files[path] = tab.controller.text;
+      }
+    }
+    final report = const ProjectInsightsAnalyzer().analyze(files);
+    ProjectInsightCategory? selectedCategory;
+
+    String categoryLabel(ProjectInsightCategory category) {
+      switch (category) {
+        case ProjectInsightCategory.structure:
+          return 'هيكل المشروع';
+        case ProjectInsightCategory.imports:
+          return 'الاستيرادات';
+        case ProjectInsightCategory.maintenance:
+          return 'الصيانة';
+        case ProjectInsightCategory.security:
+          return 'الأمان';
+        case ProjectInsightCategory.dependencies:
+          return 'الحزم';
+        case ProjectInsightCategory.style:
+          return 'تنسيق الكود';
+      }
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refreshSheet) {
+          final visibleInsights = report.insights.where((issue) =>
+              selectedCategory == null || issue.category == selectedCategory).toList();
+          final categories = ProjectInsightCategory.values
+              .where((category) => report.insights.any((issue) => issue.category == category))
+              .toList();
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .78,
+              child: Column(children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+                  child: Row(children: [
+                    const Icon(Icons.health_and_safety_rounded, color: Color(0xFF19D889)),
+                    const SizedBox(width: 9),
+                    const Expanded(child: Text('فحص الملفات المفتوحة',
+                      style: TextStyle(fontWeight: FontWeight.w800))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF38BDF8).withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(20)),
+                      child: Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
+                        style: const TextStyle(fontSize: 10, color: Color(0xFF38BDF8),
+                          fontWeight: FontWeight.w700)),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close)),
+                  ]),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('تحليل محلي للملفات المفتوحة فقط — لا يتم تعديل أي ملف.',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                  )),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(children: [
+                    _insightCount('أخطاء', report.count(ProjectInsightSeverity.error),
+                      const Color(0xFFFF647C)),
+                    _insightCount('تحذيرات', report.count(ProjectInsightSeverity.warning),
+                      const Color(0xFFFFC247)),
+                    _insightCount('ملاحظات', report.count(ProjectInsightSeverity.info),
+                      const Color(0xFF38BDF8)),
+                  ])),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
+                  child: Row(children: [
+                    const Icon(Icons.speed_rounded, size: 17, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 7),
+                    const Expanded(child: Text('مؤشر جودة إرشادي للملفات المفتوحة',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    Text('${report.qualityScore}/100 · ${report.qualityLabel}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
+                        color: report.qualityScore >= 90
+                            ? const Color(0xFF19D889)
+                            : report.qualityScore >= 75
+                                ? const Color(0xFFFFC247)
+                                : const Color(0xFFFF647C))),
+                  ]),
+                ),
+                if (categories.isNotEmpty)
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: const Text('الكل'),
+                            selected: selectedCategory == null,
+                            onSelected: (_) => refreshSheet(() => selectedCategory = null),
+                          ),
+                        ),
+                        ...categories.map((category) => Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: Text(categoryLabel(category)),
+                            selected: selectedCategory == category,
+                            onSelected: (_) => refreshSheet(
+                              () => selectedCategory = category),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                const Divider(height: 12),
+                Expanded(
+                  child: visibleInsights.isEmpty
+                      ? const Center(child: Text('لا توجد ملاحظات في هذا التصنيف.'))
+                      : ListView.separated(
+                          itemCount: visibleInsights.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, index) {
+                            final issue = visibleInsights[index];
+                            final color = issue.severity == ProjectInsightSeverity.error
+                                ? const Color(0xFFFF647C)
+                                : issue.severity == ProjectInsightSeverity.warning
+                                    ? const Color(0xFFFFC247)
+                                    : const Color(0xFF38BDF8);
+                            EditorTab? matchingTab;
+                            for (final candidate in tabs) {
+                              if (candidate.fileName.replaceAll('\\\\', '/') == issue.path) {
+                                matchingTab = candidate;
+                                break;
+                              }
+                            }
+                            final targetTab = matchingTab;
+                            final canNavigate = targetTab != null && issue.line > 0;
+
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(
+                                issue.severity == ProjectInsightSeverity.error
+                                    ? Icons.error_outline
+                                    : issue.severity == ProjectInsightSeverity.warning
+                                        ? Icons.warning_amber_rounded
+                                        : Icons.info_outline,
+                                color: color),
+                              title: Text(issue.message,
+                                style: const TextStyle(fontSize: 12)),
+                              subtitle: Text(
+                                issue.line > 0 ? '${issue.path}:${issue.line}' : issue.path,
+                                style: const TextStyle(fontSize: 10,
+                                  color: Color(0xFF94A3B8))),
+                              trailing: canNavigate
+                                  ? const Icon(Icons.my_location_outlined,
+                                      size: 17, color: Color(0xFF38BDF8))
+                                  : null,
+                              onTap: canNavigate ? () {
+                                                                final offset = EditorDiagnosticNavigation.offsetForLineColumn(
+                                  targetTab.controller.text, issue.line, 1);
+                                if (offset == null) return;
+                                final tabIndex = tabs.indexOf(targetTab);
+                                Navigator.pop(sheetContext);
+                                setState(() {
+                                  activeIndex = tabIndex;
+                                  targetTab.controller.selection =
+                                      TextSelection.collapsed(offset: offset);
+                                });
+                                _scheduleTabStateSave();
+                              } : null,
+                            );
+                          },
+                        ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Text(
+                    'الفحص يغطي التبويبات المفتوحة فقط. اضغط على التشخيص ذي الموقع للانتقال إليه.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                  )),
+              ]),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _insightCount(String label, int count, Color color) => Expanded(
+    child: Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      decoration: BoxDecoration(color: color.withValues(alpha: .10), borderRadius: BorderRadius.circular(10)),
+      child: Column(children: [
+        Text('$count', style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(label, style: const TextStyle(fontSize: 10, color: Color(0xFFCBD5E1))),
+      ]),
+    ),
+  );
+
+  String _diagnosticAdvice(String message) {
+    final value = message.toLowerCase();
+    if (value.contains('قوس') || value.contains('bracket') ||
+        value.contains('parenthesis') || value.contains('delimiter')) {
+      return 'راجع أقواس الفتح والإغلاق بالترتيب، وتأكد أن كل قوس له نظير من النوع نفسه.';
+    }
+    if (value.contains('اقتباس') || value.contains('string') ||
+        value.contains('quote') || value.contains('علامة تنصيص')) {
+      return 'تحقق من إغلاق علامات التنصيص، ومن عدم وجود علامة اقتباس غير مهروبة داخل النص.';
+    }
+    if (value.contains('استيراد') || value.contains('import') ||
+        value.contains('package:')) {
+      return 'تحقق من اسم الحزمة ومسار الملف، وتأكد من وجود الاعتماد في pubspec.yaml عند الحاجة.';
+    }
+    if (value.contains('نقطة فاصلة') || value.contains('semicolon') ||
+        value.contains('الفاصلة المنقوطة')) {
+      return 'راجع نهاية التعليمة؛ بعض اللغات تتطلب فاصلة منقوطة وبعضها لا يتطلبها.';
+    }
+    if (value.contains('indent') || value.contains('مسافة بادئة') ||
+        value.contains('إزاحة')) {
+      return 'وحّد المسافات البادئة داخل الكتلة، وتأكد من تطابق مستوى الإزاحة مع الأقواس.';
+    }
+    if (value.contains('غير معروف') || value.contains('unexpected') ||
+        value.contains('unexpected token')) {
+      return 'راجع الرمز السابق لموضع المشكلة؛ قد يكون هناك عامل أو فاصلة أو قوس مفقود.';
+    }
+    return 'اقرأ رسالة الفحص وحدد أول موضع غير متوقع، ثم راجع السطر السابق والسياق المحيط قبل تعديل الملف.';
+  }
+
+  void _applyAssistantText(EditorTab tab, String value, String message) {
+    if (!mounted || !tabs.contains(tab)) return;
+    final caret = tab.controller.selection.baseOffset.clamp(0, value.length).toInt();
+    tab.controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: caret),
+    );
+    setState(() {
+      tab.isSaved = false;
+      status = message;
+    });
+    showMessage(message);
+  }
+
+  void _openAdvancedSearch() {
+    final tab = activeTab;
+    showAdvancedSearchSheet(
+      context,
+      fileName: tab.fileName,
+      text: tab.controller.text,
+      onJump: (start, end) {
+        if (!mounted || !tabs.contains(tab)) return;
+        final length = tab.controller.text.length;
+        tab.controller.selection = TextSelection(
+          baseOffset: start.clamp(0, length).toInt(),
+          extentOffset: end.clamp(0, length).toInt(),
+        );
+      },
+      onReplace: (value) =>
+          _applyAssistantText(tab, value, 'تم الاستبدال؛ يمكنك التراجع'),
+    );
+  }
+
+  void _openFixAssistant() {
+    final tab = activeTab;
+    showFixAssistantSheet(
+      context,
+      fileName: tab.fileName,
+      source: tab.controller.text,
+      language: tab.language,
+      onApply: (value) =>
+          _applyAssistantText(tab, value, 'تم تطبيق الإصلاحات المختارة'),
+    );
+  }
+
+  void _openFormatPreview() {
+    final tab = activeTab;
+    showFormatPreviewSheet(
+      context,
+      fileName: tab.fileName,
+      source: tab.controller.text,
+      language: tab.language,
+      onApply: (value) => _applyAssistantText(tab, value, 'تم تنسيق الكود'),
+    );
+  }
+
+  Future<void> _openVersionHistory() async {
+    final tab = activeTab;
+    final history = await _ensureVersionHistory();
+    if (!mounted) return;
+    if (history == null) {
+      showMessage('تعذر الوصول إلى مساحة سجل الإصدارات');
+      return;
+    }
+    await showVersionHistorySheet(
+      context,
+      history: history,
+      historyKey: _versionKeyFor(tab),
+      fileName: tab.fileName,
+      currentText: tab.controller.text,
+      onRestore: (value) => _applyAssistantText(
+        tab,
+        value,
+        'تمت استعادة الإصدار؛ احفظ الملف لتثبيته',
+      ),
+    );
+  }
+
+  void _openDiagnosticsPanel() {
+    final tab = activeTab;
+    final diagnostics = _getCurrentDiagnostics(tab);
+    final structural = EditorSyntaxDiagnostics.analyze(
+      tab.controller.text,
+      tab.language,
+    );
+    final parserCount = (diagnostics.length - structural.length)
+        .clamp(0, diagnostics.length)
+        .toInt();
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * .62,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.bug_report_outlined, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text('مشكلات ${tab.fileName}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700))),
+                    Text('${diagnostics.length}', style: const TextStyle(color: Color(0xFF94A3B8))),
+                    IconButton(
+                      tooltip: 'نسخ تقرير المشكلات ونصائح الإصلاح',
+                      onPressed: () async {
+                        final report = diagnostics.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final message = entry.value;
+                          if (index >= parserCount) {
+                            final issue = structural[index - parserCount];
+                            return '${issue.line}:${issue.column} — ${issue.message}\n${_diagnosticAdvice(issue.message)}';
+                          }
+                          return '$message\n${_diagnosticAdvice(message)}';
+                        }).join('\n\n');
+                        await Clipboard.setData(ClipboardData(
+                          text: report.isEmpty ? 'لا توجد مشكلات في الفحص الحالي.' : report,
+                        ));
+                        if (mounted) showMessage('تم نسخ تقرير المشكلات ونصائح الإصلاح');
+                      },
+                      icon: const Icon(Icons.copy_all_rounded),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close)),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: diagnostics.isEmpty
+                    ? const Center(child: Text('لا توجد مشكلات معروفة في الفحص الحالي'))
+                    : ListView.separated(
+                        itemCount: diagnostics.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, index) {
+                          if (index < parserCount) {
+                            return ListTile(
+                              dense: true,
+                              leading: const Icon(Icons.error_outline, color: Colors.orange),
+                              title: Text(diagnostics[index], style: const TextStyle(fontSize: 12)),
+                              subtitle: Text('فحص محلي\n${_diagnosticAdvice(diagnostics[index])}', maxLines: 3, overflow: TextOverflow.ellipsis),
+                            );
+                          }
+                          final issue = structural[index - parserCount];
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.warning_amber_rounded, color: Colors.amber),
+                            title: Text(issue.message, style: const TextStyle(fontSize: 12)),
+                            subtitle: Text('السطر ${issue.line}، العمود ${issue.column}\n${_diagnosticAdvice(issue.message)}', maxLines: 3, overflow: TextOverflow.ellipsis),
+                            trailing: const Icon(Icons.my_location, size: 17),
+                            onTap: () {
+                              final offset = issue.offset
+                                  .clamp(0, tab.controller.text.length)
+                                  .toInt();
+                              tab.controller.selection = TextSelection.collapsed(offset: offset);
+                              _scheduleTabStateSave();
+                              Navigator.pop(sheetContext);
+                              _openEditorFullScreen();
+                            },
+                          );
+                        },
+                      ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  'الفحص بنيوي ومحلي؛ اضغط على المشكلة ذات الموقع للانتقال إليها. لا يحل محل محلل المترجم الرسمي.',
+                  style: TextStyle(fontSize: 10, color: Colors.white.withValues(alpha: .55)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showWorkspaceSettings() async {
+    var draftFontSize = _editorFontSize;
+    var draftExplorerVisible = explorerVisible;
+    final saved = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, refreshSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 22),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Icon(Icons.tune_rounded, color: Color(0xFF38BDF8)),
+                  const SizedBox(width: 9),
+                  const Expanded(child: Text('إعدادات مساحة العمل',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                  IconButton(onPressed: () => Navigator.pop(sheetContext, false),
+                    icon: const Icon(Icons.close)),
+                ]),
+                const SizedBox(height: 14),
+                _dashboardPanel(
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.folder_copy_rounded, color: Color(0xFF38BDF8)),
+                    title: const Text('إظهار مستكشف الملفات',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    subtitle: const Text('عرض شجرة ملفات المشروع بجانب مساحة العمل',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                    value: draftExplorerVisible,
+                    onChanged: (value) => refreshSheet(() => draftExplorerVisible = value),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _dashboardPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.text_fields_rounded, color: Color(0xFF38BDF8)),
+                        const SizedBox(width: 9),
+                        const Expanded(child: Text('حجم خط المحرر',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                        Text('${draftFontSize.round()} px',
+                          style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                      ]),
+                      const SizedBox(height: 5),
+                      const Text('اضبط حجم النص لتسهيل القراءة والكتابة',
+                        style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                      Slider(
+                        min: 10, max: 24, divisions: 14,
+                        value: draftFontSize,
+                        onChanged: (value) => refreshSheet(() => draftFontSize = value),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(width: double.infinity, child: FilledButton.icon(
+                  onPressed: () => Navigator.pop(sheetContext, true),
+                  icon: const Icon(Icons.save_rounded), label: const Text('حفظ الإعدادات'),
+                )),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (saved != true || !mounted) return;
+    setState(() {
+      _editorFontSize = draftFontSize.clamp(10.0, 24.0).toDouble();
+      explorerVisible = draftExplorerVisible;
+    });
+    await _saveEditorPreferences();
+    showMessage('تم حفظ إعدادات مساحة العمل');
+  }
+
+  Widget _dashboardPanel({required Widget child}) => Container(
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: const Color(0xFF131F30),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: const Color(0xFF30445E), width: 1),
+    ),
+    child: child,
+  );
+
+  Widget _dashboardToolCard(_DashboardAction action) => Material(
+    color: const Color(0xFF101D36),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(19)),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(onTap: action.onTap, borderRadius: BorderRadius.circular(19),
+      child: Container(
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(19),
+          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+            colors: [action.color.withValues(alpha: .17), const Color(0xFF111B34), const Color(0xFF0C142A)]),
+          border: Border.all(color: action.color.withValues(alpha: .38)),
+          boxShadow: [BoxShadow(color: action.color.withValues(alpha: .10), blurRadius: 12)]),
+        constraints: const BoxConstraints(minHeight: 104),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 8),
+        child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(action.icon, size: 27, color: action.color),
+          const SizedBox(height: 6),
+          Flexible(child: Text(action.label, maxLines: 2, softWrap: true,
+            overflow: TextOverflow.visible, textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFFEAF2FF),
+              fontSize: 10, height: 1.16, fontWeight: FontWeight.w600))),
+        ]),
+      ),
+    ),
+  );
+
+  Widget _dashboardSectionTitle(IconData icon, String title) => Row(children: [
+    Icon(icon, color: const Color(0xFF38BDF8), size: 20),
+    const SizedBox(width: 8),
+    Expanded(child: Text(title, style: const TextStyle(
+      color: Color(0xFFE5EDF7), fontSize: 14, fontWeight: FontWeight.w700))),
+  ]);
+
+  Widget _dashboardProjectCard({required IconData icon, required String title,
+    required String subtitle, required VoidCallback onTap, required Color accent}) =>
+    Material(
+      color: const Color(0xFF101B34),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(19)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accent.withValues(alpha: .38)),
+            boxShadow: [BoxShadow(color: accent.withValues(alpha: .10), blurRadius: 13)],
+          ),
+          child: Row(children: [
+            Container(width: 42, height: 42,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1B293D),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Icon(icon, color: accent, size: 23),
+            ),
+            const SizedBox(width: 11),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFFE5EDF7),
+                  fontWeight: FontWeight.w700, fontSize: 12)),
+              const SizedBox(height: 4),
+              Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF94A3B8), fontSize: 10)),
+            ])),
+            Icon(Icons.chevron_left_rounded, color: accent),
+          ]),
+        ),
+      ),
+    );
+
+  void _showDashboardThemeInfo() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('مظهر التطبيق',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 5),
+              const Text('اختر المظهر المناسب، وسيُحفظ اختيارك تلقائيًا.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+              const SizedBox(height: 14),
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: BishoThemeController.mode,
+                builder: (context, mode, _) => Column(
+                  children: [
+                    _themeModeTile(sheetContext, ThemeMode.system, mode,
+                      Icons.brightness_auto_rounded, 'حسب إعدادات الجهاز',
+                      'يتبع الوضع الفاتح أو الداكن في Android'),
+                    _themeModeTile(sheetContext, ThemeMode.dark, mode,
+                      Icons.dark_mode_rounded, 'داكن',
+                      'ألوان مريحة للعمل في الإضاءة المنخفضة'),
+                    _themeModeTile(sheetContext, ThemeMode.light, mode,
+                      Icons.light_mode_rounded, 'فاتح',
+                      'واجهة واضحة في الإضاءة القوية'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _themeModeTile(
+    BuildContext sheetContext,
+    ThemeMode value,
+    ThemeMode selected,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
+    final active = value == selected;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Material(
+        color: active
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: .10)
+            : Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(13),
+        child: ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
+            side: BorderSide(
+              color: active ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          leading: Icon(icon, color: active
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 10)),
+          trailing: active
+              ? Icon(Icons.check_circle_rounded,
+                  color: Theme.of(context).colorScheme.primary)
+              : const Icon(Icons.circle_outlined),
+          onTap: () async {
+            await BishoThemeController.set(value);
+            if (sheetContext.mounted) Navigator.pop(sheetContext);
+          },
+        ),
+      ),
+    );
+  }
+
+  static const String _enabledExtensionsKey = 'bisho_enabled_editor_extensions_v1';
+  static const String _customExtensionsKey = 'bisho_custom_editor_extensions_v1';
+
+  Future<void> _showPluginsHub() async {
+    final entries = <_EditorExtensionEntry>[
+      _EditorExtensionEntry('json_format', 'تنسيق JSON', 'ترتيب المسافات وإظهار بنية JSON بوضوح', 'تنسيق البيانات', Icons.data_object_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('json_minify', 'ضغط JSON', 'إزالة المسافات غير الضرورية لتقليل الحجم', 'تنسيق البيانات', Icons.compress_rounded, const Color(0xFF8B42F5)),
+      _EditorExtensionEntry('base64_encode', 'ترميز Base64', 'تحويل النص إلى Base64', 'الترميز والتحويل', Icons.lock_rounded, const Color(0xFF19D889)),
+      _EditorExtensionEntry('base64_decode', 'فك Base64', 'استعادة النص من Base64', 'الترميز والتحويل', Icons.lock_open_rounded, const Color(0xFFFFC247)),
+      _EditorExtensionEntry('url_encode', 'ترميز URL', 'تهيئة النص للاستخدام داخل عناوين URL', 'الترميز والتحويل', Icons.link_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('url_decode', 'فك URL', 'فك ترميز النص الموجود داخل عنوان URL', 'الترميز والتحويل', Icons.link_off_rounded, const Color(0xFF247BFF)),
+      _EditorExtensionEntry('sort_lines', 'ترتيب الأسطر', 'ترتيب الأسطر أبجدياً داخل التحديد أو الملف', 'تحرير النص', Icons.sort_by_alpha_rounded, const Color(0xFF8B42F5)),
+      _EditorExtensionEntry('unique_lines', 'حذف الأسطر المكررة', 'إزالة الأسطر المتكررة مع الاحتفاظ بأول ظهور', 'تحرير النص', Icons.filter_alt_rounded, const Color(0xFF19D889)),
+      _EditorExtensionEntry('trim_trailing_whitespace', 'تنظيف نهايات الأسطر', 'إزالة المسافات وعلامات الجدولة غير الضرورية من نهاية كل سطر', 'تنظيف النص', Icons.cleaning_services_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('normalize_line_endings', 'توحيد نهايات الأسطر', 'تحويل CRLF وCR إلى LF لتوحيد تنسيق الملف', 'تنظيف النص', Icons.format_line_spacing_rounded, const Color(0xFF247BFF)),
+      _EditorExtensionEntry('tabs_to_spaces', 'تحويل TAB إلى مسافات', 'استبدال كل علامة TAB بأربع مسافات', 'تنظيف النص', Icons.space_bar_rounded, const Color(0xFFFFC247)),
+    ];
+    final prefs = await SharedPreferences.getInstance();
+    final customPacks = prefs.getStringList(_customExtensionsKey) ?? <String>[];
+    for (final packedEntry in customPacks) {
+      try {
+        final decoded = jsonDecode(packedEntry);
+        if (decoded is! Map<String, dynamic>) continue;
+        final manifest = EditorExtensionManifest.decode(jsonEncode({
+          'format': EditorExtensionManifest.format,
+          'version': EditorExtensionManifest.version,
+          'extensions': [decoded],
+        }));
+        final extension = manifest.extensions.single;
+        entries.add(_EditorExtensionEntry(
+          extension.id,
+          extension.title,
+          extension.description,
+          extension.category,
+          Icons.extension_rounded,
+          const Color(0xFF38BDF8),
+          operationId: extension.operation,
+        ));
+      } catch (_) {
+        // Ignore invalid legacy entries; importing never enables code execution.
+      }
+    }
+    final stored = prefs.getStringList(_enabledExtensionsKey);
+    var enabled = stored == null
+        ? entries.where((entry) => entry.operationId == null)
+            .map((entry) => entry.id).toSet()
+        : stored.toSet();
+    if (!mounted) return;
+    final searchController = TextEditingController();
+    var query = '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, refreshSheet) {
+          final normalized = query.trim().toLowerCase();
+          final filtered = entries.where((entry) =>
+            normalized.isEmpty ||
+            entry.title.toLowerCase().contains(normalized) ||
+            entry.description.toLowerCase().contains(normalized) ||
+            entry.category.toLowerCase().contains(normalized),
+          ).toList();
+          final activeCount = entries.where((entry) => enabled.contains(entry.id)).length;
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .78,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                    child: Row(children: [
+                      const Icon(Icons.extension_rounded, color: Color(0xFF38BDF8)),
+                      const SizedBox(width: 9),
+                      const Expanded(child: Text('مدير الإضافات والأدوات',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                      Text('${activeCount}/${entries.length}',
+                        style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                      IconButton(onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close)),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: TextField(
+                      controller: searchController,
+                      onChanged: (value) => refreshSheet(() => query = value),
+                      decoration: InputDecoration(
+                        hintText: 'ابحث عن إضافة أو وظيفة...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: query.isEmpty ? null : IconButton(
+                          onPressed: () {
+                            searchController.clear();
+                            refreshSheet(() => query = '');
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(children: [
+                      const Expanded(child: Text('اضغط على الإضافة لتشغيلها، أو استخدم المفتاح لتفعيلها وتعطيلها.',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10))),
+                      TextButton(
+                        onPressed: () async {
+                          enabled = entries.map((entry) => entry.id).toSet();
+                          await prefs.setStringList(_enabledExtensionsKey, enabled.toList());
+                          refreshSheet(() {});
+                        },
+                        child: const Text('تفعيل الكل'),
+                      ),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await _importEditorExtensionPack();
+                          if (!mounted) return;
+                          Navigator.pop(sheetContext);
+                          await _showPluginsHub();
+                        },
+                        icon: const Icon(Icons.file_upload_outlined, size: 17),
+                        label: const Text('استيراد حزمة إضافات JSON'),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: filtered.isEmpty
+                      ? const Center(child: Text('لا توجد إضافات مطابقة للبحث.'))
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 5),
+                          itemBuilder: (_, index) {
+                            final entry = filtered[index];
+                            final isEnabled = enabled.contains(entry.id);
+                            return Card(
+                              color: const Color(0xFF101D36),
+                              margin: EdgeInsets.zero,
+                              child: ListTile(
+                                dense: true,
+                                leading: CircleAvatar(
+                                  backgroundColor: entry.color.withValues(alpha: .14),
+                                  child: Icon(entry.icon, color: entry.color, size: 20),
+                                ),
+                                title: Text(entry.title,
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                subtitle: Text('${entry.category} • ${entry.description}',
+                                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                                trailing: Switch(
+                                  value: isEnabled,
+                                  onChanged: (value) async {
+                                    if (value) {
+                                      enabled.add(entry.id);
+                                    } else {
+                                      enabled.remove(entry.id);
+                                    }
+                                    await prefs.setStringList(_enabledExtensionsKey, enabled.toList());
+                                    refreshSheet(() {});
+                                  },
+                                ),
+                                onTap: isEnabled ? () {
+                                  Navigator.pop(sheetContext);
+                                  _runEditorExtension(entry.operationId ?? entry.id);
+                                } : null,
+                              ),
+                            );
+                          },
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    searchController.dispose();
+  }
+
+  Future<void> _importEditorExtensionPack() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+        allowMultiple: false,
+      );
+      if (picked == null || picked.files.isEmpty) return;
+      final bytes = picked.files.single.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw const FormatException('تعذر قراءة ملف الحزمة.');
+      }
+      final manifest = EditorExtensionManifest.decode(utf8.decode(bytes));
+      final prefs = await SharedPreferences.getInstance();
+      final current = prefs.getStringList(_customExtensionsKey) ?? <String>[];
+      final existingIds = <String>{
+        'json_format', 'json_minify', 'base64_encode', 'base64_decode',
+        'url_encode', 'url_decode', 'sort_lines', 'unique_lines',
+        'trim_trailing_whitespace', 'normalize_line_endings', 'tabs_to_spaces',
+      };
+      for (final item in current) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map<String, dynamic> && decoded['id'] is String) {
+            existingIds.add(decoded['id'] as String);
+          }
+        } catch (_) {
+          // Invalid old entries are ignored and replaced by a valid import.
+        }
+      }
+      final duplicates = manifest.extensions
+          .where((extension) => existingIds.contains(extension.id))
+          .map((extension) => extension.id)
+          .toList();
+      if (duplicates.isNotEmpty) {
+        throw FormatException('معرّفات موجودة مسبقاً: ${duplicates.join(', ')}');
+      }
+      if (current.length + manifest.extensions.length > 60) {
+        throw const FormatException('وصلت إلى الحد الأقصى وهو 60 إضافة مخصصة.');
+      }
+      final merged = [
+        ...current,
+        ...manifest.extensions.map((extension) => jsonEncode(extension.toJson())),
+      ];
+      await prefs.setStringList(_customExtensionsKey, merged);
+      showMessage('تم استيراد ${manifest.extensions.length} إضافة. راجع تفعيلها من مدير الإضافات.');
+    } catch (error) {
+      showMessage('تعذر استيراد حزمة الإضافات: $error');
+    }
+  }
+
+  Future<void> _runEditorExtension(String operation) async {
+    if (tabs.isEmpty) {
+      showMessage('افتح ملفاً أولاً لاستخدام الإضافة');
+      return;
+    }
+    final tab = activeTab;
+    final controller = tab.controller;
+    final source = controller.text;
+    final selection = controller.selection;
+    final hasSelection = selection.isValid && !selection.isCollapsed;
+    final start = hasSelection ? selection.start : 0;
+    final end = hasSelection ? selection.end : source.length;
+    final input = source.substring(start, end);
+    String output;
+    String success;
+
+    try {
+      switch (operation) {
+        case 'json_format':
+          output = const JsonEncoder.withIndent('  ').convert(jsonDecode(input));
+          success = 'تم تنسيق JSON';
+          break;
+        case 'json_minify':
+          output = jsonEncode(jsonDecode(input));
+          success = 'تم ضغط JSON وإزالة المسافات';
+          break;
+        case 'base64_encode':
+          output = base64Encode(utf8.encode(input));
+          success = 'تم ترميز النص بصيغة Base64';
+          break;
+        case 'base64_decode':
+          output = utf8.decode(base64Decode(input.trim()));
+          success = 'تم فك ترميز Base64';
+          break;
+        case 'url_encode':
+          output = Uri.encodeComponent(input);
+          success = 'تم ترميز النص للرابط';
+          break;
+        case 'url_decode':
+          output = Uri.decodeComponent(input);
+          success = 'تم فك ترميز الرابط';
+          break;
+        case 'sort_lines':
+          final lines = input.split('\n')..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+          output = lines.join('\n');
+          success = 'تم ترتيب الأسطر أبجدياً';
+          break;
+        case 'unique_lines':
+          final seen = <String>{};
+          output = input.split('\n').where((line) => seen.add(line)).join('\n');
+          success = 'تم حذف الأسطر المكررة';
+          break;
+        case 'trim_trailing_whitespace':
+          output = input.split('\n')
+              .map((line) => line.replaceFirst(RegExp(r'[ \t]+$'), ''))
+              .join('\n');
+          success = 'تم تنظيف المسافات من نهايات الأسطر';
+          break;
+        case 'normalize_line_endings':
+          output = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+          success = 'تم توحيد نهايات الأسطر إلى LF';
+          break;
+        case 'tabs_to_spaces':
+          output = input.replaceAll('\t', '    ');
+          success = 'تم تحويل علامات TAB إلى أربع مسافات';
+          break;
+        default:
+          return;
+      }
+    } catch (error) {
+      showMessage('تعذر تنفيذ الإضافة: ${error is FormatException ? error.message : error}');
+      return;
+    }
+
+    if (output == input) {
+      showMessage('لا توجد تغييرات مطلوبة');
+      return;
+    }
+
+    final updated = source.replaceRange(start, end, output);
+    final previewLines = output.split('\n');
+    final originalLines = input.split('\n');
+    final previewAccepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.preview_rounded, color: Color(0xFF38BDF8)),
+            const SizedBox(width: 8),
+            Expanded(child: Text('معاينة قبل التطبيق')),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(success, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    Chip(
+                      avatar: const Icon(Icons.remove_circle_outline, size: 16),
+                      label: Text('${originalLines.length} سطر قبل'),
+                    ),
+                    Chip(
+                      avatar: const Icon(Icons.add_circle_outline, size: 16),
+                      label: Text('${previewLines.length} سطر بعد'),
+                    ),
+                    Chip(label: Text('${output.length} حرف في الناتج')),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text('النص قبل التعديل', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 120),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF475569)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      input.length > 2500
+                          ? '${input.substring(0, 2500)}\n… تم اختصار النص السابق.'
+                          : input,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('النص بعد التعديل', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B1220),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      output.length > 6000
+                          ? '${output.substring(0, 6000)}\n\n… تم اختصار المعاينة؛ سيُطبّق الناتج كاملاً.'
+                          : output,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: Color(0xFFE2E8F0),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'لن يتغير الملف حتى تضغط «تطبيق». يمكنك الإلغاء للعودة دون أي تعديل.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('تطبيق التغييرات'),
+          ),
+        ],
+      ),
+    );
+
+    if (previewAccepted != true || !mounted) return;
+    if (!tabs.contains(tab) || controller.text != source) {
+      showMessage('تغير الملف أثناء المعاينة؛ أعد تشغيل الإضافة لتجنب استبدال تعديلات أحدث');
+      return;
+    }
+
+    controller.value = controller.value.copyWith(
+      text: updated,
+      selection: TextSelection.collapsed(offset: start + output.length),
+      composing: TextRange.empty,
+    );
+    tab.isSaved = false;
+    _scheduleTabStateSave();
+    if (mounted) setState(() {});
+    showMessage(success);
+  }
+
+
+  void _showLanguageCapabilities() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * .72,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.code_rounded, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 9),
+                    const Expanded(child: Text('دليل اللغات والقدرات',
+                      style: TextStyle(fontWeight: FontWeight.w700))),
+                    IconButton(onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close)),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: LanguageEngineManager.capabilities.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, index) {
+                    final capability = LanguageEngineManager.capabilities[index];
+                    final hasPreviewRoute = capability.extensions.any((extension) =>
+                        LanguageEngineManager.engineForFile('sample.$extension') !=
+                        LanguageEngine.unsupported);
+                    final notes = capability.note.isNotEmpty
+                        ? capability.note
+                        : capability.executionEngine
+                            ? 'توجد معاينة أو بيئة تنفيذ محددة لهذه اللغة.'
+                            : hasPreviewRoute
+                                ? 'توجد أداة عرض أو تحقق للملفات، دون تشغيل برنامج مستقل.'
+                                : 'تحرير وتلوين؛ لا يوجد محرك تشغيل مضمّن حالياً.';
+                    return ExpansionTile(
+                      title: Text(capability.language,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                      subtitle: Text(notes, style: const TextStyle(fontSize: 10)),
+                      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      children: [
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: [
+                              Chip(label: Text(capability.syntaxHighlighting ? 'تلوين مدعوم' : 'نص عادي')),
+                              Chip(label: Text(capability.structuralDiagnostics ? 'فحص بنيوي' : 'بدون فحص بنيوي')),
+                              Chip(label: Text(hasPreviewRoute ? 'معاينة/عرض متاح' : 'لا يوجد محرك تشغيل')),
+                            ],
+                          ),
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Text(
+                            'الامتدادات: ${capability.extensions.map((extension) => ".$extension").join("، ")}',
+                            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showEditorInfoDialog() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('معلومات المحرر'),
+        content: const Text('يوفر Bisho IDE أدوات إنشاء الملفات والمشاريع، والحفظ والتصدير، والبحث والاستبدال، والتنقل بين الأسطر، وإكمال الكود، ومعاينة اللغات المدعومة. نضيف الميزات تدريجياً بعد اختبارها.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('إغلاق'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget toolButton(
+    IconData icon,
+    String label,
+    VoidCallback action,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: InkWell(
+        onTap: action,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                color: const Color(0xFF38BDF8),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                style: const TextStyle(fontSize: 10),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+  // ignore: unused_element
+class _DashboardWavePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final blue = Paint()..style = PaintingStyle.stroke..strokeWidth = 1.6
+      ..shader = const LinearGradient(colors: [Color(0x0012AFFF), Color(0xFF087DFF), Color(0xFF12AFFF)])
+        .createShader(Offset.zero & size);
+    final purple = Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5
+      ..shader = const LinearGradient(colors: [Color(0x002D65FF), Color(0xFF8B24FF), Color(0xFFB21FFF)])
+        .createShader(Offset.zero & size);
+    final a = Path()..moveTo(0, size.height * .18)
+      ..cubicTo(size.width * .22, size.height * .62, size.width * .36, size.height * .80, size.width * .58, size.height * .52)
+      ..cubicTo(size.width * .76, size.height * .27, size.width * .88, size.height * .20, size.width, size.height * .42);
+    final b = Path()..moveTo(0, size.height * .38)
+      ..cubicTo(size.width * .22, size.height * .82, size.width * .42, size.height * .93, size.width * .62, size.height * .67)
+      ..cubicTo(size.width * .78, size.height * .44, size.width * .91, size.height * .32, size.width, size.height * .56);
+    canvas.drawPath(a, blue);
+    canvas.drawPath(b, purple);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _EditorExtensionEntry {
+  final String id;
+  final String title;
+  final String description;
+  final String category;
+  final IconData icon;
+  final Color color;
+  final String? operationId;
+
+  const _EditorExtensionEntry(
+    this.id, this.title, this.description, this.category, this.icon, this.color, {
+    this.operationId,
+  });
+}
+
+class _DashboardAction {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final Color color;
+  const _DashboardAction(this.icon, this.label, this.onTap, this.color);
+}
+
+/// شاشة مستقلة للطرفية تستغل كامل مساحة التطبيق بدلاً من لوحة سفلية قصيرة.
+class TerminalFullScreenScreen extends StatelessWidget {
+  const TerminalFullScreenScreen({
+    super.key,
+    required this.files,
+    required this.projectUri,
+    required this.projectName,
+    required this.onOpenFile,
+  });
+
+  final SafFileService files;
+  final String? projectUri;
+  final String projectName;
+  final Future<void> Function(SafDocumentFile file, String parentUri) onOpenFile;
+
+  @override
+  Widget build(BuildContext context) {
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF080D19),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
+          title: const Row(
+            children: [
+              Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
+              SizedBox(width: 9),
+              Text('طرفية Bisho', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+            ],
+          ),
+          leading: IconButton(
+            tooltip: 'العودة إلى المحرر',
+            icon: const Icon(Icons.fullscreen_exit_rounded),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ),
+        body: SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: BishoTerminalPanel(
+                files: files,
+                projectUri: projectUri,
+                projectName: projectName,
+                onOpenFile: onOpenFile,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// شاشة مستقلة للمحرر؛ تستخدم نفس CodeController حتى تبقى التعديلات
+/// والتبويبات والحالة محفوظة عند الرجوع إلى الواجهة الرئيسية.
+class EditorFullScreenScreen extends StatefulWidget {
+  const EditorFullScreenScreen({
+    super.key,
+    required this.tab,
+    required this.fontSize,
+    required this.onSave,
+    required this.onFontSizeChange,
+    required this.onShowCompletions,
+    required this.onSearch,
+    required this.onPreview,
+    required this.onFlutterPreview,
+  });
+
+  final EditorTab tab;
+  final double fontSize;
+  final Future<void> Function() onSave;
+  final void Function(double delta) onFontSizeChange;
+  final Future<void> Function() onShowCompletions;
+  final Future<void> Function(bool replaceMode) onSearch;
+  final Future<void> Function() onPreview;
+  final void Function() onFlutterPreview;
+
+  @override
+  State<EditorFullScreenScreen> createState() =>
+      _EditorFullScreenScreenState();
+}
+
+class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
+  static const String _wordWrapPreferenceKey = 'bisho_editor_word_wrap';
+  late double _fontSize;
+  bool _wordWrap = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fontSize = widget.fontSize;
+    _restoreWordWrapPreference();
+  }
+
+  Future<void> _restoreWordWrapPreference() async {
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      final savedValue = preferences.getBool(_wordWrapPreferenceKey) ?? false;
+      if (!mounted) return;
+      setState(() => _wordWrap = savedValue);
+    } catch (_) {
+      // Word wrap remains available with its default when preferences fail.
+    }
+  }
+
+  Future<void> _toggleWordWrap() async {
+    final nextValue = !_wordWrap;
+    setState(() => _wordWrap = nextValue);
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_wordWrapPreferenceKey, nextValue);
+    } catch (_) {
+      // The current session setting remains active if persistence is unavailable.
+    }
+  }
+
+  void _changeFontSize(double delta) {
+    widget.onFontSizeChange(delta);
+    setState(() {
+      _fontSize = (_fontSize + delta).clamp(10.0, 24.0).toDouble();
+    });
+  }
+
+  void _insertSymbol(String symbol) {
+    final controller = widget.tab.controller;
+    final nextValue = EditorSymbolInsert.apply(
+      text: controller.text,
+      selection: controller.selection,
+      symbol: symbol,
+    );
+    controller.value = nextValue;
+  }
+
+  void _moveCursor({int horizontal = 0, int vertical = 0}) {
+    final controller = widget.tab.controller;
+    final text = controller.text;
+    final selection = controller.selection;
+    final current = selection.isValid
+        ? selection.extentOffset.clamp(0, text.length).toInt()
+        : text.length;
+
+    int target;
+    if (horizontal != 0) {
+      target = (current + horizontal).clamp(0, text.length).toInt();
+    } else {
+      final lineStart = text.lastIndexOf('\\n', current - 1) + 1;
+      final lineEndFound = text.indexOf('\\n', current);
+      final lineEnd = lineEndFound == -1 ? text.length : lineEndFound;
+      final column = current - lineStart;
+      if (vertical < 0) {
+        if (lineStart == 0) return;
+        final previousEnd = lineStart - 1;
+        final previousStart = text.lastIndexOf('\\n', previousEnd - 1) + 1;
+        target = (previousStart + column).clamp(previousStart, previousEnd).toInt();
+      } else {
+        if (lineEnd == text.length) return;
+        final nextStart = lineEnd + 1;
+        final nextEndFound = text.indexOf('\\n', nextStart);
+        final nextEnd = nextEndFound == -1 ? text.length : nextEndFound;
+        target = (nextStart + column).clamp(nextStart, nextEnd).toInt();
+      }
+    }
+    controller.selection = TextSelection.collapsed(offset: target);
+  }
+
+  void _setCursor(int offset, {bool extendSelection = false}) {
+    final controller = widget.tab.controller;
+    final safe = offset.clamp(0, controller.text.length).toInt();
+    final current = controller.selection;
+    controller.selection = extendSelection && current.isValid
+        ? TextSelection(baseOffset: current.baseOffset, extentOffset: safe)
+        : TextSelection.collapsed(offset: safe);
+  }
+
+  void _selectCurrentWord() {
+    final controller = widget.tab.controller;
+    final offset = controller.selection.isValid
+        ? controller.selection.extentOffset
+        : controller.text.length;
+    final selected = EditorTextNavigation.selectCurrentWord(controller.text, offset);
+    controller.selection = selected;
+  }
+
+  Future<void> _copySelection() async {
+    final controller = widget.tab.controller;
+    final selection = controller.selection;
+    final text = selection.isValid && !selection.isCollapsed
+        ? controller.text.substring(selection.start, selection.end)
+        : controller.text;
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  Future<void> _cutSelection() async {
+    final controller = widget.tab.controller;
+    final selection = controller.selection;
+    if (!selection.isValid || selection.isCollapsed) return;
+    final selectedText = controller.text.substring(selection.start, selection.end);
+    await Clipboard.setData(ClipboardData(text: selectedText));
+    controller.value = EditorTextNavigation.replaceSelection(
+      controller.text,
+      selection,
+      '',
+    );
+  }
+
+  Future<void> _pasteClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    final pasted = data?.text;
+    if (pasted == null) return;
+    final controller = widget.tab.controller;
+    final selection = controller.selection;
+    controller.value = EditorTextNavigation.replaceSelection(
+      controller.text,
+      selection,
+      pasted,
+    );
+  }
+
+  KeyEventResult _handleEditorKey(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    final keyboard = HardwareKeyboard.instance;
+    final control = keyboard.isControlPressed || keyboard.isMetaPressed;
+    final controller = widget.tab.controller;
+    final selection = controller.selection;
+    final offset = selection.isValid
+        ? selection.extentOffset.clamp(0, controller.text.length).toInt()
+        : controller.text.length;
+    final extend = event.logicalKey == LogicalKeyboardKey.shiftLeft ||
+        event.logicalKey == LogicalKeyboardKey.shiftRight ||
+        keyboard.isShiftPressed;
+
+    if (control && event.logicalKey == LogicalKeyboardKey.keyS) {
+      widget.onSave();
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.keyF) {
+      widget.onSearch(false);
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.keyH) {
+      widget.onSearch(true);
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.space) {
+      widget.onShowCompletions();
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.keyD) {
+      _selectCurrentWord();
+      return KeyEventResult.handled;
+    }
+    if (control && (event.logicalKey == LogicalKeyboardKey.equal ||
+        event.logicalKey == LogicalKeyboardKey.add)) {
+      _changeFontSize(1);
+      return KeyEventResult.handled;
+    }
+    if (control && (event.logicalKey == LogicalKeyboardKey.minus ||
+        event.logicalKey == LogicalKeyboardKey.numpadSubtract)) {
+      _changeFontSize(-1);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.home) {
+      _setCursor(control ? 0 : EditorTextNavigation.lineStart(controller.text, offset),
+          extendSelection: extend);
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.end) {
+      _setCursor(control ? controller.text.length :
+          EditorTextNavigation.lineEnd(controller.text, offset),
+          extendSelection: extend);
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+      _setCursor(EditorTextNavigation.moveByWord(controller.text, offset, forward: false),
+          extendSelection: extend);
+      return KeyEventResult.handled;
+    }
+    if (control && event.logicalKey == LogicalKeyboardKey.arrowRight) {
+      _setCursor(EditorTextNavigation.moveByWord(controller.text, offset, forward: true),
+          extendSelection: extend);
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _buildCursorPad() {
+    Widget arrow(IconData icon, String tooltip, int horizontal, int vertical) {
+      return Tooltip(
+        message: tooltip,
+        child: Material(
+          color: const Color(0xFF1B293D),
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _moveCursor(horizontal: horizontal, vertical: vertical),
+            child: SizedBox(
+              width: 38,
+              height: 34,
+              child: Icon(icon, size: 18, color: const Color(0xFFBAE6FD)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: const BoxDecoration(
+        color: Color(0xFF111827),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF26334D)),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.my_location, size: 16, color: Color(0xFF38BDF8)),
+          const SizedBox(width: 7),
+          const Expanded(
+            child: Text(
+              'التحكم بالمؤشر',
+              style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+            ),
+          ),
+          arrow(Icons.keyboard_arrow_left, 'تحريك المؤشر يساراً', -1, 0),
+          const SizedBox(width: 5),
+          arrow(Icons.keyboard_arrow_up, 'السطر السابق', 0, -1),
+          const SizedBox(width: 5),
+          arrow(Icons.keyboard_arrow_down, 'السطر التالي', 0, 1),
+          const SizedBox(width: 5),
+          arrow(Icons.keyboard_arrow_right, 'تحريك المؤشر يميناً', 1, 0),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMobileSymbolBar() {
+    const symbols = <String>[
+      'TAB', '(', '{', '[', ';', ':', '=', '=>', '.', ',', '->',
+      "'", '"', '`', '&&', '||', '!',
+    ];
+    return Container(
+      height: 48,
+      decoration: const BoxDecoration(
+        color: Color(0xFF111827),
+        border: Border(
+          bottom: BorderSide(color: Color(0xFF26334D)),
+        ),
+      ),
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          itemCount: symbols.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (context, index) {
+            final symbol = symbols[index];
+            final label = symbol == 'TAB' ? '⇥' : symbol;
+            return Material(
+              color: const Color(0xFF1B293D),
+              borderRadius: BorderRadius.circular(8),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => _insertSymbol(symbol),
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 38),
+                  padding: const EdgeInsets.symmetric(horizontal: 9),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFF304158)),
+                  ),
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Color(0xFFBAE6FD),
+                      fontFamily: 'monospace',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tab = widget.tab;
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Scaffold(
+        backgroundColor: const Color(0xFF080D19),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
+          leading: IconButton(
+            tooltip: 'العودة إلى Bisho IDE',
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                tab.fileName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              Text(
+                tab.language,
+                style: const TextStyle(fontSize: 11, color: Color(0xFF38BDF8)),
+              ),
+            ],
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'معاينة / تشغيل الملف الحالي',
+              onPressed: widget.onPreview,
+              icon: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF19D889)),
+            ),
+            IconButton(
+              tooltip: 'بناء ومعاينة Flutter',
+              onPressed: widget.onFlutterPreview,
+              icon: const Icon(Icons.phone_android_rounded, color: Color(0xFF38BDF8)),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'أدوات التحرير',
+              onSelected: (action) {
+                switch (action) {
+                  case 'select_word':
+                    _selectCurrentWord();
+                    break;
+                  case 'copy':
+                    _copySelection();
+                    break;
+                  case 'cut':
+                    _cutSelection();
+                    break;
+                  case 'paste':
+                    _pasteClipboard();
+                    break;
+                  case 'wrap':
+                    _toggleWordWrap();
+                    break;
+                  case 'complete':
+                    widget.onShowCompletions();
+                    break;
+                  case 'smaller':
+                    _changeFontSize(-1);
+                    break;
+                  case 'larger':
+                    _changeFontSize(1);
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'select_word',
+                  child: Row(
+                    children: [
+                      Icon(Icons.select_all, size: 20),
+                      const SizedBox(width: 12),
+                      Text('تحديد الكلمة الحالية (Ctrl+D)'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'copy',
+                  child: Row(
+                    children: [
+                      Icon(Icons.copy, size: 20),
+                      const SizedBox(width: 12),
+                      Text('نسخ المحدد'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'cut',
+                  child: Row(
+                    children: [
+                      Icon(Icons.content_cut, size: 20),
+                      const SizedBox(width: 12),
+                      Text('قص المحدد'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'paste',
+                  child: Row(
+                    children: [
+                      Icon(Icons.content_paste, size: 20),
+                      const SizedBox(width: 12),
+                      Text('لصق'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'complete',
+                  child: Row(children: [
+                    Icon(Icons.auto_awesome, size: 20),
+                    SizedBox(width: 12),
+                    Text('الإكمال التلقائي'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'smaller',
+                  child: Row(children: [
+                    Icon(Icons.text_decrease, size: 20),
+                    SizedBox(width: 12),
+                    Text('تصغير الخط'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'larger',
+                  child: Row(children: [
+                    Icon(Icons.text_increase, size: 20),
+                    SizedBox(width: 12),
+                    Text('تكبير الخط'),
+                  ]),
+                ),
+                PopupMenuItem(
+                  value: 'wrap',
+                  child: Row(
+                    children: [
+                      Icon(_wordWrap ? Icons.wrap_text : Icons.notes, size: 20),
+                      const SizedBox(width: 12),
+                      Text(_wordWrap ? 'تعطيل التفاف الأسطر' : 'تفعيل التفاف الأسطر'),
+                    ],
+                  ),
+                ),
+              ],
+              icon: const Icon(Icons.edit_note),
+            ),
+            IconButton(
+              tooltip: 'حفظ الملف',
+              onPressed: widget.onSave,
+              icon: const Icon(Icons.save_rounded),
+            ),
+          ],
+        ),
+
+        body: SafeArea(
+          child: Focus(
+            onKeyEvent: _handleEditorKey,
+            child: Column(
+            children: [
+              _buildMobileSymbolBar(),
+              _buildCursorPad(),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
+                  child: Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFF080D19),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF26334D)),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: CodeTheme(
+                data: CodeThemeData(styles: monokaiSublimeTheme),
+                child: CodeField(
+                  key: ValueKey('fullscreen-${tab.id}'),
+                  controller: tab.controller,
+                  expands: true,
+                  wrap: _wordWrap,
+                  padding: const EdgeInsets.all(14),
+                  textStyle: TextStyle(
+                    fontFamily: 'monospace',
+                    fontSize: _fontSize,
+                  ),
+                  gutterStyle: const GutterStyle(
+                    showLineNumbers: true,
+                    showErrors: true,
+                    showFoldingHandles: true,
+                  ),
+                ),
+              ),
+            ),
+                ),
+              ),
+            ],
+          ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+,
+    ).firstMatch(beforeCursor);
+    final prefix = memberMatch?.group(2) ?? match?.group(0) ?? '';
+    final contextual = memberMatch == null
+        ? const <String>[]
+        : EditorCompletionEngine.contextualCandidates(
+            receiver: memberMatch.group(1) ?? '',
+            language: tab.language,
+          );
 
     final Map<String, List<String>> completions = {
       'Dart': [
