@@ -29,7 +29,7 @@ class EngineHealthReport {
   final int warnings;
   final int failed;
 
-  bool get isReady => failed == 0;
+  bool get isReady => failed == 0 && warnings == 0;
 
   String get headline {
     if (failed > 0) return 'يوجد ${failed} خللًا يحتاج إلى معالجة';
