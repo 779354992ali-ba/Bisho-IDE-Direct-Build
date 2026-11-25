@@ -23,14 +23,14 @@ Future<void> showFixAssistantSheet(BuildContext context,{required String fileNam
  Text('مساعد الإصلاح · $fileName',style:Theme.of(ctx).textTheme.titleMedium),const SizedBox(height:8),
  const Text('إصلاحات آمنة فقط: توحيد نهايات الأسطر وإزالة المسافات الزائدة. لا يتم تغيير منطق البرنامج.'),const SizedBox(height:12),
  Text(v==source?'لا توجد تحسينات آمنة.':'تم العثور على تحسينات تنسيق.'),Row(children:[Expanded(child:TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء'))),Expanded(child:FilledButton(onPressed:v==source?null:(){onApply(v);Navigator.pop(ctx);},child:const Text('تطبيق')))])
- ]))));
+ ])));
 }
 Future<void> showFormatPreviewSheet(BuildContext context,{required String fileName,required String source,required String language,required ValueChanged<String> onApply}) async {
  final v=_tidy(source);await showModalBottomSheet<void>(context:context,isScrollControlled:true,useSafeArea:true,builder:(ctx)=>Padding(padding:const EdgeInsets.all(16),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
  Text('معاينة التنسيق · $fileName'),Text('تنسيق آمن للمسافات ونهايات الأسطر · $language'),
  SizedBox(height:260,child:SingleChildScrollView(child:SelectableText(v,style:const TextStyle(fontFamily:'monospace')))),
  Row(children:[Expanded(child:TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء'))),Expanded(child:FilledButton(onPressed:v==source?null:(){onApply(v);Navigator.pop(ctx);},child:const Text('اعتماد')))])
- ]))));
+ ])));
 }
 Future<void> showVersionHistorySheet(BuildContext context,{required FileVersionHistory history,required String historyKey,required String fileName,required String currentText,required ValueChanged<String> onRestore}) async {
  final items=await history.list(historyKey);if(!context.mounted)return;
