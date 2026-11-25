@@ -9,6 +9,8 @@ import '../../core/services/saf_file_service.dart';
 
 /// A project-scoped command interpreter backed by Android Storage Access Framework.
 /// It intentionally does not execute arbitrary operating-system processes.
+/// Hosts up to four independent terminal sessions while keeping each
+/// session's command history, working directory and output alive when switched.
 class BishoTerminalPanel extends StatefulWidget {
   final SafFileService files;
   final String? projectUri;
@@ -27,6 +29,143 @@ class BishoTerminalPanel extends StatefulWidget {
   State<BishoTerminalPanel> createState() => _BishoTerminalPanelState();
 }
 
+class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
+  final List<int> _sessions = [1];
+  int _activeSession = 0;
+  int _nextSessionId = 2;
+
+  void _addSession() {
+    if (_sessions.length >= 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الحد الأقصى أربع جلسات طرفية لتقليل استهلاك الذاكرة')),
+      );
+      return;
+    }
+    setState(() {
+      _sessions.add(_nextSessionId++);
+      _activeSession = _sessions.length - 1;
+    });
+  }
+
+  void _closeSession(int index) {
+    if (_sessions.length == 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يجب الاحتفاظ بجلسة طرفية واحدة على الأقل')),
+      );
+      return;
+    }
+    setState(() {
+      _sessions.removeAt(index);
+      if (_activeSession > index) {
+        _activeSession--;
+      } else if (_activeSession >= _sessions.length) {
+        _activeSession = _sessions.length - 1;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF080D19),
+      child: Column(children: [
+        Container(
+          height: 42,
+          decoration: const BoxDecoration(
+            color: Color(0xFF101B2D),
+            border: Border(bottom: BorderSide(color: Color(0xFF26374E))),
+          ),
+          child: Row(children: [
+            Expanded(
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _sessions.length,
+                itemBuilder: (context, index) {
+                  final selected = index == _activeSession;
+                  final id = _sessions[index];
+                  return InkWell(
+                    onTap: () => setState(() => _activeSession = index),
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 116, maxWidth: 150),
+                      padding: const EdgeInsetsDirectional.only(start: 10, end: 4),
+                      decoration: BoxDecoration(
+                        color: selected ? const Color(0xFF1B3551) : Colors.transparent,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: selected ? const Color(0xFF38BDF8) : Colors.transparent,
+                            width: 2,
+                          ),
+                          right: const BorderSide(color: Color(0xFF26374E), width: .6),
+                        ),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.terminal_rounded, size: 15,
+                          color: selected ? const Color(0xFF38BDF8) : Colors.white54),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text('طرفية $id',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11,
+                            color: selected ? Colors.white : Colors.white60,
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500))),
+                        if (_sessions.length > 1)
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(width: 26, height: 28),
+                            tooltip: 'إغلاق الجلسة',
+                            onPressed: () => _closeSession(index),
+                            icon: const Icon(Icons.close_rounded, size: 14, color: Colors.white54),
+                          ),
+                      ]),
+                    ),
+                  );
+                },
+              ),
+            ),
+            IconButton(
+              tooltip: _sessions.length >= 4 ? 'تم بلوغ حد الجلسات' : 'جلسة طرفية جديدة',
+              visualDensity: VisualDensity.compact,
+              onPressed: _sessions.length >= 4 ? null : _addSession,
+              icon: const Icon(Icons.add_rounded, color: Color(0xFF38BDF8)),
+            ),
+            const SizedBox(width: 4),
+          ]),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _activeSession,
+            children: _sessions.map((id) => _BishoTerminalSessionPanel(
+              key: ValueKey('terminal-session-$id'),
+              files: widget.files,
+              projectUri: widget.projectUri,
+              projectName: widget.projectName,
+              onOpenFile: widget.onOpenFile,
+            )).toList(),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _BishoTerminalSessionPanel extends StatefulWidget {
+  final SafFileService files;
+  final String? projectUri;
+  final String projectName;
+  final Future<void> Function(SafDocumentFile file, String parentUri) onOpenFile;
+
+  const _BishoTerminalSessionPanel({
+    super.key,
+    required this.files,
+    required this.projectUri,
+    required this.projectName,
+    required this.onOpenFile,
+  });
+
+  @override
+  State<_BishoTerminalSessionPanel> createState() => _BishoTerminalSessionPanelState();
+}
+
 class _TerminalLine {
   final String text;
   final Color color;
@@ -39,7 +178,7 @@ class _ResolvedPath {
   const _ResolvedPath(this.item, this.parentUri);
 }
 
-class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
+class _BishoTerminalSessionPanelState extends State<_BishoTerminalSessionPanel> {
   static const Color _green = Color(0xFF86EFAC);
   static const Color _cyan = Color(0xFF7DD3FC);
   static const Color _red = Color(0xFFFCA5A5);
@@ -72,7 +211,7 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
   }
 
   @override
-  void didUpdateWidget(covariant BishoTerminalPanel oldWidget) {
+  void didUpdateWidget(covariant _BishoTerminalSessionPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.projectUri != widget.projectUri) {
       _resetDirectory();
