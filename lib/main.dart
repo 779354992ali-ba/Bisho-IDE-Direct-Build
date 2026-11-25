@@ -459,6 +459,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   bool isRestoring = false;
   bool explorerVisible = true;
   bool _editorFullScreen = false;
+  String? _splitTabId;
   bool _terminalFullScreen = false;
   bool _bottomPanelVisible = false;
   int _bottomPanelTab = 0;
@@ -1378,7 +1379,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     if (index < 0 || index >= tabs.length) return;
 
     setState(() {
+      final previousId = activeTab.id;
       activeIndex = index;
+      if (_splitTabId == tabs[index].id && previousId != tabs[index].id) {
+        _splitTabId = previousId;
+      }
       status = 'تم فتح ${activeTab.fileName}';
     });
     saveTabStateSilently();
@@ -3467,6 +3472,153 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     saveTabStateSilently();
   }
+  Future<void> _openSplitEditor() async {
+    if (tabs.length < 2) {
+      showMessage('افتح ملفًا ثانيًا أولاً ثم فعّل تقسيم المحرر');
+      await openFile();
+      if (!mounted || tabs.length < 2) return;
+    }
+    final candidates = tabs.where((item) => item.id != activeTab.id).toList();
+    if (candidates.isEmpty) {
+      showMessage('لا يوجد ملف آخر لعرضه في الجزء الثاني');
+      return;
+    }
+    final selectedId = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('اختر الملف للجزء الثاني'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 260,
+          child: ListView.builder(
+            itemCount: candidates.length,
+            itemBuilder: (context, index) {
+              final item = candidates[index];
+              return ListTile(
+                leading: const Icon(Icons.insert_drive_file_outlined, color: Color(0xFF38BDF8)),
+                title: Text(item.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(item.language),
+                onTap: () => Navigator.pop(dialogContext, item.id),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إلغاء')),
+        ],
+      ),
+    );
+    if (selectedId == null || !mounted) return;
+    setState(() {
+      _splitTabId = selectedId;
+      status = 'تم تفعيل المحرر المقسّم';
+    });
+  }
+
+  void _closeSplitEditor() {
+    setState(() {
+      _splitTabId = null;
+      status = 'تم إغلاق العرض المقسّم';
+    });
+  }
+
+  Widget _buildSplitEditorPanel() {
+    final secondaryIndex = tabs.indexWhere((item) => item.id == _splitTabId);
+    if (secondaryIndex < 0 || tabs.length < 2 || tabs[secondaryIndex].id == activeTab.id) {
+      return const SizedBox.shrink();
+    }
+    final primary = activeTab;
+    final secondary = tabs[secondaryIndex];
+
+    Widget pane(EditorTab item, {required bool isPrimary}) {
+      return Container(
+        height: 210,
+        decoration: BoxDecoration(
+          color: const Color(0xFF080D19),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: isPrimary ? const Color(0xFF38BDF8) : const Color(0xFFA78BFA)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: [
+          Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            color: const Color(0xFF142239),
+            child: Row(children: [
+              Icon(Icons.code_rounded, size: 15,
+                color: isPrimary ? const Color(0xFF38BDF8) : const Color(0xFFA78BFA)),
+              const SizedBox(width: 7),
+              Expanded(child: Text(item.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))),
+              Text(item.isSaved ? 'محفوظ' : '●', style: TextStyle(
+                color: item.isSaved ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                fontSize: 9,
+              )),
+            ]),
+          ),
+          Expanded(child: CodeTheme(
+            data: CodeThemeData(styles: monokaiSublimeTheme),
+            child: CodeField(
+              key: ValueKey('split-${item.id}'),
+              controller: item.controller,
+              expands: true,
+              wrap: _wordWrap,
+              padding: const EdgeInsets.all(9),
+              textStyle: TextStyle(fontFamily: 'monospace', fontSize: (_editorFontSize - 2).clamp(10, 18)),
+              gutterStyle: const GutterStyle(
+                showLineNumbers: true,
+                showErrors: true,
+                showFoldingHandles: true,
+              ),
+            ),
+          )),
+        ]),
+      );
+    }
+
+    return _dashboardPanel(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.vertical_split_rounded, color: Color(0xFF38BDF8), size: 19),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('المحرر المقسّم', style: TextStyle(fontWeight: FontWeight.w800))),
+          DropdownButton<String>(
+            value: secondary.id,
+            isDense: true,
+            underline: const SizedBox(),
+            dropdownColor: const Color(0xFF18263B),
+            items: tabs.where((item) => item.id != primary.id).map((item) =>
+              DropdownMenuItem(value: item.id, child: Text(item.fileName,
+                maxWidth: 130, overflow: TextOverflow.ellipsis))
+            ).toList(),
+            onChanged: (value) => setState(() => _splitTabId = value),
+          ),
+          IconButton(
+            tooltip: 'إغلاق التقسيم',
+            visualDensity: VisualDensity.compact,
+            onPressed: _closeSplitEditor,
+            icon: const Icon(Icons.close_rounded, size: 18),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth >= 620) {
+            return Row(children: [
+              Expanded(child: pane(primary, isPrimary: true)),
+              const SizedBox(width: 9),
+              Expanded(child: pane(secondary, isPrimary: false)),
+            ]);
+          }
+          return Column(children: [
+            pane(primary, isPrimary: true),
+            const SizedBox(height: 9),
+            pane(secondary, isPrimary: false),
+          ]);
+        }),
+      ]),
+    );
+  }
+
   Future<void> _openCommandPalette() async {
     final commands = <_PaletteCommand>[
       _PaletteCommand(title: 'ملف جديد', description: 'إنشاء تبويب وملف فارغ', icon: Icons.note_add_rounded, run: createNewTab, keywords: 'new file'),
@@ -3478,6 +3630,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _PaletteCommand(title: 'حفظ جميع الملفات', description: 'حفظ كل التبويبات المفتوحة', icon: Icons.save_as_rounded, run: saveAllTabs, keywords: 'save all'),
       _PaletteCommand(title: 'بحث واستبدال', description: 'البحث داخل الملف أو المشروع', icon: Icons.find_replace_rounded, run: () => searchCode(startInReplaceMode: true), keywords: 'search replace find'),
       _PaletteCommand(title: 'بحث في المشروع', description: 'البحث داخل جميع الملفات', icon: Icons.search_rounded, run: searchCode, keywords: 'find in files'),
+      _PaletteCommand(title: 'تقسيم المحرر', description: 'تحرير ملفين جنبًا إلى جنب', icon: Icons.vertical_split_rounded, run: _openSplitEditor, keywords: 'split editor side by side'),
       _PaletteCommand(title: 'الإكمال البرمجي', description: 'اقتراح الكلمات والمقاطع', icon: Icons.auto_awesome_rounded, run: showCodeCompletions, keywords: 'autocomplete intellisense'),
       _PaletteCommand(title: 'الطرفية', description: 'فتح جلسة الأوامر', icon: Icons.terminal_rounded, run: _showTerminalPanel, keywords: 'terminal shell console'),
       _PaletteCommand(title: 'فحص المشكلات', description: 'عرض التشخيصات والإصلاحات', icon: Icons.bug_report_rounded, run: _openDiagnosticsPanel, keywords: 'diagnostics errors lint'),
@@ -5774,6 +5927,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     final editingActions = <_DashboardAction>[
       _DashboardAction(Icons.search_rounded, 'البحث في الكود', searchCode, cyan),
+      _DashboardAction(Icons.vertical_split_rounded, 'تقسيم المحرر', _openSplitEditor, violet),
       _DashboardAction(Icons.find_replace_rounded, 'البحث والاستبدال', () => searchCode(startInReplaceMode: true), violet),
       _DashboardAction(Icons.manage_search_rounded, 'بحث متقدم (Regex)', _openAdvancedSearch, cyan),
       _DashboardAction(Icons.undo_rounded, 'تراجع', undoCodeEdit, red),
@@ -5828,6 +5982,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 30),
         children: [
           _dashboardFileStrip(tab),
+          if (_splitTabId != null) ...[
+            const SizedBox(height: 12),
+            _buildSplitEditorPanel(),
+          ],
           const SizedBox(height: 13),
           _dashboardHero(tab),
           const SizedBox(height: 16),
