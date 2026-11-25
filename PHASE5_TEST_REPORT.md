@@ -16,3 +16,15 @@
 - Changes were committed to `fix/app-stream-rootfs-install`.
 - Flutter tests and APK build were intentionally not run in this development-only pass, per the project workflow.
 - The existing ARM64 engine, Alpine RootFS, local build runner, and GitHub Actions build path were not modified.
+
+## Additional project safety coverage in the same continuation
+- ZIP archive path normalization, traversal rejection, absolute/drive path rejection, duplicate and case-collision detection, file/directory collisions, and export-budget enforcement.
+- Full-project backup round-trip, checksum/size tamper detection, path traversal rejection, portable-name restrictions, and unsupported-version rejection.
+- Backup catalog ordering, manifest integrity verification, unsafe/duplicate identifier rejection, and file-level change comparison.
+
+Additional test files:
+- `test/core/services/project_archive_validator_test.dart`
+- `test/core/services/project_backup_service_test.dart`
+- `test/core/services/project_backup_repository_test.dart`
+
+These tests are committed but remain unexecuted until the agreed final validation/build stage.
