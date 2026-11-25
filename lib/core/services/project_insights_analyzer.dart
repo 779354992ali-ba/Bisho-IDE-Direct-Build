@@ -129,7 +129,8 @@ class ProjectInsightsAnalyzer {
               'رُصد عنوان HTTP غير مشفّر؛ استخدم HTTPS للخدمات الخارجية بعد التحقق من دعمها.',
               ProjectInsightSeverity.warning, ProjectInsightCategory.security);
         }
-        // Flag direct dynamic execution calls in source lines.\n        if (RegExp(r'\b(eval|exec)\s*\(').hasMatch(line)) {
+        // Flag direct dynamic execution calls in source lines.
+        if (RegExp(r'\b(eval|exec)\s*\(').hasMatch(line)) {
           add('dynamic_code_execution', path, lineNo,
               'استدعاء eval/exec قد ينفّذ نصاً كتعليمات؛ تجنب مدخلات المستخدم غير الموثوقة.',
               ProjectInsightSeverity.warning, ProjectInsightCategory.security);
