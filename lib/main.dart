@@ -80,6 +80,7 @@ import 'core/services/project_backup_service.dart';
 import 'core/services/project_backup_repository.dart';
 import 'core/services/project_text_diff.dart';
 import 'core/services/project_text_replacement.dart';
+import 'core/services/github_repository_service.dart';
 import 'features/terminal/bisho_terminal_panel.dart';
 import 'features/tools/ide_tool_sheets.dart';
 import 'core/services/file_version_history.dart';
@@ -353,6 +354,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
   final Saf saf = Saf();
   final SafFileService safFiles = SafFileService();
+  final GitHubRepositoryService _githubService = GitHubRepositoryService();
 
   final Map<String, dynamic> languages = {
     'Dart': dart_lang.dart,
@@ -3472,6 +3474,230 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     saveTabStateSilently();
   }
+  Future<void> _openGitHubManager() async {
+    if (projectUri == null || projectUri!.isEmpty) {
+      showMessage('افتح مشروع Flutter أولاً قبل ربط GitHub');
+      return;
+    }
+    final repositoryController = TextEditingController(text: 'bisho-project');
+    final descriptionController = TextEditingController(text: 'Flutter project created with Bisho IDE');
+    final tokenController = TextEditingController();
+    var token = await _githubService.readToken();
+    GitHubAccount? account;
+    var connectionMessage = '';
+    if (token != null && token.isNotEmpty) {
+      try {
+        account = await _githubService.verifyToken(token);
+      } catch (error) {
+        connectionMessage = 'تعذر التحقق من الرمز المحفوظ: $error';
+        token = null;
+      }
+    }
+    var isPrivate = true;
+    var busy = false;
+    var progress = '';
+    String? repositoryUrl;
+    var uploadedFiles = 0;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !busy,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Row(children: [
+            Icon(Icons.account_tree_rounded, color: Color(0xFF34D399)),
+            SizedBox(width: 9),
+            Text('GitHub داخل Bisho IDE'),
+          ]),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (account != null)
+                  Container(
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF12352E),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF237A5B)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.verified_rounded, color: Color(0xFF34D399)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('متصل بالحساب ${account!.login}',
+                        style: const TextStyle(fontWeight: FontWeight.w700))),
+                      TextButton(
+                        onPressed: busy ? null : () async {
+                          await _githubService.disconnect();
+                          setDialogState(() {
+                            account = null;
+                            token = null;
+                            connectionMessage = 'تم فصل حساب GitHub من هذا الجهاز';
+                          });
+                        },
+                        child: const Text('فصل'),
+                      ),
+                    ]),
+                  )
+                else ...[
+                  const Text('رمز الوصول الشخصي (PAT)',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 5),
+                  TextField(
+                    controller: tokenController,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: const InputDecoration(
+                      hintText: 'ghp_… أو github_pat_…',
+                      prefixIcon: Icon(Icons.key_rounded),
+                      helperText: 'يُحفظ بعد التحقق داخل التخزين الآمن على Android فقط',
+                    ),
+                  ),
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: TextButton.icon(
+                      onPressed: busy ? null : () async {
+                        final entered = tokenController.text.trim();
+                        if (entered.isEmpty) {
+                          setDialogState(() => connectionMessage = 'أدخل رمز GitHub أولاً');
+                          return;
+                        }
+                        setDialogState(() { busy = true; connectionMessage = 'جارٍ التحقق من الرمز…'; });
+                        try {
+                          final verified = await _githubService.verifyToken(entered);
+                          await _githubService.saveToken(entered);
+                          if (!context.mounted) return;
+                          setDialogState(() {
+                            token = entered;
+                            account = verified;
+                            connectionMessage = 'تم التحقق وحفظ الرمز بأمان';
+                          });
+                          tokenController.clear();
+                        } catch (error) {
+                          if (context.mounted) setDialogState(() => connectionMessage = 'فشل التحقق: $error');
+                        } finally {
+                          if (context.mounted) setDialogState(() => busy = false);
+                        }
+                      },
+                      icon: const Icon(Icons.verified_user_outlined),
+                      label: const Text('تحقق واربط الحساب'),
+                    ),
+                  ),
+                ],
+                if (connectionMessage.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(connectionMessage,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF93C5FD))),
+                  ),
+                const Divider(),
+                const Text('رفع مشروع Flutter إلى مستودع جديد',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 9),
+                TextField(
+                  controller: repositoryController,
+                  enabled: !busy,
+                  decoration: const InputDecoration(
+                    labelText: 'اسم المستودع',
+                    prefixIcon: Icon(Icons.folder_copy_outlined),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                TextField(
+                  controller: descriptionController,
+                  enabled: !busy,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'وصف المستودع'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: isPrivate,
+                  onChanged: busy ? null : (value) => setDialogState(() => isPrivate = value),
+                  title: const Text('مستودع خاص'),
+                  subtitle: const Text('لا يظهر للعامة'),
+                ),
+                if (progress.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(children: [
+                      if (busy) const SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                      if (busy) const SizedBox(width: 9),
+                      Expanded(child: Text(progress, style: const TextStyle(fontSize: 11))),
+                    ]),
+                  ),
+                if (repositoryUrl != null) ...[
+                  const SizedBox(height: 10),
+                  const Text('تم رفع المشروع بنجاح',
+                    style: TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.w800)),
+                  SelectableText(repositoryUrl!, textDirection: TextDirection.ltr),
+                  Text('عدد الملفات: $uploadedFiles',
+                    style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: TextButton.icon(
+                      onPressed: () => Clipboard.setData(ClipboardData(text: repositoryUrl!)),
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('نسخ الرابط'),
+                    ),
+                  ),
+                ],
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(dialogContext),
+              child: const Text('إغلاق'),
+            ),
+            FilledButton.icon(
+              onPressed: busy || token == null || account == null || repositoryUrl != null
+                  ? null
+                  : () async {
+                      final name = repositoryController.text.trim();
+                      if (name.isEmpty) {
+                        setDialogState(() => progress = 'اكتب اسم المستودع أولاً');
+                        return;
+                      }
+                      setDialogState(() { busy = true; progress = 'جارٍ تجهيز المشروع…'; });
+                      try {
+                        final result = await _githubService.createAndPushProject(
+                          token: token!,
+                          projectUri: projectUri!,
+                          repositoryName: name,
+                          description: descriptionController.text.trim(),
+                          isPrivate: isPrivate,
+                          workflowFile: 'build-android.yml',
+                          safFiles: safFiles,
+                          onProgress: (message) {
+                            if (context.mounted) setDialogState(() => progress = message);
+                          },
+                        );
+                        if (!context.mounted) return;
+                        setDialogState(() {
+                          repositoryUrl = result.htmlUrl;
+                          uploadedFiles = result.uploadedFiles;
+                          progress = 'تم الرفع إلى الفرع ${result.branch}';
+                        });
+                      } catch (error) {
+                        if (context.mounted) setDialogState(() => progress = 'تعذر الرفع: $error');
+                      } finally {
+                        if (context.mounted) setDialogState(() => busy = false);
+                      }
+                    },
+              icon: const Icon(Icons.cloud_upload_rounded),
+              label: const Text('إنشاء المستودع ورفع المشروع'),
+            ),
+          ],
+        ),
+      ),
+    );
+    repositoryController.dispose();
+    descriptionController.dispose();
+    tokenController.dispose();
+  }
+
   Future<void> _openSplitEditor() async {
     if (tabs.length < 2) {
       showMessage('افتح ملفًا ثانيًا أولاً ثم فعّل تقسيم المحرر');
@@ -3626,6 +3852,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _PaletteCommand(title: 'فتح ملف', description: 'اختيار ملف من الجهاز', icon: Icons.file_open_rounded, run: openFile, keywords: 'open file'),
       _PaletteCommand(title: 'فتح مشروع', description: 'اختيار مجلد مشروع', icon: Icons.folder_open_rounded, run: openProjectFolder, keywords: 'open folder'),
       _PaletteCommand(title: 'مدير المشاريع', description: 'المشاريع الأخيرة والمفضلة', icon: Icons.workspaces_rounded, run: showProjectManager, keywords: 'projects'),
+      _PaletteCommand(title: 'إدارة GitHub', description: 'ربط الحساب ورفع مشروع Flutter', icon: Icons.account_tree_rounded, run: _openGitHubManager, keywords: 'git github repository push'),
       _PaletteCommand(title: 'حفظ الملف', description: 'حفظ التعديلات الحالية', icon: Icons.save_rounded, run: saveCurrentToDisk, keywords: 'save'),
       _PaletteCommand(title: 'حفظ جميع الملفات', description: 'حفظ كل التبويبات المفتوحة', icon: Icons.save_as_rounded, run: saveAllTabs, keywords: 'save all'),
       _PaletteCommand(title: 'بحث واستبدال', description: 'البحث داخل الملف أو المشروع', icon: Icons.find_replace_rounded, run: () => searchCode(startInReplaceMode: true), keywords: 'search replace find'),
@@ -5606,6 +5833,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _explorerFilterController.dispose();
+    _githubService.close();
     _isDisposing = true;
     _tabStateSaveTimer?.cancel();
     // Capture the final editor state before releasing the controllers.
@@ -5918,6 +6146,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _DashboardAction(Icons.create_new_folder_rounded, 'إنشاء مشروع', createNewProject, cyan),
       _DashboardAction(Icons.folder_open_rounded, 'فتح مجلد مشروع', openProjectFolder, cyan),
       _DashboardAction(Icons.workspaces_rounded, 'مدير المشاريع الذكي', showProjectManager, violet),
+      _DashboardAction(Icons.account_tree_rounded, 'GitHub وربط المستودع', _openGitHubManager, green),
       _DashboardAction(Icons.drive_folder_upload_rounded, 'استيراد مشروع', importExistingProject, green),
       _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, cyan),
       _DashboardAction(Icons.file_open_rounded, 'فتح ملف', openFile, cyan),
