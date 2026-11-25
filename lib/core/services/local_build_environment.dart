@@ -36,6 +36,11 @@ class LocalBuildEnvironment {
   final bool canBuildLocally;
   final String message;
 
+  static int _readInt(Object? value, {int fallback = 0}) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
   factory LocalBuildEnvironment.fromMap(Map<Object?, Object?> map) {
     final engineInstalled = map['engineInstalled'] == true;
     final deviceSupported = map['deviceSupported'] == true;
@@ -44,18 +49,18 @@ class LocalBuildEnvironment {
     final releaseBuildVerified = map['releaseBuildVerified'] == true;
     return LocalBuildEnvironment(
       deviceAbi: map['deviceAbi']?.toString() ?? 'غير معروف',
-      androidVersion: (map['androidVersion'] as num?)?.toInt() ?? 0,
-      availableBytes: (map['availableBytes'] as num?)?.toInt() ?? 0,
+      androidVersion: _readInt(map['androidVersion']),
+      availableBytes: _readInt(map['availableBytes']),
       engineInstalled: engineInstalled,
       alpineRootfsInstalled: map['alpineRootfsInstalled'] == true,
       deviceSupported: deviceSupported,
       runtimeVerified: runtimeVerified,
       debugBuildVerified: debugBuildVerified,
       releaseBuildVerified: releaseBuildVerified,
-      requiredStorageBytes:
-          (map['requiredStorageBytes'] as num?)?.toInt() ?? 0,
-      missingRequirements: (map['missingRequirements'] as List<Object?>? ??
-              const <Object?>[])
+      requiredStorageBytes: _readInt(map['requiredStorageBytes']),
+      missingRequirements: (map['missingRequirements'] is List
+              ? map['missingRequirements'] as List
+              : const <Object?>[])
           .map((item) => item.toString())
           .toList(growable: false),
       // This flag is deliberately fail-closed. A manifest is not an
@@ -107,8 +112,29 @@ class LocalBuildEnvironmentService {
   }
 
   Future<Map<Object?, Object?>> probeEngine() async {
-    final result = await _channel.invokeMapMethod<Object?, Object?>('probeEngine');
-    return result ?? <Object?, Object?>{'success': false, 'message': 'لم تُرجع خدمة المحرك نتيجة الاختبار.'};
+    try {
+      final result = await _channel.invokeMapMethod<Object?, Object?>('probeEngine');
+      return result ??
+          <Object?, Object?>{
+            'success': false,
+            'message': 'لم تُرجع خدمة المحرك نتيجة الاختبار.',
+          };
+    } on PlatformException catch (error) {
+      return <Object?, Object?>{
+        'success': false,
+        'message': error.message ?? error.code,
+      };
+    } on MissingPluginException {
+      return <Object?, Object?>{
+        'success': false,
+        'message': 'خدمة فحص المحرك غير مدمجة في هذه النسخة.',
+      };
+    } catch (error) {
+      return <Object?, Object?>{
+        'success': false,
+        'message': 'تعذر فحص المحرك: $error',
+      };
+    }
   }
 
   LocalBuildEnvironment _unavailable(String message) {
