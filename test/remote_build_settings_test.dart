@@ -42,6 +42,16 @@ void main() {
       expect(settings.toJson(), const RemoteBuildSettings().toJson());
     });
 
+    test('recovers when a stored preference has the wrong value type', () async {
+      SharedPreferences.setMockInitialValues({
+        RemoteBuildSettings.preferenceKey: 42,
+      });
+
+      final settings = await RemoteBuildSettings.load();
+
+      expect(settings.toJson(), const RemoteBuildSettings().toJson());
+    });
+
     test('does not serialize or restore credentials', () async {
       const settings = RemoteBuildSettings(repository: 'owner/project');
       expect(settings.toJson().containsKey('token'), isFalse);
