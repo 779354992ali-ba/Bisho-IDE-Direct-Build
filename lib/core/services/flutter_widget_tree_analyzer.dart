@@ -138,7 +138,7 @@ class FlutterWidgetTreeAnalyzer {
           escaped = false;
           continue;
         }
-        if (ch == r'\\') {
+        if (ch == '\\') {
           escaped = true;
           continue;
         }
