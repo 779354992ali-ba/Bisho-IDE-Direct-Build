@@ -19,3 +19,18 @@ This phase is a presentation-layer refresh on top of Phase 3. Existing editor ac
 ## Validation
 - Source-level patch applied.
 - Flutter/Dart SDK is not installed in this editing environment, so `dart format`, `flutter analyze`, tests, and APK build could not be run here. Run them in the project's configured Flutter environment before publishing.
+
+
+# Phase 5 — Build workflow persistence and reliability
+
+## Changes
+- Persist the GitHub repository, workflow filename, branch, and Flutter SDK version used by the cloud build screen.
+- Restore those non-secret settings when the build screen is opened again.
+- Serialize preference writes so rapid field edits cannot leave an older value as the final saved configuration.
+- Keep the GitHub Personal Access Token out of this settings model and its serialized data.
+- Keep local Debug/Release mode persistence independent from cloud build settings.
+- Preserve the existing ARM64 engine, Alpine RootFS, and local build execution path.
+
+## Validation
+- Added unit tests for defaults, persistence round-trip, malformed stored data recovery, and credential exclusion.
+- CI must complete Dart analysis, Flutter tests, Android APK compilation, and JVM tests before this phase is considered build-verified.
