@@ -22,6 +22,7 @@ import 'core/services/local_build_runner.dart';
 import 'core/services/local_build_engine_installer.dart';
 import 'core/services/alpine_rootfs_installer.dart';
 import 'core/services/build_history_store.dart';
+import 'core/services/remote_build_settings.dart';
 import 'features/tools/ide_tool_sheets.dart';
 
 class FlutterPreviewScreen extends StatefulWidget {
@@ -73,6 +74,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   static const _localBuildModePreferenceKey = 'bisho_local_build_mode';
   String _localBuildMode = 'debug';
   bool _localBuildModeChanged = false;
+  bool _remoteSettingsChanged = false;
+  Future<void> _remoteSettingsWrite = Future<void>.value();
   String _localBuildLog = '';
   final StringBuffer _fullBuildLog = StringBuffer();
   BuildHistoryStore? _buildHistoryStore;
@@ -148,6 +151,44 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
     _inspectLocalBuildEnvironment();
     _loadGitHubSession();
     _restoreLocalBuildMode();
+    _restoreRemoteBuildSettings();
+  }
+
+  Future<void> _restoreRemoteBuildSettings() async {
+    try {
+      final settings = await RemoteBuildSettings.load();
+      if (!mounted || _remoteSettingsChanged) return;
+      setState(() {
+        if (settings.repository.isNotEmpty) {
+          _repoController.text = settings.repository;
+        }
+        _workflowController.text = settings.workflow;
+        _branchController.text = settings.branch;
+        _versionController.text = settings.flutterVersion;
+      });
+    } catch (_) {
+      // Saved cloud settings are optional; keep the current defaults.
+    }
+  }
+
+  void _saveRemoteBuildSettings() {
+    _remoteSettingsChanged = true;
+    final settings = RemoteBuildSettings(
+      repository: _repoController.text.trim(),
+      workflow: _workflowController.text.trim().isEmpty
+          ? 'main.yml' : _workflowController.text.trim(),
+      branch: _branchController.text.trim().isEmpty
+          ? 'main' : _branchController.text.trim(),
+      flutterVersion: _versionController.text.trim().isEmpty
+          ? '3.47.9' : _versionController.text.trim(),
+    );
+    _remoteSettingsWrite = _remoteSettingsWrite.then((_) async {
+      try {
+        await settings.save();
+      } catch (_) {
+        // Persistence failure must never block a remote build.
+      }
+    });
   }
 
   Future<void> _restoreLocalBuildMode() async {
@@ -1066,7 +1107,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   }
 
   Widget _field(String label, TextEditingController controller, {
-    String? hint, bool secret = false,
+    String? hint, bool secret = false, ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -1075,6 +1116,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
         obscureText: secret,
         autocorrect: false,
         enableSuggestions: !secret,
+        onChanged: onChanged,
         style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
           labelText: label,
@@ -1565,12 +1607,12 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                 ),
                 const SizedBox(height: 16),
                 _sectionHeading('إعدادات المستودع والبناء', Icons.settings_ethernet_rounded),
-                _field('اسم المستودع الجديد / أو owner/repo للبناء اليدوي', _repoController, hint: 'my-flutter-app'),
-                _field('ملف Workflow', _workflowController, hint: 'build-android.yml أو main.yml'),
+                _field('اسم المستودع الجديد / أو owner/repo للبناء اليدوي', _repoController, hint: 'my-flutter-app', onChanged: (_) => _saveRemoteBuildSettings()),
+                _field('ملف Workflow', _workflowController, hint: 'build-android.yml أو main.yml', onChanged: (_) => _saveRemoteBuildSettings()),
                 Row(children: [
-                  Expanded(child: _field('الفرع', _branchController, hint: 'main')),
+                  Expanded(child: _field('الفرع', _branchController, hint: 'main', onChanged: (_) => _saveRemoteBuildSettings())),
                   const SizedBox(width: 8),
-                  Expanded(child: _field('إصدار Flutter', _versionController)),
+                  Expanded(child: _field('إصدار Flutter', _versionController, onChanged: (_) => _saveRemoteBuildSettings())),
                 ]),
                 const SizedBox(height: 14),
                 _sectionHeading('تشغيل وإدارة البناء السحابي', Icons.rocket_launch_rounded),
