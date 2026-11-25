@@ -81,6 +81,7 @@ import 'core/services/project_backup_repository.dart';
 import 'core/services/project_text_diff.dart';
 import 'core/services/project_text_replacement.dart';
 import 'core/services/github_repository_service.dart';
+import 'core/services/flutter_widget_tree_analyzer.dart';
 import 'features/terminal/bisho_terminal_panel.dart';
 import 'features/tools/ide_tool_sheets.dart';
 import 'core/services/file_version_history.dart';
@@ -3474,6 +3475,74 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     saveTabStateSilently();
   }
+  Future<void> _openWidgetTreeInspector() async {
+    final tab = activeTab;
+    if (tab.language != 'Dart' && !tab.fileName.toLowerCase().endsWith('.dart')) {
+      showMessage('مستكشف Widget Tree يعمل مع ملفات Dart/Flutter فقط');
+      return;
+    }
+    final nodes = FlutterWidgetTreeAnalyzer.analyze(tab.controller.text);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.account_tree_rounded, color: Color(0xFF38BDF8)),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Flutter Widget Inspector')),
+          Text('${nodes.length}', style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8))),
+        ]),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: MediaQuery.of(dialogContext).size.height * .58,
+          child: nodes.isEmpty
+              ? const Center(child: Text('لم يتم العثور على Widgets معروفة في الملف الحالي'))
+              : Column(children: [
+                  const Text(
+                    'شجرة بنية المصدر — تحليل ساكن، وليست بيانات تشغيل حي.',
+                    style: TextStyle(fontSize: 11, color: Colors.white60),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(child: ListView.builder(
+                    itemCount: nodes.length,
+                    itemBuilder: (context, index) {
+                      final node = nodes[index];
+                      return Padding(
+                        padding: EdgeInsetsDirectional.only(start: node.depth * 13.0),
+                        child: ListTile(
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                          leading: Icon(
+                            node.parentIndex == null
+                                ? Icons.account_tree_rounded
+                                : Icons.subdirectory_arrow_right_rounded,
+                            color: node.parentIndex == null
+                                ? const Color(0xFF38BDF8)
+                                : const Color(0xFFA78BFA),
+                            size: 18,
+                          ),
+                          title: Text(node.name,
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                          subtitle: Text('السطر ${node.line}',
+                            style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                          onTap: () {
+                            Navigator.pop(dialogContext);
+                            final offset = node.offset.clamp(0, tab.controller.text.length).toInt();
+                            tab.controller.selection = TextSelection.collapsed(offset: offset);
+                            showMessage('تم الانتقال إلى ${node.name} في السطر ${node.line}');
+                          },
+                        ),
+                      );
+                    },
+                  )),
+                ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إغلاق')),
+        ],
+      ),
+    );
+  }
+
   Future<void> _openGitHubManager() async {
     if (projectUri == null || projectUri!.isEmpty) {
       showMessage('افتح مشروع Flutter أولاً قبل ربط GitHub');
@@ -3853,6 +3922,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _PaletteCommand(title: 'فتح مشروع', description: 'اختيار مجلد مشروع', icon: Icons.folder_open_rounded, run: openProjectFolder, keywords: 'open folder'),
       _PaletteCommand(title: 'مدير المشاريع', description: 'المشاريع الأخيرة والمفضلة', icon: Icons.workspaces_rounded, run: showProjectManager, keywords: 'projects'),
       _PaletteCommand(title: 'إدارة GitHub', description: 'ربط الحساب ورفع مشروع Flutter', icon: Icons.account_tree_rounded, run: _openGitHubManager, keywords: 'git github repository push'),
+      _PaletteCommand(title: 'Flutter Widget Inspector', description: 'استعراض شجرة Widgets والتنقل للأسطر', icon: Icons.account_tree_rounded, run: _openWidgetTreeInspector, keywords: 'widget tree inspector flutter'),
       _PaletteCommand(title: 'حفظ الملف', description: 'حفظ التعديلات الحالية', icon: Icons.save_rounded, run: saveCurrentToDisk, keywords: 'save'),
       _PaletteCommand(title: 'حفظ جميع الملفات', description: 'حفظ كل التبويبات المفتوحة', icon: Icons.save_as_rounded, run: saveAllTabs, keywords: 'save all'),
       _PaletteCommand(title: 'بحث واستبدال', description: 'البحث داخل الملف أو المشروع', icon: Icons.find_replace_rounded, run: () => searchCode(startInReplaceMode: true), keywords: 'search replace find'),
@@ -6190,6 +6260,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _DashboardAction(Icons.restore_rounded, 'سجل إصدارات الملف', _openVersionHistory, green),
       _DashboardAction(Icons.health_and_safety_rounded, 'فحص جودة المشروع', _openProjectInsightsPanel, green),
       _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
+      _DashboardAction(Icons.account_tree_rounded, 'مستكشف شجرة Widgets', _openWidgetTreeInspector, cyan),
       _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
       _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, blue),
     ];
