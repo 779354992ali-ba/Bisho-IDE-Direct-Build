@@ -84,6 +84,7 @@ import 'core/services/github_repository_service.dart';
 import 'core/services/flutter_widget_tree_analyzer.dart';
 import 'core/services/flutter_package_catalog_service.dart';
 import 'core/services/local_code_assistant.dart';
+import 'core/services/editor_minimap_model.dart';
 import 'features/terminal/bisho_terminal_panel.dart';
 import 'features/tools/ide_tool_sheets.dart';
 import 'core/services/file_version_history.dart';
@@ -8623,8 +8624,10 @@ class EditorFullScreenScreen extends StatefulWidget {
 
 class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
   static const String _wordWrapPreferenceKey = 'bisho_editor_word_wrap';
+  static const String _minimapPreferenceKey = 'bisho_editor_minimap';
   late double _fontSize;
   bool _wordWrap = false;
+  bool _showMinimap = true;
 
   @override
   void initState() {
@@ -8637,8 +8640,12 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
     try {
       final preferences = await SharedPreferences.getInstance();
       final savedValue = preferences.getBool(_wordWrapPreferenceKey) ?? false;
+      final savedMinimap = preferences.getBool(_minimapPreferenceKey) ?? true;
       if (!mounted) return;
-      setState(() => _wordWrap = savedValue);
+      setState(() {
+        _wordWrap = savedValue;
+        _showMinimap = savedMinimap;
+      });
     } catch (_) {
       // Word wrap remains available with its default when preferences fail.
     }
@@ -8653,6 +8660,80 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
     } catch (_) {
       // The current session setting remains active if persistence is unavailable.
     }
+  }
+
+  Future<void> _toggleMinimap() async {
+    final nextValue = !_showMinimap;
+    setState(() => _showMinimap = nextValue);
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_minimapPreferenceKey, nextValue);
+    } catch (_) {
+      // Keep the current session setting when persistence is unavailable.
+    }
+  }
+
+  Widget _buildMinimap(EditorTab tab) {
+    if (!_showMinimap) return const SizedBox.shrink();
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: tab.controller,
+      builder: (context, value, _) {
+        final lines = EditorMinimapModel.fromText(
+          value.text,
+          maximumLines: 500,
+        );
+        final cursor = value.selection.isValid
+            ? value.selection.extentOffset.clamp(0, value.text.length).toInt()
+            : value.text.length;
+        final currentLine = '\n'.allMatches(value.text.substring(0, cursor)).length + 1;
+        return Container(
+          width: 54,
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D1727),
+            border: Border(left: BorderSide(color: Color(0xFF26374E))),
+          ),
+          child: Column(children: [
+            const SizedBox(height: 5),
+            const Text('MAP', style: TextStyle(
+              color: Color(0xFF64748B), fontSize: 7, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Expanded(child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+              itemCount: lines.length,
+              itemBuilder: (context, index) {
+                final line = lines[index];
+                final active = line.number == currentLine;
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _setCursor(line.startOffset),
+                  child: Container(
+                    height: 6,
+                    margin: const EdgeInsets.symmetric(vertical: .4),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    decoration: BoxDecoration(
+                      color: active ? const Color(0x5538BDF8) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    child: Text(
+                      line.text.isEmpty ? ' ' : line.text,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.clip,
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 4.2,
+                        height: 1,
+                        color: active ? const Color(0xFF7DD3FC) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            )),
+          ]),
+        );
+      },
+    );
   }
 
   void _changeFontSize(double delta) {
@@ -8991,6 +9072,9 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                   case 'wrap':
                     _toggleWordWrap();
                     break;
+                  case 'minimap':
+                    _toggleMinimap();
+                    break;
                   case 'complete':
                     widget.onShowCompletions();
                     break;
@@ -9077,6 +9161,16 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                     ],
                   ),
                 ),
+                PopupMenuItem(
+                  value: 'minimap',
+                  child: Row(
+                    children: [
+                      Icon(_showMinimap ? Icons.map_rounded : Icons.map_outlined, size: 20),
+                      const SizedBox(width: 12),
+                      Text(_showMinimap ? 'إخفاء خريطة الكود' : 'إظهار خريطة الكود'),
+                    ],
+                  ),
+                ),
               ],
               icon: const Icon(Icons.edit_note),
             ),
@@ -9107,22 +9201,25 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
               clipBehavior: Clip.antiAlias,
               child: CodeTheme(
                 data: CodeThemeData(styles: monokaiSublimeTheme),
-                child: CodeField(
-                  key: ValueKey('fullscreen-${tab.id}'),
-                  controller: tab.controller,
-                  expands: true,
-                  wrap: _wordWrap,
-                  padding: const EdgeInsets.all(14),
-                  textStyle: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: _fontSize,
-                  ),
-                  gutterStyle: const GutterStyle(
-                    showLineNumbers: true,
-                    showErrors: true,
-                    showFoldingHandles: true,
-                  ),
-                ),
+                child: Row(children: [
+                  Expanded(child: CodeField(
+                    key: ValueKey('fullscreen-${tab.id}'),
+                    controller: tab.controller,
+                    expands: true,
+                    wrap: _wordWrap,
+                    padding: const EdgeInsets.all(14),
+                    textStyle: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: _fontSize,
+                    ),
+                    gutterStyle: const GutterStyle(
+                      showLineNumbers: true,
+                      showErrors: true,
+                      showFoldingHandles: true,
+                    ),
+                  )),
+                  if (_showMinimap) _buildMinimap(tab),
+                ]),
               ),
             ),
                 ),
