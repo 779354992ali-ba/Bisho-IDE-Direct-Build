@@ -1410,7 +1410,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                 const SizedBox(height: 14),
                 _sectionHeading('إعدادات البناء المحلي', Icons.tune_rounded),
                 DropdownButtonFormField<String>(
-                  value: _localBuildMode,
+                  initialValue: _localBuildMode,
                   decoration: const InputDecoration(
                     labelText: 'نوع ملف APK المحلي',
                     helperText: 'Debug مناسب لاختبار البناء على ARM64؛ Release يحتاج أدوات AOT متوافقة.',
