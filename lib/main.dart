@@ -1,6 +1,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Directory;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -28,8 +29,27 @@ import 'package:highlight/languages/rust.dart' as rust_lang;
 import 'package:highlight/languages/php.dart' as php_lang;
 import 'package:highlight/languages/yaml.dart' as yaml_lang;
 import 'package:highlight/languages/markdown.dart' as markdown_lang;
+import 'package:highlight/languages/cs.dart' as cs_lang;
+import 'package:highlight/languages/ruby.dart' as ruby_lang;
+import 'package:highlight/languages/powershell.dart' as powershell_lang;
+import 'package:highlight/languages/lua.dart' as lua_lang;
+import 'package:highlight/languages/r.dart' as r_lang;
+import 'package:highlight/languages/graphql.dart' as graphql_lang;
+import 'package:highlight/languages/dockerfile.dart' as dockerfile_lang;
+import 'package:highlight/languages/makefile.dart' as makefile_lang;
+import 'package:highlight/languages/objectivec.dart' as objectivec_lang;
+import 'package:highlight/languages/scala.dart' as scala_lang;
+import 'package:highlight/languages/groovy.dart' as groovy_lang;
+import 'package:highlight/languages/perl.dart' as perl_lang;
+import 'package:highlight/languages/haskell.dart' as haskell_lang;
+import 'package:highlight/languages/elixir.dart' as elixir_lang;
+import 'package:highlight/languages/erlang.dart' as erlang_lang;
+import 'package:highlight/languages/julia.dart' as julia_lang;
+import 'package:highlight/languages/clojure.dart' as clojure_lang;
+import 'package:highlight/languages/ini.dart' as ini_lang;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:saf/saf.dart';
 import 'package:xml/xml.dart';
@@ -59,6 +79,8 @@ import 'core/services/project_backup_service.dart';
 import 'core/services/project_backup_repository.dart';
 import 'core/services/project_text_diff.dart';
 import 'features/terminal/bisho_terminal_panel.dart';
+import 'features/tools/ide_tool_sheets.dart';
+import 'core/services/file_version_history.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -333,6 +355,25 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     'PHP': php_lang.php,
     'Markdown': markdown_lang.markdown,
     'YAML': yaml_lang.yaml,
+    'C#': cs_lang.cs,
+    'Ruby': ruby_lang.ruby,
+    'PowerShell': powershell_lang.powershell,
+    'Lua': lua_lang.lua,
+    'R': r_lang.r,
+    'GraphQL': graphql_lang.graphql,
+    'Dockerfile': dockerfile_lang.dockerfile,
+    'Makefile': makefile_lang.makefile,
+    'Objective-C': objectivec_lang.objectivec,
+    'Scala': scala_lang.scala,
+    'Groovy': groovy_lang.groovy,
+    'Perl': perl_lang.perl,
+    'Haskell': haskell_lang.haskell,
+    'Elixir': elixir_lang.elixir,
+    'Erlang': erlang_lang.erlang,
+    'Julia': julia_lang.julia,
+    'Clojure': clojure_lang.clojure,
+    'TOML': ini_lang.ini,
+    'SVG': xml_lang.xml,
   };
 
   final Map<String, String> extensions = {
@@ -356,6 +397,26 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     'PHP': 'php',
     'Markdown': 'md',
     'YAML': 'yaml',
+    'C#': 'cs',
+    'Ruby': 'rb',
+    'PowerShell': 'ps1',
+    'Lua': 'lua',
+    'R': 'r',
+    'GraphQL': 'graphql',
+    'Dockerfile': 'Dockerfile',
+    'Makefile': 'Makefile',
+    'Objective-C': 'm',
+    'Scala': 'scala',
+    'Groovy': 'groovy',
+    'Perl': 'pl',
+    'Haskell': 'hs',
+    'Elixir': 'ex',
+    'Erlang': 'erl',
+    'Julia': 'jl',
+    'Clojure': 'clj',
+    'TOML': 'toml',
+    'SVG': 'svg',
+    'Assembly': 'asm',
   };
 
   final List<EditorTab> tabs = [];
@@ -1128,6 +1189,39 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     return types[ext] ?? 'application/octet-stream';
   }
 
+  FileVersionHistory? _fileVersionHistory;
+
+  Future<FileVersionHistory?> _ensureVersionHistory() async {
+    if (_fileVersionHistory != null) return _fileVersionHistory;
+    try {
+      final base = await getApplicationDocumentsDirectory();
+      _fileVersionHistory = FileVersionHistory(
+        Directory('${base.path}/bisho_file_versions'),
+      );
+    } catch (_) {
+      return null;
+    }
+    return _fileVersionHistory;
+  }
+
+  String _versionKeyFor(EditorTab tab) =>
+      '${tab.parentUri ?? 'standalone'}|${tab.fileName}';
+
+  Future<void> _snapshotTabVersion(EditorTab tab, {String label = 'حفظ'}) async {
+    try {
+      final history = await _ensureVersionHistory();
+      if (history == null) return;
+      await history.snapshot(
+        _versionKeyFor(tab),
+        tab.fileName,
+        tab.controller.text,
+        label: label,
+      );
+    } catch (_) {
+      // Version history is best-effort and must never block saving.
+    }
+  }
+
   Future<bool> saveTabToSAF(EditorTab tab) async {
     if (tab.parentUri == null || tab.parentUri!.isEmpty) {
       return false;
@@ -1147,6 +1241,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     tab.fileUri = document.uri;
     tab.isSaved = true;
+    await _snapshotTabVersion(tab);
 
     return true;
   }
@@ -1361,6 +1456,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         status = 'تم فتح الملف';
       });
 
+      await _snapshotTabVersion(tabs.last, label: 'عند الفتح');
       await saveTabStateSilently();
     } catch (e) {
       showMessage('تعذر فتح الملف: $e');
@@ -2007,6 +2103,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         status = 'تم فتح ${file.name}';
       });
 
+      await _snapshotTabVersion(tabs.last, label: 'عند الفتح');
       await saveTabStateSilently();
       if (closeOverlay && mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -3785,8 +3882,29 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     _scheduleTabStateSave();
   }
 
+  String? _diagnosticsCacheTabId;
+  String? _diagnosticsCacheLanguage;
+  String? _diagnosticsCacheSource;
+  List<String> _diagnosticsCache = const <String>[];
+
+  /// Memoised per tab/language/text so repeated rebuilds do not re-parse the
+  /// whole file when nothing changed.
   List<String> _getCurrentDiagnostics(EditorTab tab) {
     final source = tab.controller.text;
+    if (_diagnosticsCacheTabId == tab.id &&
+        _diagnosticsCacheLanguage == tab.language &&
+        _diagnosticsCacheSource == source) {
+      return List<String>.of(_diagnosticsCache);
+    }
+    final result = _computeDiagnostics(tab, source);
+    _diagnosticsCacheTabId = tab.id;
+    _diagnosticsCacheLanguage = tab.language;
+    _diagnosticsCacheSource = source;
+    _diagnosticsCache = result;
+    return List<String>.of(result);
+  }
+
+  List<String> _computeDiagnostics(EditorTab tab, String source) {
     final diagnostics = <String>[];
     try {
       switch (tab.language) {
@@ -4662,15 +4780,15 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   Widget buildExplorer() {
     return Container(
       width: 300,
-      color: const Color(0xFF111827),
+      color: const Color(0xFF0F1A2A),
       child: Column(
         children: [
           Container(
             height: 58,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: const BoxDecoration(
-              color: Color(0xFF142238),
-              border: Border(bottom: BorderSide(color: Color(0xFF26374E))),
+              color: Color(0xFF16263B),
+              border: Border(bottom: BorderSide(color: Color(0xFF30445E))),
             ),
             child: Row(
               children: [
@@ -4883,10 +5001,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
   Widget buildTabBar() {
     return Container(
-      height: 52,
+      height: 56,
       decoration: const BoxDecoration(
-        color: Color(0xFF0E1929),
-        border: Border(bottom: BorderSide(color: Color(0xFF26374E))),
+        color: Color(0xFF0C1727),
+        border: Border(bottom: BorderSide(color: Color(0xFF30445E))),
       ),
       child: Row(
         children: [
@@ -4910,10 +5028,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                       color: selected
                           ? const Color(0xFF182A40)
                           : Colors.transparent,
-                      borderRadius: BorderRadius.circular(11),
+                      borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: selected
-                            ? const Color(0xFF2C5675)
+                            ? const Color(0xFF3B7198)
                             : Colors.transparent,
                       ),
                     ),
@@ -5099,6 +5217,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             ],
           ),
           actions: [
+            IconButton(
+              onPressed: searchCode,
+              icon: const Icon(Icons.search_rounded),
+              tooltip: 'بحث في المشروع والكود',
+            ),
             IconButton(
               onPressed: saveCurrentToDisk,
               icon: const Icon(Icons.save_rounded),
@@ -5325,6 +5448,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     final editingActions = <_DashboardAction>[
       _DashboardAction(Icons.search_rounded, 'البحث في الكود', searchCode, cyan),
       _DashboardAction(Icons.find_replace_rounded, 'البحث والاستبدال', () => searchCode(startInReplaceMode: true), violet),
+      _DashboardAction(Icons.manage_search_rounded, 'بحث متقدم (Regex)', _openAdvancedSearch, cyan),
       _DashboardAction(Icons.undo_rounded, 'تراجع', undoCodeEdit, red),
       _DashboardAction(Icons.redo_rounded, 'إعادة', redoCodeEdit, green),
       _DashboardAction(Icons.auto_awesome_rounded, 'الإكمال التلقائي', showCodeCompletions, violet),
@@ -5341,6 +5465,9 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     final qualityActions = <_DashboardAction>[
       _DashboardAction(Icons.auto_fix_high_rounded, 'مساعد إصلاح الأخطاء', _openDiagnosticsPanel, amber),
+      _DashboardAction(Icons.auto_fix_high_rounded, 'إصلاحات مقترحة بمعاينة', _openFixAssistant, amber),
+      _DashboardAction(Icons.format_align_left_rounded, 'تنسيق الكود', _openFormatPreview, cyan),
+      _DashboardAction(Icons.restore_rounded, 'سجل إصدارات الملف', _openVersionHistory, green),
       _DashboardAction(Icons.health_and_safety_rounded, 'فحص جودة المشروع', _openProjectInsightsPanel, green),
       _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
       _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
@@ -5362,11 +5489,20 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     ];
 
     return Container(
-      color: const Color(0xFF0B1220),
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF101D32), Color(0xFF0B1220), Color(0xFF080E19)],
+          stops: [0, .38, 1],
+        ),
+      ),
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(14, 12, 14, 26),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 30),
         children: [
           _dashboardFileStrip(tab),
+          const SizedBox(height: 13),
+          _dashboardHero(tab),
           const SizedBox(height: 16),
           _dashboardPanel(
             child: Column(
@@ -5512,6 +5648,86 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     );
   }
 
+  Widget _dashboardHero(EditorTab tab) {
+    const cyan = Color(0xFF38BDF8);
+    const violet = Color(0xFFA78BFA);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [Color(0xFF173D61), Color(0xFF18264B), Color(0xFF251D49)],
+        ),
+        border: Border.all(color: const Color(0xFF47739C).withValues(alpha: .65)),
+        boxShadow: const [BoxShadow(color: Color(0x26038BCE), blurRadius: 22, offset: Offset(0, 8))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 46, height: 46,
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .10), borderRadius: BorderRadius.circular(15)),
+            child: const Icon(Icons.terminal_rounded, color: cyan, size: 27)),
+          const SizedBox(width: 12),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('مرحباً بك في Bisho IDE', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+            SizedBox(height: 4),
+            Text('بيئة عملك البرمجية — أنشئ، حرّر، وابنِ تطبيقاتك', maxLines: 2,
+              style: TextStyle(color: Color(0xFFC5D8EF), fontSize: 11, height: 1.35)),
+          ])),
+          Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFF34D399), shape: BoxShape.circle)),
+        ]),
+        const SizedBox(height: 17),
+        Row(children: [
+          Expanded(child: _heroMetric(Icons.folder_special_rounded, 'المشروع', projectName == 'لا يوجد مشروع' ? 'غير محدد' : projectName)),
+          const SizedBox(width: 8),
+          Expanded(child: _heroMetric(Icons.description_rounded, 'الملف المفتوح', tab.fileName)),
+          const SizedBox(width: 8),
+          Expanded(child: _heroMetric(Icons.code_rounded, 'اللغة', tab.language)),
+        ]),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(child: FilledButton.icon(
+            onPressed: projectUri == null ? createNewProject : openProjectFolder,
+            icon: Icon(projectUri == null ? Icons.add_rounded : Icons.folder_open_rounded, size: 18),
+            label: Text(projectUri == null ? 'ابدأ مشروعاً' : 'فتح المشروع'),
+            style: FilledButton.styleFrom(backgroundColor: cyan, foregroundColor: const Color(0xFF06243A),
+              minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
+          const SizedBox(width: 9),
+          Expanded(child: OutlinedButton.icon(
+            onPressed: createNewTab,
+            icon: const Icon(Icons.note_add_rounded, size: 18),
+            label: const Text('ملف جديد'),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFF7897BC)),
+              minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Icon(Icons.tips_and_updates_outlined, size: 14, color: violet),
+          const SizedBox(width: 6),
+          Expanded(child: Text(tab.isSaved ? 'مساحة العمل جاهزة — جميع التغييرات محفوظة' : 'لديك تغييرات غير محفوظة في الملف الحالي',
+            style: TextStyle(color: tab.isSaved ? const Color(0xFFB8F5DC) : const Color(0xFFFFD58A), fontSize: 10.5))),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _heroMetric(IconData icon, String label, String value) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
+    decoration: BoxDecoration(color: Colors.black.withValues(alpha: .16), borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.white.withValues(alpha: .09))),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Icon(icon, size: 13, color: const Color(0xFF8DDCFF)), const SizedBox(width: 5),
+        Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Color(0xFFB8CBE1), fontSize: 9)))]),
+      const SizedBox(height: 5),
+      Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700)),
+    ]),
+  );
+
   Widget _dashboardActionSection({
     required IconData icon,
     required String title,
@@ -5566,17 +5782,17 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
   Widget _dashboardFeatureCard(_DashboardAction action) {
     return Material(
-      color: const Color(0xFF182438),
-      borderRadius: BorderRadius.circular(13),
+      color: const Color(0xFF17263A),
+      borderRadius: BorderRadius.circular(14),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: action.onTap,
         child: Container(
-          constraints: const BoxConstraints(minHeight: 66),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          constraints: const BoxConstraints(minHeight: 72),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(13),
-            border: Border.all(color: const Color(0xFF2A3A52)),
+            border: Border.all(color: const Color(0xFF344B68)),
           ),
           child: Row(children: [
             Container(
@@ -5594,7 +5810,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.start,
-              style: const TextStyle(color: Color(0xFFE5EDF7), fontSize: 10.5, height: 1.25, fontWeight: FontWeight.w600),
+              style: const TextStyle(color: Color(0xFFE5EDF7), fontSize: 11, height: 1.28, fontWeight: FontWeight.w600),
             )),
             const Icon(Icons.chevron_left_rounded, size: 17, color: Color(0xFF71839D)),
           ]),
@@ -6121,6 +6337,84 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     return 'اقرأ رسالة الفحص وحدد أول موضع غير متوقع، ثم راجع السطر السابق والسياق المحيط قبل تعديل الملف.';
   }
 
+  void _applyAssistantText(EditorTab tab, String value, String message) {
+    if (!mounted || !tabs.contains(tab)) return;
+    final caret = tab.controller.selection.baseOffset.clamp(0, value.length).toInt();
+    tab.controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: caret),
+    );
+    setState(() {
+      tab.isSaved = false;
+      status = message;
+    });
+    showMessage(message);
+  }
+
+  void _openAdvancedSearch() {
+    final tab = activeTab;
+    showAdvancedSearchSheet(
+      context,
+      fileName: tab.fileName,
+      text: tab.controller.text,
+      onJump: (start, end) {
+        if (!mounted || !tabs.contains(tab)) return;
+        final length = tab.controller.text.length;
+        tab.controller.selection = TextSelection(
+          baseOffset: start.clamp(0, length).toInt(),
+          extentOffset: end.clamp(0, length).toInt(),
+        );
+      },
+      onReplace: (value) =>
+          _applyAssistantText(tab, value, 'تم الاستبدال؛ يمكنك التراجع'),
+    );
+  }
+
+  void _openFixAssistant() {
+    final tab = activeTab;
+    showFixAssistantSheet(
+      context,
+      fileName: tab.fileName,
+      source: tab.controller.text,
+      language: tab.language,
+      onApply: (value) =>
+          _applyAssistantText(tab, value, 'تم تطبيق الإصلاحات المختارة'),
+    );
+  }
+
+  void _openFormatPreview() {
+    final tab = activeTab;
+    showFormatPreviewSheet(
+      context,
+      fileName: tab.fileName,
+      source: tab.controller.text,
+      language: tab.language,
+      onApply: (value) => _applyAssistantText(tab, value, 'تم تنسيق الكود'),
+    );
+  }
+
+  Future<void> _openVersionHistory() async {
+    final tab = activeTab;
+    final history = await _ensureVersionHistory();
+    if (!mounted) return;
+    if (history == null) {
+      showMessage('تعذر الوصول إلى مساحة سجل الإصدارات');
+      return;
+    }
+    await showVersionHistorySheet(
+      context,
+      history: history,
+      historyKey: _versionKeyFor(tab),
+      fileName: tab.fileName,
+      currentText: tab.controller.text,
+      onRestore: (value) => _applyAssistantText(
+        tab,
+        value,
+        'تمت استعادة الإصدار؛ احفظ الملف لتثبيته',
+      ),
+    );
+  }
+
   void _openDiagnosticsPanel() {
     final tab = activeTab;
     final diagnostics = _getCurrentDiagnostics(tab);
@@ -6304,11 +6598,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }
 
   Widget _dashboardPanel({required Widget child}) => Container(
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: const Color(0xFF151F30),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFF29384D), width: 1),
+      color: const Color(0xFF131F30),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: const Color(0xFF30445E), width: 1),
     ),
     child: child,
   );

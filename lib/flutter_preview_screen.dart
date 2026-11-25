@@ -1,10 +1,12 @@
 import 'dart:convert';
 
 import 'dart:async';
+import 'dart:io' show Directory;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:saf/saf.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'core/services/flutter_pubspec_validator.dart';
@@ -18,6 +20,8 @@ import 'core/services/engine_health_report.dart';
 import 'core/services/local_build_runner.dart';
 import 'core/services/local_build_engine_installer.dart';
 import 'core/services/alpine_rootfs_installer.dart';
+import 'core/services/build_history_store.dart';
+import 'features/tools/ide_tool_sheets.dart';
 
 class FlutterPreviewScreen extends StatefulWidget {
   final String projectName;
@@ -67,6 +71,45 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   bool _localBuildRunning = false;
   String _localBuildMode = 'debug';
   String _localBuildLog = '';
+  final StringBuffer _fullBuildLog = StringBuffer();
+  BuildHistoryStore? _buildHistoryStore;
+
+  Future<BuildHistoryStore?> _ensureBuildHistoryStore() async {
+    if (_buildHistoryStore != null) return _buildHistoryStore;
+    try {
+      final base = await getApplicationDocumentsDirectory();
+      _buildHistoryStore =
+          BuildHistoryStore(Directory('${base.path}/bisho_build_history'));
+    } catch (_) {
+      return null;
+    }
+    return _buildHistoryStore;
+  }
+
+  Future<void> _recordBuildHistory({required bool success}) async {
+    try {
+      final store = await _ensureBuildHistoryStore();
+      if (store == null || _fullBuildLog.isEmpty) return;
+      await store.record(
+        log: _fullBuildLog.toString(),
+        success: success,
+        mode: _localBuildMode,
+        projectName: _projectName,
+      );
+    } catch (_) {
+      // Build history is optional and must not affect the build result.
+    }
+  }
+
+  Future<void> _openBuildAnalysis() async {
+    final store = await _ensureBuildHistoryStore();
+    if (!mounted) return;
+    await showBuildAnalysisSheet(
+      context,
+      log: _fullBuildLog.isEmpty ? _localBuildLog : _fullBuildLog.toString(),
+      store: store,
+    );
+  }
   LocalBuildEnvironment? _localBuildEnvironment;
   bool _checkingLocalBuild = false;
   GitHubAccount? _githubAccount;
@@ -131,12 +174,14 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       _showMessage('محرك البناء أو متطلبات الجهاز غير مكتملة.');
       return;
     }
+    _fullBuildLog.clear();
     setState(() {
       _localBuildRunning = true;
       _localBuildLog = 'جارٍ نسخ ملفات المشروع إلى مساحة البناء الخاصة بالتطبيق...';
     });
     _localBuildSubscription?.cancel();
     _localBuildSubscription = _localBuildRunner.progress.listen((event) {
+      if (_fullBuildLog.length < 400000) _fullBuildLog.writeln(event.message);
       if (!mounted) return;
       setState(() {
         final lines = <String>[..._localBuildLog.split('\n'), event.message];
@@ -148,6 +193,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       if (mounted) setState(() => _localBuildLog = 'تعذر استقبال سجل البناء: $error');
     });
     String? staged;
+    var buildSucceeded = false;
     try {
       staged = await _localBuildRunner.stageProject(projectUri, _projectName);
       if (!mounted) return;
@@ -160,10 +206,13 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
         parentUri: projectUri,
         fileName: apkName,
       );
+      buildSucceeded = true;
       if (!mounted) return;
+      _fullBuildLog.writeln('نجح البناء المحلي وحُفظ $apkName');
       setState(() => _localBuildLog = 'نجح البناء المحلي وحُفظ $apkName داخل مجلد المشروع.');
       _showMessage('اكتمل البناء المحلي وحُفظ $apkName.');
     } catch (error) {
+      _fullBuildLog.writeln('فشل البناء المحلي: $error');
       if (!mounted) return;
       setState(() {
         final previous = _localBuildLog.trim();
@@ -176,6 +225,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       if (staged != null) {
         try { await _localBuildRunner.removeStagedProject(staged); } catch (_) { /* best-effort cleanup */ }
       }
+      await _recordBuildHistory(success: buildSucceeded);
       if (mounted) setState(() => _localBuildRunning = false);
       await _inspectLocalBuildEnvironment();
     }
@@ -1403,6 +1453,14 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(8)),
                     child: SingleChildScrollView(child: SelectableText(_localBuildLog,
                       style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.white70))),
+                  ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: _openBuildAnalysis,
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: const Text('تحليل السجل والأخطاء وعمليات البناء السابقة'),
+                    ),
                   ),
                 ],
                 const SizedBox(height: 4),
