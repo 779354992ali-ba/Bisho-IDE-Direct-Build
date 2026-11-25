@@ -471,6 +471,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   bool _bottomPanelVisible = false;
   int _bottomPanelTab = 0;
   double _editorFontSize = 14;
+  bool _splitEditorWordWrap = true;
   double _bottomPanelHeight = 154;
   final Map<String, List<String>> _undoHistory = {};
   final Map<String, List<String>> _redoHistory = {};
@@ -4207,7 +4208,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               key: ValueKey('split-${item.id}'),
               controller: item.controller,
               expands: true,
-              wrap: _wordWrap,
+              wrap: _splitEditorWordWrap,
               padding: const EdgeInsets.all(9),
               textStyle: TextStyle(fontFamily: 'monospace', fontSize: (_editorFontSize - 2).clamp(10.0, 18.0).toDouble()),
               gutterStyle: const GutterStyle(
@@ -4227,6 +4228,12 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           const Icon(Icons.vertical_split_rounded, color: Color(0xFF38BDF8), size: 19),
           const SizedBox(width: 8),
           const Expanded(child: Text('المحرر المقسّم', style: TextStyle(fontWeight: FontWeight.w800))),
+          IconButton(
+            tooltip: _splitEditorWordWrap ? 'تعطيل التفاف الأسطر' : 'تفعيل التفاف الأسطر',
+            visualDensity: VisualDensity.compact,
+            onPressed: () => setState(() => _splitEditorWordWrap = !_splitEditorWordWrap),
+            icon: Icon(_splitEditorWordWrap ? Icons.wrap_text : Icons.notes, size: 18),
+          ),
           DropdownButton<String>(
             value: secondary.id,
             isDense: true,
