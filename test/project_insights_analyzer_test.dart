@@ -44,7 +44,7 @@ void main() {
 
     test('flags insecure HTTP endpoints and dynamic code execution', () {
       final report = analyzer.analyze({
-        'src/app.js': "fetch('http://example.com/api');\\neval(userInput);",
+        'src/app.js': "fetch('http://example.com/api');\neval(userInput);",
       });
       expect(report.insights.map((i) => i.code), containsAll([
         'insecure_http_endpoint', 'dynamic_code_execution',
