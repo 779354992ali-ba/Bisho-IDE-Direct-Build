@@ -5415,6 +5415,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }
 
   Widget _buildToolsDashboard(EditorTab tab) {
+    final selection = tab.controller.selection;
+    final cursorOffset = selection.isValid
+        ? selection.extentOffset.clamp(0, tab.controller.text.length).toInt()
+        : tab.controller.text.length;
+    final cursorPosition = _cursorLineColumn(tab.controller.text, cursorOffset);
     const cyan = Color(0xFF38BDF8);
     const blue = Color(0xFF60A5FA);
     const violet = Color(0xFFA78BFA);
@@ -5633,8 +5638,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
               Text(tab.language, style: const TextStyle(color: cyan, fontSize: 11, fontWeight: FontWeight.w700)),
               const SizedBox(width: 10),
-              Text('Ln ${tab.controller.selection.isValid ? tab.controller.selection.extentOffset : 1}',
-                style: const TextStyle(color: Color(0xFF9BAFCB), fontSize: 10)),
+              Text('Ln ${cursorPosition.$1}, Col ${cursorPosition.$2}',
+                style: const TextStyle(color: Color(0xFF9BAFCB), fontSize: 10, fontFamily: 'monospace')),
             ]),
           ),
           const SizedBox(height: 10),
