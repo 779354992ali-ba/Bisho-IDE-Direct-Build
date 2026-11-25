@@ -3564,7 +3564,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               expands: true,
               wrap: _wordWrap,
               padding: const EdgeInsets.all(9),
-              textStyle: TextStyle(fontFamily: 'monospace', fontSize: (_editorFontSize - 2).clamp(10, 18)),
+              textStyle: TextStyle(fontFamily: 'monospace', fontSize: (_editorFontSize - 2).clamp(10.0, 18.0).toDouble()),
               gutterStyle: const GutterStyle(
                 showLineNumbers: true,
                 showErrors: true,
@@ -3588,8 +3588,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             underline: const SizedBox(),
             dropdownColor: const Color(0xFF18263B),
             items: tabs.where((item) => item.id != primary.id).map((item) =>
-              DropdownMenuItem(value: item.id, child: Text(item.fileName,
-                maxWidth: 130, overflow: TextOverflow.ellipsis))
+              DropdownMenuItem(value: item.id, child: SizedBox(width: 130, child: Text(item.fileName,
+                maxLines: 1, overflow: TextOverflow.ellipsis)))
             ).toList(),
             onChanged: (value) => setState(() => _splitTabId = value),
           ),
