@@ -47,13 +47,11 @@ class FlutterWidgetTreeAnalyzer {
     final code = _maskCommentsAndStrings(source);
     final nodes = <FlutterWidgetNode>[];
     final stack = <({String opener, int? widgetIndex})>[];
-    var line = 1;
     var i = 0;
 
     while (i < code.length && nodes.length < maximumNodes) {
       final ch = code[i];
       if (ch == '\n') {
-        line++;
         i++;
         continue;
       }
@@ -66,7 +64,6 @@ class FlutterWidgetTreeAnalyzer {
         final name = code.substring(start, i);
         var next = i;
         while (next < code.length && code[next].trim().isEmpty) {
-          if (code[next] == '\n') line++;
           next++;
         }
         if (_widgets.contains(name) && next < code.length && code[next] == '(') {
