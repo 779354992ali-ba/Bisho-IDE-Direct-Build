@@ -52,6 +52,21 @@ void main() {
       expect(settings.toJson(), const RemoteBuildSettings().toJson());
     });
 
+    test('falls back per field when decoded settings contain wrong types', () async {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        RemoteBuildSettings.preferenceKey,
+        '{"repository":42,"workflow":false,"branch":"release","flutterVersion":[]}',
+      );
+
+      final settings = await RemoteBuildSettings.load();
+
+      expect(settings.repository, isEmpty);
+      expect(settings.workflow, 'main.yml');
+      expect(settings.branch, 'release');
+      expect(settings.flutterVersion, '3.47.9');
+    });
+
     test('does not serialize or restore credentials', () async {
       const settings = RemoteBuildSettings(repository: 'owner/project');
       expect(settings.toJson().containsKey('token'), isFalse);
