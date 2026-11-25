@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/services/build_history_store.dart';
 import '../../core/services/file_version_history.dart';
+import '../../core/services/editor_quick_fix_engine.dart';
 
 Future<void> showAdvancedSearchSheet(BuildContext context, {required String fileName, required String text, required void Function(int,int) onJump, required ValueChanged<String> onReplace}) async {
  final find=TextEditingController(), replace=TextEditingController();
@@ -18,12 +19,79 @@ Future<void> showAdvancedSearchSheet(BuildContext context, {required String file
  find.dispose();replace.dispose();
 }
 String _tidy(String s){final a=s.replaceAll('\r\n','\n').replaceAll('\r','\n').split('\n').map((x)=>x.replaceFirst(RegExp(r'[ \t]+$'),'')).toList();while(a.isNotEmpty&&a.last.isEmpty){a.removeLast();}return a.isEmpty?'':'${a.join('\n')}\n';}
-Future<void> showFixAssistantSheet(BuildContext context,{required String fileName,required String source,required String language,required ValueChanged<String> onApply}) async {
- final v=_tidy(source);await showModalBottomSheet<void>(context:context,useSafeArea:true,builder:(ctx)=>Padding(padding:const EdgeInsets.all(18),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
- Text('مساعد الإصلاح · $fileName',style:Theme.of(ctx).textTheme.titleMedium),const SizedBox(height:8),
- const Text('إصلاحات آمنة فقط: توحيد نهايات الأسطر وإزالة المسافات الزائدة. لا يتم تغيير منطق البرنامج.'),const SizedBox(height:12),
- Text(v==source?'لا توجد تحسينات آمنة.':'تم العثور على تحسينات تنسيق.'),Row(children:[Expanded(child:TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء'))),Expanded(child:FilledButton(onPressed:v==source?null:(){onApply(v);Navigator.pop(ctx);},child:const Text('تطبيق')))])
- ])));
+Future<void> showFixAssistantSheet(
+  BuildContext context, {
+  required String fileName,
+  required String source,
+  required String language,
+  required ValueChanged<String> onApply,
+}) async {
+  final preview = EditorQuickFixEngine.preview(source, language);
+  await showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    builder: (ctx) => Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('مساعد الإصلاح · $fileName',
+            style: Theme.of(ctx).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          const Text(
+            'يقترح إصلاح الأقواس غير المتطابقة عندما يكون التعديل واضحًا، '
+            'مع تنظيف المسافات ونهايات الأسطر. راجع المعاينة قبل التطبيق.',
+          ),
+          const SizedBox(height: 10),
+          if (preview.fixes.isEmpty)
+            const Text('لا توجد إصلاحات آمنة مقترحة.')
+          else
+            ...preview.fixes.map((fix) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(children: [
+                const Icon(Icons.check_circle_outline, size: 16, color: Color(0xFF34D399)),
+                const SizedBox(width: 7),
+                Expanded(child: Text(fix, style: const TextStyle(fontSize: 12))),
+              ]),
+            )),
+          const SizedBox(height: 10),
+          Container(
+            height: 170,
+            padding: const EdgeInsets.all(9),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0B1220),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFF26374E)),
+            ),
+            child: SingleChildScrollView(
+              child: SelectableText(
+                preview.updatedSource,
+                style: const TextStyle(fontFamily: 'monospace', fontSize: 11),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(children: [
+            Expanded(child: TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء'),
+            )),
+            Expanded(child: FilledButton(
+              onPressed: preview.hasChanges
+                  ? () {
+                      onApply(preview.updatedSource);
+                      Navigator.pop(ctx);
+                    }
+                  : null,
+              child: const Text('تطبيق الإصلاحات'),
+            )),
+          ]),
+        ],
+      ),
+    ),
+  );
 }
 Future<void> showFormatPreviewSheet(BuildContext context,{required String fileName,required String source,required String language,required ValueChanged<String> onApply}) async {
  final v=_tidy(source);await showModalBottomSheet<void>(context:context,isScrollControlled:true,useSafeArea:true,builder:(ctx)=>Padding(padding:const EdgeInsets.all(16),child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.stretch,children:[
