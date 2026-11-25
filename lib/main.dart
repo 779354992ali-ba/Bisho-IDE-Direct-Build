@@ -4667,7 +4667,18 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         ? selection.extentOffset.clamp(0, source.length).toInt()
         : source.length;
     final beforeCursor = source.substring(0, cursor);
-    final match = RegExp(r'[A-Za-z_][A-Za-z0-9_]*
+    final match = RegExp(r'[A-Za-z_][A-Za-z0-9_]*$').firstMatch(beforeCursor);
+    final memberMatch = RegExp(
+      r'([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)?$',
+    ).firstMatch(beforeCursor);
+    final prefix = memberMatch?.group(2) ?? match?.group(0) ?? '';
+    final contextual = memberMatch == null
+        ? const <String>[]
+        : EditorCompletionEngine.contextualCandidates(
+            receiver: memberMatch.group(1) ?? '',
+            language: tab.language,
+          );
+
     final Map<String, List<String>> completions = {
       'Dart': [
         'void main() {\n  \n}',
