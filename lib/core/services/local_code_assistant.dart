@@ -105,9 +105,9 @@ class LocalCodeAssistant {
   static LocalAssistantReport _security(String source) {
     final items = <String>[];
     final patterns = <({RegExp pattern, String message})>[
-      (pattern: RegExp(r'(?i)(?:ghp_|github_pat_)[A-Za-z0-9_]{12,}'),
+      (pattern: RegExp(r'(?:ghp_|github_pat_)[A-Za-z0-9_]{12,}', caseSensitive: false),
         message: 'قد يحتوي الملف على رمز وصول GitHub؛ لا تعرضه أو ترفعه، وانقله إلى التخزين الآمن ثم ألغِ الرمز المكشوف.'),
-      (pattern: RegExp(r'(?i)(?:api[_-]?key|secret|password|token)\s*[:=]\s*[\x27\x22][^\x27\x22]{6,}[\x27\x22]'),
+      (pattern: RegExp(r'(?:api[_-]?key|secret|password|token)\s*[:=]\s*[\x27\x22][^\x27\x22]{6,}[\x27\x22]', caseSensitive: false),
         message: 'قد توجد قيمة اعتماد ثابتة داخل المصدر؛ استخدم تخزينًا آمنًا أو متغيرات بيئة.'),
       (pattern: RegExp(r'http://[^\s\x27\x22]+'),
         message: 'راجع روابط HTTP غير المشفرة؛ استخدم HTTPS عندما يكون مدعومًا.'),
