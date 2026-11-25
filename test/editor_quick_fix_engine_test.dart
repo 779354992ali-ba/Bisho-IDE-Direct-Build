@@ -28,7 +28,7 @@ void main() {
       expect(preview.updatedSource, isNot(contains('}')));
     });
 
-    test('returns no changes for normalized source', () {
+    test('does not modify an empty file', () {\n      final preview = EditorQuickFixEngine.preview('', 'Dart');\n      expect(preview.hasChanges, isFalse);\n    });\n\n    test('returns no changes for normalized source', () {
       final preview = EditorQuickFixEngine.preview('void main() {}\n', 'Dart');
       expect(preview.hasChanges, isFalse);
       expect(preview.fixes, isEmpty);
