@@ -82,6 +82,7 @@ import 'core/services/project_text_diff.dart';
 import 'core/services/project_text_replacement.dart';
 import 'core/services/github_repository_service.dart';
 import 'core/services/flutter_widget_tree_analyzer.dart';
+import 'core/services/flutter_package_catalog_service.dart';
 import 'features/terminal/bisho_terminal_panel.dart';
 import 'features/tools/ide_tool_sheets.dart';
 import 'core/services/file_version_history.dart';
@@ -356,6 +357,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   final Saf saf = Saf();
   final SafFileService safFiles = SafFileService();
   final GitHubRepositoryService _githubService = GitHubRepositoryService();
+  final FlutterPackageCatalogService _packageCatalog = FlutterPackageCatalogService();
 
   final Map<String, dynamic> languages = {
     'Dart': dart_lang.dart,
@@ -3475,6 +3477,224 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     saveTabStateSilently();
   }
+  Future<void> _openFlutterPackageManager() async {
+    final rootUri = projectUri;
+    if (rootUri == null || rootUri.isEmpty) {
+      showMessage('افتح مشروع Flutter أولاً');
+      return;
+    }
+    try {
+      final pubspec = await safFiles.findChild(parentUri: rootUri, name: 'pubspec.yaml');
+      if (pubspec == null || pubspec.isDir) {
+        showMessage('لم يتم العثور على pubspec.yaml في جذر المشروع');
+        return;
+      }
+      var source = utf8.decode(await safFiles.readFile(pubspec.uri), allowMalformed: false);
+      var dependencies = FlutterPackageCatalogService.readDependencies(source);
+      final searchController = TextEditingController();
+      var results = <String>[];
+      var busy = false;
+      var statusMessage = 'إدارة dependencies من pub.dev';
+      var searchError = '';
+
+      Future<void> saveSource(String updated) async {
+        await safFiles.saveFile(
+          parentUri: rootUri,
+          fileName: 'pubspec.yaml',
+          bytes: Uint8List.fromList(utf8.encode(updated)),
+          overwrite: true,
+        );
+        source = updated;
+        dependencies = FlutterPackageCatalogService.readDependencies(source);
+        for (final tab in tabs.where((item) => item.fileUri == pubspec.uri)) {
+          tab.controller.value = TextEditingValue(
+            text: updated,
+            selection: TextSelection.collapsed(offset: updated.length),
+          );
+          tab.isSaved = true;
+        }
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final installed = dependencies.entries.toList()
+              ..sort((a, b) => a.key.compareTo(b.key));
+            return AlertDialog(
+              title: const Row(children: [
+                Icon(Icons.inventory_2_rounded, color: Color(0xFF38BDF8)),
+                SizedBox(width: 8),
+                Text('مدير حزم Flutter وDart'),
+              ]),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: MediaQuery.of(dialogContext).size.height * .65,
+                child: Column(children: [
+                  TextField(
+                    controller: searchController,
+                    enabled: !busy,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (value) async {
+                      if (value.trim().isEmpty) return;
+                      setDialogState(() { busy = true; searchError = ''; });
+                      try {
+                        final found = await _packageCatalog.searchPackages(value);
+                        if (context.mounted) setDialogState(() {
+                          results = found;
+                          statusMessage = 'نتائج pub.dev: ${found.length}';
+                        });
+                      } catch (error) {
+                        if (context.mounted) setDialogState(() => searchError = '$error');
+                      } finally {
+                        if (context.mounted) setDialogState(() => busy = false);
+                      }
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'ابحث عن حزمة مثل http أو provider',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: 'بحث في pub.dev',
+                        onPressed: busy ? null : () async {
+                          final value = searchController.text.trim();
+                          if (value.isEmpty) return;
+                          setDialogState(() { busy = true; searchError = ''; });
+                          try {
+                            final found = await _packageCatalog.searchPackages(value);
+                            if (context.mounted) setDialogState(() {
+                              results = found;
+                              statusMessage = 'نتائج pub.dev: ${found.length}';
+                            });
+                          } catch (error) {
+                            if (context.mounted) setDialogState(() => searchError = '$error');
+                          } finally {
+                            if (context.mounted) setDialogState(() => busy = false);
+                          }
+                        },
+                        icon: const Icon(Icons.travel_explore_rounded),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Row(children: [
+                    const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF34D399), size: 15),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text('الحزم المثبتة: ${dependencies.length}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))),
+                    Text('pubspec.yaml', style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                  ]),
+                  const Divider(height: 14),
+                  if (busy) const LinearProgressIndicator(minHeight: 2),
+                  if (searchError.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(searchError, style: const TextStyle(color: Colors.orangeAccent, fontSize: 11)),
+                    ),
+                  Expanded(
+                    child: ListView(children: [
+                      if (installed.isNotEmpty) ...[
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 5),
+                          child: Text('الحزم الحالية', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF34D399))),
+                        ),
+                        ...installed.map((entry) {
+                          final protected = entry.key == 'flutter' || entry.value.isEmpty;
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.inventory_2_outlined, size: 18),
+                            title: Text(entry.key, style: const TextStyle(fontSize: 12)),
+                            subtitle: Text(entry.value.isEmpty ? 'اعتماد SDK' : entry.value,
+                              style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                            trailing: protected ? const Icon(Icons.lock_outline, size: 16, color: Colors.white38)
+                                : IconButton(
+                                    tooltip: 'إزالة من pubspec',
+                                    onPressed: busy ? null : () async {
+                                      final updated = FlutterPackageCatalogService.removeDependency(
+                                        source, name: entry.key,
+                                      );
+                                      setDialogState(() { busy = true; });
+                                      try {
+                                        await saveSource(updated);
+                                        if (context.mounted) setDialogState(() => statusMessage = 'تمت إزالة ${entry.key} من pubspec.yaml');
+                                      } catch (error) {
+                                        if (context.mounted) setDialogState(() => statusMessage = 'تعذر الحفظ: $error');
+                                      } finally {
+                                        if (context.mounted) setDialogState(() => busy = false);
+                                      }
+                                    },
+                                    icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 19),
+                                  ),
+                          );
+                        }),
+                      ],
+                      if (results.isNotEmpty) ...[
+                        const Divider(),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 5),
+                          child: Text('نتائج pub.dev', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF38BDF8))),
+                        ),
+                        ...results.map((name) {
+                          final alreadyInstalled = dependencies.containsKey(name);
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.extension_outlined, color: Color(0xFF60A5FA), size: 19),
+                            title: Text(name, style: const TextStyle(fontSize: 12)),
+                            subtitle: Text(alreadyInstalled ? 'مضافة إلى المشروع' : 'إضافة أحدث إصدار مستقر',
+                              style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                            trailing: alreadyInstalled
+                                ? const Icon(Icons.check_circle, color: Color(0xFF34D399), size: 19)
+                                : IconButton(
+                                    tooltip: 'إضافة الحزمة',
+                                    onPressed: busy ? null : () async {
+                                      setDialogState(() { busy = true; statusMessage = 'جارٍ جلب أحدث إصدار من $name…'; });
+                                      try {
+                                        final info = await _packageCatalog.packageInfo(name);
+                                        final updated = FlutterPackageCatalogService.addDependency(
+                                          source, name: info.name, version: info.latestVersion,
+                                        );
+                                        await saveSource(updated);
+                                        if (context.mounted) setDialogState(() => statusMessage = 'تمت إضافة $name: ^${info.latestVersion} إلى pubspec.yaml');
+                                      } catch (error) {
+                                        if (context.mounted) setDialogState(() => statusMessage = 'تعذرت إضافة الحزمة: $error');
+                                      } finally {
+                                        if (context.mounted) setDialogState(() => busy = false);
+                                      }
+                                    },
+                                    icon: const Icon(Icons.add_circle, color: Color(0xFF38BDF8), size: 21),
+                                  ),
+                          );
+                        }),
+                      ],
+                      if (installed.isEmpty && results.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Center(child: Text('ابحث عن حزمة أو راجع dependencies في المشروع')),
+                        ),
+                    ]),
+                  ),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(statusMessage,
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10, color: Colors.white60)),
+                  ),
+                  const Text('يتم تحديث pubspec.yaml فقط؛ حلّ الحزم يتم عبر Flutter pub get في بيئة البناء.',
+                    style: TextStyle(fontSize: 10, color: Colors.white38)),
+                ]),
+              ),
+              actions: [
+                TextButton(onPressed: busy ? null : () => Navigator.pop(dialogContext), child: const Text('إغلاق')),
+              ],
+            );
+          },
+        ),
+      );
+      searchController.dispose();
+    } catch (error) {
+      showMessage('تعذر فتح مدير الحزم: $error');
+    }
+  }
+
   Future<void> _openWidgetTreeInspector() async {
     final tab = activeTab;
     if (tab.language != 'Dart' && !tab.fileName.toLowerCase().endsWith('.dart')) {
@@ -3923,6 +4143,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _PaletteCommand(title: 'مدير المشاريع', description: 'المشاريع الأخيرة والمفضلة', icon: Icons.workspaces_rounded, run: showProjectManager, keywords: 'projects'),
       _PaletteCommand(title: 'إدارة GitHub', description: 'ربط الحساب ورفع مشروع Flutter', icon: Icons.account_tree_rounded, run: _openGitHubManager, keywords: 'git github repository push'),
       _PaletteCommand(title: 'Flutter Widget Inspector', description: 'استعراض شجرة Widgets والتنقل للأسطر', icon: Icons.account_tree_rounded, run: _openWidgetTreeInspector, keywords: 'widget tree inspector flutter'),
+      _PaletteCommand(title: 'مدير حزم Flutter وDart', description: 'البحث في pub.dev وإدارة dependencies', icon: Icons.inventory_2_rounded, run: _openFlutterPackageManager, keywords: 'pub package dependencies pub.dev'),
       _PaletteCommand(title: 'حفظ الملف', description: 'حفظ التعديلات الحالية', icon: Icons.save_rounded, run: saveCurrentToDisk, keywords: 'save'),
       _PaletteCommand(title: 'حفظ جميع الملفات', description: 'حفظ كل التبويبات المفتوحة', icon: Icons.save_as_rounded, run: saveAllTabs, keywords: 'save all'),
       _PaletteCommand(title: 'بحث واستبدال', description: 'البحث داخل الملف أو المشروع', icon: Icons.find_replace_rounded, run: () => searchCode(startInReplaceMode: true), keywords: 'search replace find'),
@@ -5904,6 +6125,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     WidgetsBinding.instance.removeObserver(this);
     _explorerFilterController.dispose();
     _githubService.close();
+    _packageCatalog.close();
     _isDisposing = true;
     _tabStateSaveTimer?.cancel();
     // Capture the final editor state before releasing the controllers.
@@ -6261,6 +6483,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _DashboardAction(Icons.health_and_safety_rounded, 'فحص جودة المشروع', _openProjectInsightsPanel, green),
       _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
       _DashboardAction(Icons.account_tree_rounded, 'مستكشف شجرة Widgets', _openWidgetTreeInspector, cyan),
+      _DashboardAction(Icons.inventory_2_rounded, 'مدير حزم Flutter وDart', _openFlutterPackageManager, blue),
       _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
       _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, blue),
     ];
