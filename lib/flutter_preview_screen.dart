@@ -23,6 +23,7 @@ import 'core/services/local_build_engine_installer.dart';
 import 'core/services/alpine_rootfs_installer.dart';
 import 'core/services/build_history_store.dart';
 import 'core/services/remote_build_settings.dart';
+import 'core/services/github_workflow_progress.dart';
 import 'features/tools/ide_tool_sheets.dart';
 
 class FlutterPreviewScreen extends StatefulWidget {
@@ -140,6 +141,9 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   DateTime? _dispatchTime;
   String? _workflowStatus;
   String? _workflowConclusion;
+  GitHubWorkflowProgress _workflowProgressSnapshot = const GitHubWorkflowProgress(
+    completedJobs: 0, totalJobs: 0, progress: 0, jobLines: [],
+  );
 
   @override
   void initState() {
@@ -776,6 +780,9 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       _runId = null;
       _workflowStatus = null;
       _workflowConclusion = null;
+      _workflowProgressSnapshot = const GitHubWorkflowProgress(
+        completedJobs: 0, totalJobs: 0, progress: 0, jobLines: [],
+      );
     });
     try {
       final account = _githubAccount ?? await _githubService.verifyToken(token);
@@ -863,6 +870,9 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       _runId = null;
       _workflowStatus = null;
       _workflowConclusion = null;
+      _workflowProgressSnapshot = const GitHubWorkflowProgress(
+        completedJobs: 0, totalJobs: 0, progress: 0, jobLines: [],
+      );
       _dispatchTime = DateTime.now().toUtc();
     });
     try {
@@ -1037,9 +1047,32 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       final run = matching.first;
       final status = run['status']?.toString() ?? 'unknown';
       final conclusion = run['conclusion']?.toString();
+      final runId = run['id']?.toString();
+      var progressSnapshot = const GitHubWorkflowProgress(
+        completedJobs: 0, totalJobs: 0, progress: 0, jobLines: [],
+      );
+      if (runId != null) {
+        try {
+          final jobsUri = Uri.https(
+            'api.github.com',
+            '/repos/$_repo/actions/runs/$runId/jobs',
+            {'per_page': '100'},
+          );
+          final jobsResponse = await http.get(jobsUri, headers: _headers)
+              .timeout(const Duration(seconds: 20));
+          if (jobsResponse.statusCode == 200) {
+            progressSnapshot = GitHubWorkflowProgress.fromApiPayload(
+              jsonDecode(jobsResponse.body),
+            );
+          }
+        } catch (_) {
+          // Job-level progress is supplementary; keep the run status usable.
+        }
+      }
       if (!mounted) return;
       setState(() {
-        _runId = run['id']?.toString();
+        _workflowProgressSnapshot = progressSnapshot;
+        _runId = runId;
         _runUrl = run['html_url']?.toString();
         _workflowStatus = status;
         _workflowConclusion = conclusion;
@@ -1675,6 +1708,40 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
                   ]),
                 ),
+                if (_workflowProgressSnapshot.totalJobs > 0) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('تقدم مهام البناء',
+                        style: TextStyle(color: _muted, fontSize: 11)),
+                      Text(
+                        '${(_workflowProgressSnapshot.progress * 100).round()}%  '
+                        '(${_workflowProgressSnapshot.completedJobs}/${_workflowProgressSnapshot.totalJobs})',
+                        style: const TextStyle(color: _cyan, fontSize: 11,
+                          fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: LinearProgressIndicator(
+                      value: _workflowProgressSnapshot.progress,
+                      minHeight: 7,
+                      backgroundColor: const Color(0xFF26374E),
+                    ),
+                  ),
+                  if (_workflowProgressSnapshot.jobLines.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    ..._workflowProgressSnapshot.jobLines.map((line) => Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(line, maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: _muted, fontSize: 10)),
+                    )),
+                  ],
+                ],
                 const SizedBox(height: 10),
                 Container(
                   width: double.infinity,
