@@ -98,6 +98,40 @@ void main() {
       expect(sql, isNot(contains('hiddenColumn')));
     });
 
+    test('suggests receiver members for common APIs', () {
+      expect(
+        EditorCompletionEngine.contextualCandidates(
+          receiver: 'console',
+          language: 'JavaScript',
+        ),
+        containsAll(['log()', 'warn()', 'error()']),
+      );
+      expect(
+        EditorCompletionEngine.contextualCandidates(
+          receiver: 'Colors',
+          language: 'Dart',
+        ),
+        containsAll(['red', 'blue', 'amber']),
+      );
+    });
+
+    test('does not suggest members for unknown or incompatible receivers', () {
+      expect(
+        EditorCompletionEngine.contextualCandidates(
+          receiver: 'unknownObject',
+          language: 'Dart',
+        ),
+        isEmpty,
+      );
+      expect(
+        EditorCompletionEngine.contextualCandidates(
+          receiver: 'Colors',
+          language: 'JavaScript',
+        ),
+        isEmpty,
+      );
+    });
+
     test('limits returned completion results', () {
       final result = EditorCompletionEngine.rank(
         language: 'Python',
