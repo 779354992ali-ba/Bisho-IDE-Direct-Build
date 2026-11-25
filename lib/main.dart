@@ -79,6 +79,7 @@ import 'core/services/project_insights_analyzer.dart';
 import 'core/services/project_backup_service.dart';
 import 'core/services/project_backup_repository.dart';
 import 'core/services/project_text_diff.dart';
+import 'core/services/project_text_replacement.dart';
 import 'features/terminal/bisho_terminal_panel.dart';
 import 'features/tools/ide_tool_sheets.dart';
 import 'core/services/file_version_history.dart';
@@ -3605,6 +3606,19 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   ),
                 ),
               ),
+              if (replaceMode)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(dialogContext, {
+                      'find': findController.text,
+                      'replace': replaceController.text,
+                      'mode': 'projectReplace',
+                    }),
+                    icon: const Icon(Icons.drive_file_rename_outline_rounded),
+                    label: const Text('استبدال في جميع ملفات المشروع'),
+                  ),
+                ),
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
@@ -3647,6 +3661,15 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       await searchProjectFiles(query);
       return;
     }
+    if (result['mode'] == 'projectReplace') {
+      final replacement = result['replace'] ?? '';
+      if (replacement == query) {
+        showMessage('النص البديل مطابق لنص البحث؛ لا توجد تغييرات');
+        return;
+      }
+      await _replaceProjectFiles(query, replacement);
+      return;
+    }
 
     final source = activeTab.controller.text;
     if (result['mode'] == 'replace') {
@@ -3681,6 +3704,185 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       extentOffset: start + query.length,
     );
     showMessage('تم العثور على النص');
+  }
+
+  Future<void> _replaceProjectFiles(String query, String replacement) async {
+    final rootUri = projectUri;
+    if (rootUri == null || rootUri.isEmpty) {
+      showMessage('افتح مجلد المشروع أولاً');
+      return;
+    }
+    final extensions = <String>{
+      'dart', 'py', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'html', 'htm',
+      'css', 'scss', 'sass', 'json', 'xml', 'yaml', 'yml', 'md', 'markdown',
+      'txt', 'java', 'kt', 'kts', 'swift', 'c', 'h', 'cpp', 'hpp', 'sql',
+      'sh', 'bash', 'go', 'rs', 'php', 'toml', 'ini', 'gradle', 'properties',
+    };
+    final candidates = <({
+      SafDocumentFile file,
+      String parentUri,
+      String path,
+      String updated,
+      int count,
+    })>[];
+    var scanned = 0;
+    var skipped = 0;
+    var totalMatches = 0;
+    const maxFiles = 500;
+    const maxBytes = 1024 * 1024;
+    const ignored = {
+      '.git', '.dart_tool', '.idea', '.gradle', 'build',
+      'node_modules', '.bisho-backups',
+    };
+
+    Future<void> scan(String directoryUri, String prefix) async {
+      if (scanned >= maxFiles || candidates.length >= 200) return;
+      List<SafDocumentFile> children;
+      try {
+        children = await safFiles.listDirectory(directoryUri);
+      } catch (_) {
+        skipped++;
+        return;
+      }
+      for (final child in children) {
+        if (scanned >= maxFiles || candidates.length >= 200) break;
+        final path = prefix.isEmpty ? child.name : '$prefix/${child.name}';
+        if (child.isDir) {
+          if (!ignored.contains(child.name.toLowerCase())) {
+            await scan(child.uri, path);
+          }
+          continue;
+        }
+        final dot = child.name.lastIndexOf('.');
+        final ext = dot < 0 ? '' : child.name.substring(dot + 1).toLowerCase();
+        if (!extensions.contains(ext)) continue;
+        scanned++;
+        try {
+          final bytes = await safFiles.readFile(child.uri);
+          if (bytes.length > maxBytes) {
+            skipped++;
+            continue;
+          }
+          final source = utf8.decode(bytes, allowMalformed: false);
+          final result = ProjectTextReplacement.replaceAll(
+            source: source,
+            query: query,
+            replacement: replacement,
+            caseSensitive: true,
+          );
+          if (result.replacements == 0) continue;
+          candidates.add((
+            file: child,
+            parentUri: directoryUri,
+            path: path,
+            updated: result.text,
+            count: result.replacements,
+          ));
+          totalMatches += result.replacements;
+        } catch (_) {
+          skipped++;
+        }
+      }
+    }
+
+    showMessage('جارٍ فحص ملفات المشروع قبل الاستبدال...');
+    await scan(rootUri, '');
+    if (!mounted) return;
+    if (candidates.isEmpty) {
+      showMessage('لم يتم العثور على تطابقات قابلة للاستبدال');
+      return;
+    }
+
+    final affectedUris = candidates.map((item) => item.file.uri).toSet();
+    final unsaved = tabs.where((tab) =>
+      tab.fileUri != null && affectedUris.contains(tab.fileUri) && !tab.isSaved
+    ).toList();
+    if (unsaved.isNotEmpty) {
+      showMessage('احفظ الملفات المفتوحة المعدّلة أولاً ثم أعد الاستبدال؛ لم يتم تغيير أي ملف');
+      return;
+    }
+
+    final preview = candidates.take(8).map((item) =>
+      '${item.path}  ·  ${item.count} استبدال'
+    ).join('\n');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تأكيد استبدال ملفات المشروع'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('سيتم استبدال $totalMatches تطابقًا في ${candidates.length} ملف.'),
+              const SizedBox(height: 10),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 190),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(dialogContext).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: SingleChildScrollView(child: Text(
+                  preview + (candidates.length > 8 ? '\n... و${candidates.length - 8} ملفات أخرى' : ''),
+                  style: const TextStyle(fontSize: 12),
+                )),
+              ),
+              const SizedBox(height: 8),
+              const Text('الاستبدال حساس لحالة الأحرف، ولن يشمل مجلدات البناء أو .git.'),
+              if (scanned >= maxFiles || candidates.length >= 200 || skipped > 0)
+                Text('ملاحظة: فُحص $scanned ملفًا وتُخطّي $skipped ملفًا بسبب الحدود أو تعذّر القراءة.',
+                  style: const TextStyle(fontSize: 11, color: Colors.orange)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.done_all_rounded),
+            label: const Text('تأكيد الاستبدال'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    var savedFiles = 0;
+    var savedMatches = 0;
+    Object? failure;
+    for (final item in candidates) {
+      try {
+        await safFiles.saveFile(
+          parentUri: item.parentUri,
+          fileName: item.file.name,
+          bytes: Uint8List.fromList(utf8.encode(item.updated)),
+          overwrite: true,
+        );
+        savedFiles++;
+        savedMatches += item.count;
+        for (final tab in tabs.where((tab) => tab.fileUri == item.file.uri)) {
+          tab.controller.value = TextEditingValue(
+            text: item.updated,
+            selection: TextSelection.collapsed(offset: item.updated.length),
+          );
+          tab.isSaved = true;
+        }
+      } catch (error) {
+        failure = error;
+        break;
+      }
+    }
+    if (mounted) {
+      setState(() {
+        status = failure == null ? 'تم استبدال نص المشروع' : 'اكتمل الاستبدال جزئيًا';
+      });
+      final suffix = failure == null
+          ? ''
+          : '، وتوقف بسبب خطأ: $failure';
+      showMessage('تم تحديث $savedFiles من ${candidates.length} ملفًا ($savedMatches استبدال)$suffix');
+    }
   }
 
   Future<void> searchProjectFiles(String query) async {
