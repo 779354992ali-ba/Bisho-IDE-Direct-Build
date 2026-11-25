@@ -42,15 +42,19 @@ class RemoteBuildSettings {
   }
 
   static Future<RemoteBuildSettings> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    final encoded = prefs.getString(preferenceKey);
-    if (encoded == null || encoded.isEmpty) {
-      return const RemoteBuildSettings();
-    }
     try {
+      final prefs = await SharedPreferences.getInstance();
+      // Keep the typed read inside the recovery boundary: getString itself
+      // can throw when an older/corrupted preference was stored as a number,
+      // boolean, list, or another incompatible type.
+      final encoded = prefs.getString(preferenceKey);
+      if (encoded == null || encoded.isEmpty) {
+        return const RemoteBuildSettings();
+      }
       return RemoteBuildSettings.fromJson(jsonDecode(encoded));
     } catch (_) {
-      // Treat malformed or type-incompatible optional preferences as defaults.
+      // Treat unavailable, malformed, or type-incompatible optional
+      // preferences as defaults instead of preventing the build screen opening.
       return const RemoteBuildSettings();
     }
   }
