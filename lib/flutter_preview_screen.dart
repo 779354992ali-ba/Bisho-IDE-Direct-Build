@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:saf/saf.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'core/services/flutter_pubspec_validator.dart';
 
@@ -69,7 +70,9 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   bool _probingLocalEngine = false;
   StreamSubscription<LocalBuildProgress>? _localBuildSubscription;
   bool _localBuildRunning = false;
+  static const _localBuildModePreferenceKey = 'bisho_local_build_mode';
   String _localBuildMode = 'debug';
+  bool _localBuildModeChanged = false;
   String _localBuildLog = '';
   final StringBuffer _fullBuildLog = StringBuffer();
   BuildHistoryStore? _buildHistoryStore;
@@ -144,6 +147,34 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
     _checkProject();
     _inspectLocalBuildEnvironment();
     _loadGitHubSession();
+    _restoreLocalBuildMode();
+  }
+
+  Future<void> _restoreLocalBuildMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_localBuildModePreferenceKey);
+      if (!mounted || _localBuildModeChanged) return;
+      if (saved == 'debug' || saved == 'release') {
+        setState(() => _localBuildMode = saved);
+      }
+    } catch (_) {
+      // A missing preference must not block local build setup.
+    }
+  }
+
+  Future<void> _setLocalBuildMode(String mode) async {
+    if (mode != 'debug' && mode != 'release') return;
+    setState(() {
+      _localBuildModeChanged = true;
+      _localBuildMode = mode;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_localBuildModePreferenceKey, mode);
+    } catch (_) {
+      // Keep the current selection even if preference storage is unavailable.
+    }
   }
 
   @override
@@ -1420,7 +1451,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     DropdownMenuItem(value: 'release', child: Text('Release APK — يتطلب AOT ARM64')),
                   ],
                   onChanged: _localBuildRunning ? null : (value) {
-                    if (value != null) setState(() => _localBuildMode = value);
+                    if (value != null) _setLocalBuildMode(value);
                   },
                 ),
                 const SizedBox(height: 8),
