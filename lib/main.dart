@@ -83,6 +83,7 @@ import 'core/services/project_text_replacement.dart';
 import 'core/services/github_repository_service.dart';
 import 'core/services/flutter_widget_tree_analyzer.dart';
 import 'core/services/flutter_package_catalog_service.dart';
+import 'core/services/local_code_assistant.dart';
 import 'features/terminal/bisho_terminal_panel.dart';
 import 'features/tools/ide_tool_sheets.dart';
 import 'core/services/file_version_history.dart';
@@ -3477,6 +3478,135 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     saveTabStateSilently();
   }
+  Future<void> _openLocalCodeAssistant() async {
+    final tab = activeTab;
+    final questionController = TextEditingController();
+    var report = LocalCodeAssistant.run(
+      source: tab.controller.text,
+      language: tab.language,
+      task: LocalAssistantTask.explain,
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void run(LocalAssistantTask task) {
+            setDialogState(() {
+              report = LocalCodeAssistant.run(
+                source: tab.controller.text,
+                language: tab.language,
+                task: task,
+              );
+            });
+          }
+
+          void ask() {
+            final question = questionController.text.toLowerCase();
+            final task = question.contains('خطأ') || question.contains('مشكلة') ||
+                    question.contains('error') || question.contains('debug')
+                ? LocalAssistantTask.diagnose
+                : question.contains('أمان') || question.contains('سر') ||
+                    question.contains('token') || question.contains('secret')
+                    ? LocalAssistantTask.security
+                    : question.contains('تحسين') || question.contains('أداء') ||
+                        question.contains('refactor')
+                        ? LocalAssistantTask.improve
+                        : LocalAssistantTask.explain;
+            run(task);
+          }
+
+          return AlertDialog(
+            title: const Row(children: [
+              Icon(Icons.smart_toy_rounded, color: Color(0xFFA78BFA)),
+              SizedBox(width: 8),
+              Expanded(child: Text('مساعد الكود المحلي')),
+              Badge(label: Text('Offline')),
+            ]),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: MediaQuery.of(dialogContext).size.height * .62,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${tab.fileName} · ${tab.language}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: questionController,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => ask(),
+                  decoration: InputDecoration(
+                    hintText: 'اسأل عن شرح أو أخطاء أو تحسين أو أمان الكود',
+                    prefixIcon: const Icon(Icons.chat_bubble_outline_rounded),
+                    suffixIcon: IconButton(
+                      tooltip: 'تحليل السؤال',
+                      onPressed: ask,
+                      icon: const Icon(Icons.send_rounded, color: Color(0xFF38BDF8)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Wrap(spacing: 6, runSpacing: 5, children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.menu_book_rounded, size: 15),
+                    label: const Text('شرح الملف'),
+                    onPressed: () => run(LocalAssistantTask.explain),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.bug_report_rounded, size: 15),
+                    label: const Text('فحص الأخطاء'),
+                    onPressed: () => run(LocalAssistantTask.diagnose),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.auto_fix_high_rounded, size: 15),
+                    label: const Text('تحسينات'),
+                    onPressed: () => run(LocalAssistantTask.improve),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.security_rounded, size: 15),
+                    label: const Text('الأمان'),
+                    onPressed: () => run(LocalAssistantTask.security),
+                  ),
+                ]),
+                const Divider(height: 18),
+                Text(report.title, style: const TextStyle(
+                  fontWeight: FontWeight.w800, color: Color(0xFF38BDF8))),
+                const SizedBox(height: 5),
+                Text(report.summary, style: const TextStyle(fontSize: 11, height: 1.5)),
+                const SizedBox(height: 8),
+                Expanded(child: ListView.separated(
+                  itemCount: report.items.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.lightbulb_outline_rounded,
+                      size: 17, color: Color(0xFFFBBF24)),
+                    title: SelectableText(report.items[index],
+                      style: const TextStyle(fontSize: 11, height: 1.4)),
+                  ),
+                )),
+                const Text(
+                  'تحليل محلي بقواعد ثابتة — لا يستخدم نموذجًا لغويًا ولا يرسل كودك إلى الإنترنت.',
+                  style: TextStyle(fontSize: 9, color: Colors.white38),
+                ),
+              ]),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  questionController.dispose();
+                },
+                child: const Text('إغلاق'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    questionController.dispose();
+  }
+
   Future<void> _openFlutterPackageManager() async {
     final rootUri = projectUri;
     if (rootUri == null || rootUri.isEmpty) {
@@ -4144,6 +4274,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _PaletteCommand(title: 'إدارة GitHub', description: 'ربط الحساب ورفع مشروع Flutter', icon: Icons.account_tree_rounded, run: _openGitHubManager, keywords: 'git github repository push'),
       _PaletteCommand(title: 'Flutter Widget Inspector', description: 'استعراض شجرة Widgets والتنقل للأسطر', icon: Icons.account_tree_rounded, run: _openWidgetTreeInspector, keywords: 'widget tree inspector flutter'),
       _PaletteCommand(title: 'مدير حزم Flutter وDart', description: 'البحث في pub.dev وإدارة dependencies', icon: Icons.inventory_2_rounded, run: _openFlutterPackageManager, keywords: 'pub package dependencies pub.dev'),
+      _PaletteCommand(title: 'مساعد الكود المحلي', description: 'شرح وفحص وتحسين وأمان دون اتصال', icon: Icons.smart_toy_rounded, run: _openLocalCodeAssistant, keywords: 'local assistant ai explain debug security'),
       _PaletteCommand(title: 'حفظ الملف', description: 'حفظ التعديلات الحالية', icon: Icons.save_rounded, run: saveCurrentToDisk, keywords: 'save'),
       _PaletteCommand(title: 'حفظ جميع الملفات', description: 'حفظ كل التبويبات المفتوحة', icon: Icons.save_as_rounded, run: saveAllTabs, keywords: 'save all'),
       _PaletteCommand(title: 'بحث واستبدال', description: 'البحث داخل الملف أو المشروع', icon: Icons.find_replace_rounded, run: () => searchCode(startInReplaceMode: true), keywords: 'search replace find'),
@@ -6484,6 +6615,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
       _DashboardAction(Icons.account_tree_rounded, 'مستكشف شجرة Widgets', _openWidgetTreeInspector, cyan),
       _DashboardAction(Icons.inventory_2_rounded, 'مدير حزم Flutter وDart', _openFlutterPackageManager, blue),
+      _DashboardAction(Icons.smart_toy_rounded, 'مساعد الكود المحلي', _openLocalCodeAssistant, violet),
       _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
       _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, blue),
     ];
