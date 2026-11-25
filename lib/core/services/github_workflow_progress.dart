@@ -46,7 +46,7 @@ class GitHubWorkflowProgress {
         continue;
       }
 
-      final steps = (job['steps'] as List? ?? const [])
+      final steps = (job['steps'] is List ? job['steps'] as List : const [])
           .whereType<Map>()
           .toList(growable: false);
       if (status == 'in_progress' && steps.isNotEmpty) {
@@ -69,7 +69,7 @@ class GitHubWorkflowProgress {
     return GitHubWorkflowProgress(
       completedJobs: completed,
       totalJobs: jobs.length,
-      progress: (weightedProgress / jobs.length).clamp(0.0, 1.0),
+      progress: (weightedProgress / jobs.length).clamp(0.0, 1.0).toDouble(),
       jobLines: List.unmodifiable(lines),
     );
   }
