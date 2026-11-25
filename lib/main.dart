@@ -3595,7 +3595,6 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               TextButton(
                 onPressed: () {
                   Navigator.pop(dialogContext);
-                  questionController.dispose();
                 },
                 child: const Text('إغلاق'),
               ),
