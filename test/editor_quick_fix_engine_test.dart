@@ -12,7 +12,7 @@ void main() {
 
     test('removes a single unmatched closing delimiter', () {
       final preview = EditorQuickFixEngine.preview('void main() {} )', 'Dart');
-      expect(preview.updatedSource, 'void main() {} \n');
+      expect(preview.updatedSource, 'void main() {}\n');
       expect(preview.fixes.join(' '), contains('قوس الإغلاق الزائد'));
     });
 
@@ -28,7 +28,12 @@ void main() {
       expect(preview.updatedSource, isNot(contains('}')));
     });
 
-    test('does not modify an empty file', () {\n      final preview = EditorQuickFixEngine.preview('', 'Dart');\n      expect(preview.hasChanges, isFalse);\n    });\n\n    test('returns no changes for normalized source', () {
+    test('does not modify an empty file', () {
+      final preview = EditorQuickFixEngine.preview('', 'Dart');
+      expect(preview.hasChanges, isFalse);
+    });
+
+    test('returns no changes for normalized source', () {
       final preview = EditorQuickFixEngine.preview('void main() {}\n', 'Dart');
       expect(preview.hasChanges, isFalse);
       expect(preview.fixes, isEmpty);
