@@ -127,6 +127,27 @@ void main() {
       expect(environment.alpineRootfsInstalled, isFalse);
     });
 
+    test('recovers safely from malformed native diagnostic field types', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'androidVersion': '35',
+        'availableBytes': '2147483648',
+        'engineInstalled': true,
+        'deviceSupported': true,
+        'runtimeVerified': true,
+        'debugBuildVerified': true,
+        'requiredStorageBytes': false,
+        'missingRequirements': 'not-a-list',
+        'canBuildLocally': true,
+      });
+
+      expect(environment.androidVersion, 35);
+      expect(environment.availableBytes, 2147483648);
+      expect(environment.requiredStorageBytes, 0);
+      expect(environment.missingRequirements, isEmpty);
+      expect(environment.canBuildLocally, isTrue);
+    });
+
     test('formats available storage in GiB', () {
       final environment = LocalBuildEnvironment.fromMap({
         'deviceAbi': 'arm64-v8a',
