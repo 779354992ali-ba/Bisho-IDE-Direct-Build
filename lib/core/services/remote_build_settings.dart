@@ -49,7 +49,8 @@ class RemoteBuildSettings {
     }
     try {
       return RemoteBuildSettings.fromJson(jsonDecode(encoded));
-    } on FormatException {
+    } catch (_) {
+      // Treat malformed or type-incompatible optional preferences as defaults.
       return const RemoteBuildSettings();
     }
   }
