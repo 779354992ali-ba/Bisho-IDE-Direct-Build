@@ -8,6 +8,7 @@ class BuildHistoryStore {
 
   static const int maxEntries = 50;
   static const int maxLogCharacters = 200000;
+  static const int maxHistoryFileBytes = 12 * 1024 * 1024;
 
   Future<File> _file() async {
     await directory.create(recursive: true);
@@ -24,8 +25,10 @@ class BuildHistoryStore {
     List<dynamic> entries = [];
     if (await file.exists()) {
       try {
-        final decoded = jsonDecode(await file.readAsString());
-        if (decoded is List) entries = decoded;
+        if (await file.length() <= maxHistoryFileBytes) {
+          final decoded = jsonDecode(await file.readAsString());
+          if (decoded is List) entries = decoded;
+        }
       } catch (_) {
         // Recover from a damaged optional history file by starting a new log.
       }
@@ -54,6 +57,7 @@ class BuildHistoryStore {
     final file = await _file();
     if (!await file.exists()) return [];
     try {
+      if (await file.length() > maxHistoryFileBytes) return [];
       final decoded = jsonDecode(await file.readAsString());
       if (decoded is! List) return [];
       return decoded.whereType<Map>().take(boundedLimit)
