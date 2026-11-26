@@ -88,7 +88,8 @@ class GitHubRepositoryService {
     // Do not echo arbitrary server text or reflected input into UI errors.
     if (response.statusCode == 401) return 'رمز GitHub غير صالح أو منتهي الصلاحية.';
     if (response.statusCode == 403) {
-      if (response.headers['x-ratelimit-remaining'] == '0') {
+      if (response.headers['x-ratelimit-remaining'] == '0' ||
+          response.body.toLowerCase().contains('rate limit')) {
         return 'وصل حساب GitHub إلى حد الطلبات المؤقت. انتظر قليلًا ثم أعد المحاولة.';
       }
       return 'رفض GitHub العملية. تحقق من صلاحيات الرمز وإمكانية إنشاء المستودعات.';
