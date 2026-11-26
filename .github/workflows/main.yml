@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - fix/app-stream-rootfs-install
+      - work/ten-phase-continuation
   workflow_dispatch:
     inputs:
       flutter_version:
