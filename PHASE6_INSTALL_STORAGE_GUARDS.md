@@ -5,8 +5,9 @@ This change is limited to admission checks and failure diagnostics in the existi
 
 ## Changes
 - Increased the extraction free-space safety reserve from 512 MiB to 1 GiB.
-- Added a best-effort filesystem inode headroom check (2,000 available inodes) at install admission, every 128 TAR entries, and immediately before creating each RootFS symbolic link.
-- If symbolic-link creation fails while bytes or inode headroom are below the guard, report the actual remaining storage values and the RootFS path instead of exposing only a generic `Bad state` message.
+- Added a best-effort filesystem inode headroom check (5,000 available inodes) at install admission, every 64 TAR entries, and immediately before creating each RootFS symbolic link.
+- Explicitly recognizes `ENOSPC` / `No space left on device` from symbolic-link creation even when filesystem counters appear healthy, and reports the actual remaining byte/inode values plus the RootFS link path instead of exposing only a generic `Bad state` message.
+- Added an in-app installation guide that explains archive selection, checksum verification, temporary extraction, activation/rollback, and the required storage reserve.
 - Preserve the existing staging/rollback behavior: a failed extraction is not activated and the previously installed engine is not replaced.
 
 ## Validation
