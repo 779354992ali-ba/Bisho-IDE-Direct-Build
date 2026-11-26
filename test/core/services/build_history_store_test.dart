@@ -51,7 +51,7 @@ void main() {
 
   test('truncates oversized logs and clamps requested history limits', () async {
     await store.record(
-      log: 'x' * (BuildHistoryStore.maxLogCharacters + 10),
+      log: List<String>.filled(BuildHistoryStore.maxLogCharacters + 10, 'x').join(),
       success: true,
       mode: 'debug',
       projectName: 'Demo',
