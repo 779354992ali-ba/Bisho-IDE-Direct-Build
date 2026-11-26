@@ -3,6 +3,23 @@
 class ProjectInputValidator {
   const ProjectInputValidator._();
 
+  static final RegExp _portableInvalidCharacters = RegExp(r'[<>:"|?*\\x00-\\x1F]');
+  static final RegExp _reservedDeviceName =
+      RegExp(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$', caseSensitive: false);
+
+  static bool _isPortableSegment(String segment) {
+    if (segment.isEmpty ||
+        segment == '.' ||
+        segment == '..' ||
+        segment.endsWith('.') ||
+        segment.endsWith(' ') ||
+        _portableInvalidCharacters.hasMatch(segment)) {
+      return false;
+    }
+    final deviceName = segment.split('.').first;
+    return !_reservedDeviceName.hasMatch(deviceName);
+  }
+
   static String safeProjectName(String input) {
     var value = input
         .trim()
@@ -17,21 +34,24 @@ class ProjectInputValidator {
   }
 
   static bool isValidProjectName(String name) {
-    if (name.trim().isEmpty || name == '.' || name == '..') return false;
-    return !name.contains('/') &&
-        !name.contains('\\') &&
-        !name.contains(':') &&
-        !name.contains('\u0000');
+    if (name.trim().isEmpty || name != name.trim()) return false;
+    return _isPortableSegment(name) &&
+        !name.contains('/') &&
+        !name.contains(r'\\');
   }
 
   static bool isValidRelativePath(String path) {
-    if (path.isEmpty || path.startsWith('/') || path.startsWith('\\')) {
+    if (path.isEmpty ||
+        path.startsWith('/') ||
+        path.startsWith(r'\\') ||
+        path.contains(r'\\')) {
       return false;
     }
-    if (path.contains('\\') || path.contains('\u0000')) return false;
     final segments = path.split('/');
-    return !segments.any((segment) =>
-        segment.isEmpty || segment == '.' || segment == '..');
+    if (segments.any((segment) => !_isPortableSegment(segment))) {
+      return false;
+    }
+    return !RegExp(r'^[A-Za-z]:').hasMatch(segments.first);
   }
 
   static bool isValidPackageName(String value) {
@@ -43,22 +63,22 @@ class ProjectInputValidator {
   }
 
   static bool isValidVersion(String value) => RegExp(
-        r'^\d+\.\d+\.\d+([+-][0-9A-Za-z.-]+)?$',
+        r'^\\d+\\.\\d+\\.\\d+([+-][0-9A-Za-z.-]+)?$',
       ).hasMatch(value);
 
   static bool isValidSdkConstraint(String value) => value.isNotEmpty &&
-      RegExp(r'^[0-9a-zA-Z.<>=^~+\-\s]+$').hasMatch(value);
+      RegExp(r'^[0-9a-zA-Z.<>=^~+\\-\\s]+$').hasMatch(value);
 
   static bool isValidGoModule(String value) =>
       value.isNotEmpty &&
       !value.contains(' ') &&
       !value.startsWith('/') &&
       !value.endsWith('/') &&
-      !value.contains('\\');
+      !value.contains(r'\\');
 
   static bool isValidPythonVersion(String value) =>
-      RegExp(r'^\d+\.\d+$').hasMatch(value);
+      RegExp(r'^\\d+\\.\\d+$').hasMatch(value);
 
   static bool isValidNodeVersion(String value) =>
-      RegExp(r'^\d+$').hasMatch(value);
+      RegExp(r'^\\d+$').hasMatch(value);
 }
