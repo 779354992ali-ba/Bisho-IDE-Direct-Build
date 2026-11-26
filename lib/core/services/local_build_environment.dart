@@ -43,6 +43,7 @@ class LocalBuildEnvironment {
 
   factory LocalBuildEnvironment.fromMap(Map<Object?, Object?> map) {
     final engineInstalled = map['engineInstalled'] == true;
+    final alpineRootfsInstalled = map['alpineRootfsInstalled'] == true;
     final deviceSupported = map['deviceSupported'] == true;
     final runtimeVerified = map['runtimeVerified'] == true;
     final debugBuildVerified = map['debugBuildVerified'] == true;
@@ -52,7 +53,7 @@ class LocalBuildEnvironment {
       androidVersion: _readInt(map['androidVersion']),
       availableBytes: _readInt(map['availableBytes']),
       engineInstalled: engineInstalled,
-      alpineRootfsInstalled: map['alpineRootfsInstalled'] == true,
+      alpineRootfsInstalled: alpineRootfsInstalled,
       deviceSupported: deviceSupported,
       runtimeVerified: runtimeVerified,
       debugBuildVerified: debugBuildVerified,
