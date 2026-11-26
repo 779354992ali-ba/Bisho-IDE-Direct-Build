@@ -29,7 +29,7 @@ class EditorCommandPalette {
   static int _score(String needle, String value) {
     if (value == needle) return 0;
     if (value.startsWith(needle)) return 1;
-    if (value.split(RegExp(r'\\s+')).any((word) => word.startsWith(needle))) return 2;
+    if (value.split(RegExp(r'\s+')).any((word) => word.startsWith(needle))) return 2;
     final substring = value.indexOf(needle);
     if (substring >= 0) return 3 + substring;
     var cursor = 0;
