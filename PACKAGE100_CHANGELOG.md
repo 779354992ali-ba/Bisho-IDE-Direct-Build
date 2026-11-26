@@ -116,3 +116,11 @@ No change is made to the already-built ARM64 engine, Alpine Linux 3.24.4, PRoot 
 ## Next release gate
 
 When explicitly authorized to validate/build, use the validated release workflow rather than the direct APK workflow, resolve every analyzer/test/build failure, verify the resulting APK package/version/ARM64 contents and SHA-256, then prepare the complete source archive and release notes.
+
+
+## Local engine installer — storage safeguards
+- Increased the RootFS extraction free-space reserve to 1 GiB.
+- Added available-inode headroom checks during archive extraction and before RootFS symbolic-link creation.
+- Improved no-space diagnostics to include the failing RootFS link path and current storage headroom.
+- Kept the existing engine payload and activation/rollback model unchanged.
+- Source-level review only; Android build and on-device verification remain pending.
