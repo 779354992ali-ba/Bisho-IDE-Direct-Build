@@ -64,6 +64,21 @@ void main() {
     expect(await store.recent(limit: -1), isEmpty);
   });
 
+  test('ignores history files that exceed the storage size limit', () async {
+    await directory.create(recursive: true);
+    await File('${directory.path}/build_history.json').writeAsString(
+      List<String>.filled(BuildHistoryStore.maxHistoryFileBytes + 1, 'x').join(),
+    );
+    expect(await store.recent(), isEmpty);
+    await store.record(
+      log: 'fresh log',
+      success: true,
+      mode: 'debug',
+      projectName: 'Demo',
+    );
+    expect((await store.recent()).single['log'], 'fresh log');
+  });
+
   test('returns an empty history when storage is malformed', () async {
     await directory.create(recursive: true);
     await File('${directory.path}/build_history.json').writeAsString('{bad');
