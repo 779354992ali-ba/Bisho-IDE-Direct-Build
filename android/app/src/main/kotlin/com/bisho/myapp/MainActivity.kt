@@ -52,7 +52,7 @@ class MainActivity : FlutterActivity() {
     // Keep a full 1 GiB byte reserve while expanding large RootFS archives.
     private val extractionSafetyReserveBytes = 1024L * 1024L * 1024L
     // RootFS contains many small files and symlinks; leave inode headroom as well.
-    private val minimumInstallAvailableInodes = 2000
+    private val minimumInstallAvailableInodes = 5000
     private val minimumBuildStorageBytes = 2560L * 1024L * 1024L
 
     private fun ensureInstallCapacity(stage: String) {
@@ -605,7 +605,7 @@ class MainActivity : FlutterActivity() {
                                 val tarEntry = tar.nextTarEntry ?: break
                                 tarEntries++
                                 if (tarEntries > 100000) throw SecurityException("rootfs TAR يحتوي عدداً مفرطاً من العناصر.")
-                                if (tarEntries % 128 == 0) ensureInstallCapacity("فك ملفات RootFS")
+                                if (tarEntries % 64 == 0) ensureInstallCapacity("فك ملفات RootFS")
                                 val raw = tarEntry.name.replace('\\', '/')
                                 var clean = raw.removeSuffix("/")
                                 while (clean.startsWith("./")) clean = clean.removePrefix("./")
@@ -791,10 +791,14 @@ class MainActivity : FlutterActivity() {
                                 )
                             } catch (error: java.io.IOException) {
                                 val latest = StatFs(filesDir.absolutePath)
-                                if (latest.availableBytes < extractionSafetyReserveBytes ||
-                                    (latest.availableInodes > 0 && latest.availableInodes < minimumInstallAvailableInodes)) {
+                                val detail = error.message.orEmpty()
+                                val noSpace = detail.contains("No space left on device", ignoreCase = true) ||
+                                    detail.contains("ENOSPC", ignoreCase = true) ||
+                                    latest.availableBytes < extractionSafetyReserveBytes ||
+                                    (latest.availableInodes > 0 && latest.availableInodes < minimumInstallAvailableInodes)
+                                if (noSpace) {
                                     throw IllegalStateException(
-                                        "نفدت موارد التخزين أثناء إنشاء رابط RootFS ($linkPath): المتاح ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB و ${latest.availableInodes} inode. أُوقف التثبيت دون استبدال المحرك السابق.",
+                                        "توقف تثبيت RootFS بسبب نفاد موارد التخزين عند إنشاء الرابط $linkPath. المتاح: ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB و ${latest.availableInodes} inode. وفّر مساحة داخلية إضافية ثم أعد المحاولة؛ لم يتم تفعيل النسخة غير المكتملة ولم يتم استبدال المحرك السابق.",
                                         error
                                     )
                                 }
