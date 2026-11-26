@@ -34,12 +34,12 @@ void main() {
 
     test('supports substring and fuzzy matches without losing stable order', () {
       final result = EditorCommandPalette.filter(
-        const ['alpha beta', 'format document', 'flutter build'],
+        const ['alpha beta', 'find by directory', 'file backup details'],
         query: 'fbd',
         searchableText: (command) => command,
       );
 
-      expect(result, ['flutter build']);
+      expect(result, ['find by directory', 'file backup details']);
     });
 
     test('trims and ignores query case', () {
