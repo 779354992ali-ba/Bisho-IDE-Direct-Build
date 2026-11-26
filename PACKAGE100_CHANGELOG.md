@@ -17,6 +17,12 @@
 - Added regression tests for oversized declarations, aggregate limits, excessive entry counts, and encoded-length mismatches.
 - Tests have not been executed; static checks only. No build was started.
 
+## Phase 4 — Android SAF
+- Added control-character and 255-byte UTF-8 child-name validation while preserving Arabic and supplementary Unicode names.
+- Bounded recursive SAF cleanup by maximum depth and entry count to avoid unbounded traversal.
+- Added child-name boundary and Unicode regression tests. Device/provider integration tests remain pending.
+- Static checks only; Flutter tests/analyzer have not been run.
+
 ## Phase 5 — Cloud Build Center
 - Added GitHub Actions job-level progress calculation and display.
 - Added progress model tests.
