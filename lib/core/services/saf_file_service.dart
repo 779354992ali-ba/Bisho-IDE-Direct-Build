@@ -34,11 +34,12 @@ class SafFileService {
         'الاسم يحتوي محارف غير متوافقة مع أنظمة الملفات الشائعة.',
       );
     }
-    if (name.length > maxChildNameUtf8Bytes ||
-        name.codeUnits.length != name.runes.length ||
-        name.runes.fold<int>(0, (total, rune) =>
-                total + (rune <= 0x7F ? 1 : rune <= 0x7FF ? 2 : rune <= 0xFFFF ? 3 : 4)) >
-            maxChildNameUtf8Bytes) {
+    final utf8Length = name.runes.fold<int>(
+      0,
+      (total, rune) =>
+          total + (rune <= 0x7F ? 1 : rune <= 0x7FF ? 2 : rune <= 0xFFFF ? 3 : 4),
+    );
+    if (utf8Length > maxChildNameUtf8Bytes) {
       throw ArgumentError.value(
         value,
         'name',
