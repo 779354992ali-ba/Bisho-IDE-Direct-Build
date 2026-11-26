@@ -28,6 +28,12 @@
 - Added progress model tests.
 - Kept APK download gated on successful workflow completion and existing checksum verification.
 
+## Phase 5 — Cloud Build Center detail
+- Added separate failed, skipped, active, and queued/waiting job counts to workflow progress parsing and UI.
+- Skipped workflow steps count as completed work in approximate progress calculations.
+- Added regression tests for mixed job outcomes and malformed API payloads.
+- Tests/analyzer remain pending; no workflow dispatch or APK build was triggered.
+
 ## Phase 6 — Local ARM64 engine integration
 - Hardened parsing of native engine diagnostic responses.
 - Made read-only engine probing return structured failures instead of leaking channel exceptions.
