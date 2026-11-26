@@ -4207,7 +4207,6 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               key: ValueKey('split-${item.id}'),
               controller: item.controller,
               expands: true,
-              wrap: _wordWrap,
               padding: const EdgeInsets.all(9),
               textStyle: TextStyle(fontFamily: 'monospace', fontSize: (_editorFontSize - 2).clamp(10.0, 18.0).toDouble()),
               gutterStyle: const GutterStyle(
