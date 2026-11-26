@@ -412,7 +412,7 @@ class MainActivity : FlutterActivity() {
                     )
                 } else {
                     if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في TAR يشير إلى ملف غير موجود.")
-                    Files.copy(linkTarget, linkPath)
+                    Os.link(linkTarget.toString(), linkPath.toString())
                 }
             }
             val release = File(staging, "etc/alpine-release")
@@ -702,7 +702,7 @@ class MainActivity : FlutterActivity() {
                                 if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
                                     throw IllegalStateException("مسار hard link موجود مسبقاً في rootfs: " + linkPath)
                                 }
-                                Files.copy(linkTarget, linkPath)
+                                Os.link(linkTarget.toString(), linkPath.toString())
                                 iterator.remove()
                                 resolvedAny = true
                             }
@@ -1040,6 +1040,26 @@ class MainActivity : FlutterActivity() {
             emitBuildEvent("تم تجهيز ملفات المحرك والتحقق من manifest وSHA-256؛ لم يُفعّل للبناء المحلي بعد. يلزم نجاح اختبار الهاتف أولًا.")
             return mapOf("success" to true, "activated" to false, "message" to "تم تجهيز ملفات المحرك والتحقق من سلامتها. لم يُفعّل للبناء المحلي؛ شغّل اختبار الهاتف أولًا.", "bytes" to extractedBytes)
         } catch (error: Exception) {
+            var cause: Throwable? = error
+            var filesystemFull = false
+            while (cause != null) {
+                val detail = cause.message.orEmpty()
+                if (detail.contains("No space left on device", ignoreCase = true) ||
+                    detail.contains("ENOSPC", ignoreCase = true)) {
+                    filesystemFull = true
+                    break
+                }
+                cause = cause.cause
+            }
+            if (filesystemFull) {
+                val availableMiB = StatFs(filesDir.absolutePath).availableBytes / (1024L * 1024L)
+                throw IllegalStateException(
+                    "تعذر إكمال تثبيت المحرك لأن مساحة التخزين أو موارد نظام الملفات (عدد الملفات/العُقد) نفدت. " +
+                        "المساحة الحرة المتبقية: ${availableMiB} MB؛ احتياطي الأمان: ${extractionSafetyReserveBytes / (1024L * 1024L)} MB. " +
+                        "لم يتم اعتماد المحرك الجديد، وستتم استعادة النسخة السابقة إن وجدت.",
+                    error
+                )
+            }
             if (staging.exists()) staging.deleteRecursively()
             // Restore the previous engine if activation was interrupted by an exception.
             if (!engineRoot.exists() && backup.exists()) {
