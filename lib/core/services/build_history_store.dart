@@ -6,6 +6,9 @@ class BuildHistoryStore {
   BuildHistoryStore(this.directory);
   final Directory directory;
 
+  static const int maxEntries = 50;
+  static const int maxLogCharacters = 200000;
+
   Future<File> _file() async {
     await directory.create(recursive: true);
     return File('${directory.path}/build_history.json');
@@ -33,21 +36,27 @@ class BuildHistoryStore {
       'success': success,
       'mode': mode,
       'projectName': projectName,
-      'log': log,
+      'log': log.length > maxLogCharacters
+          ? '${log.substring(0, maxLogCharacters)}\\n… تم اختصار سجل البناء لحفظ المساحة'
+          : log,
     });
-    if (entries.length > 50) entries = entries.take(50).toList();
+    if (entries.length > maxEntries) {
+      entries = entries.take(maxEntries).toList();
+    }
     final temp = File('${file.path}.tmp');
     await temp.writeAsString(jsonEncode(entries), flush: true);
     await temp.rename(file.path);
   }
 
   Future<List<Map<String, dynamic>>> recent({int limit = 20}) async {
+    if (limit <= 0) return const [];
+    final boundedLimit = limit.clamp(0, maxEntries);
     final file = await _file();
     if (!await file.exists()) return [];
     try {
       final decoded = jsonDecode(await file.readAsString());
       if (decoded is! List) return [];
-      return decoded.whereType<Map>().take(limit)
+      return decoded.whereType<Map>().take(boundedLimit)
           .map((e) => Map<String, dynamic>.from(e)).toList();
     } catch (_) {
       return [];
