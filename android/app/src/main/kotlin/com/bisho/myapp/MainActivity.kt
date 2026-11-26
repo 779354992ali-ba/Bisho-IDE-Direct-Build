@@ -68,13 +68,15 @@ class MainActivity : FlutterActivity() {
         stage: String,
         remainingBytes: Long = 0L,
         processedBytes: Long = 0L,
-        remainingInodes: Long = 0L
+        remainingInodes: Long = 0L,
+        reserveBytes: Long = extractionSafetyReserveBytes
     ) {
         val stat = StatFs(filesDir.absolutePath)
         val availableBytes = stat.availableBytes
         val availableInodes = Os.statvfs(filesDir.absolutePath).f_favail
         val remaining = remainingBytes.coerceAtLeast(0L)
-        val requiredBytes = remaining + extractionSafetyReserveBytes
+        val effectiveReserveBytes = reserveBytes.coerceAtLeast(0L)
+        val requiredBytes = remaining + effectiveReserveBytes
         val requiredInodes = remainingInodes.coerceAtLeast(0L) + extractionSafetyReserveInodes
         val bytesInsufficient = availableBytes < requiredBytes
         val inodesInsufficient = availableInodes < requiredInodes
@@ -82,7 +84,7 @@ class MainActivity : FlutterActivity() {
             val mib = 1024.0 * 1024.0
             val availableMiB = availableBytes / mib
             val remainingMiB = remaining / mib
-            val reserveMiB = extractionSafetyReserveBytes / mib
+            val reserveMiB = effectiveReserveBytes / mib
             val processedMiB = processedBytes.coerceAtLeast(0L) / mib
             throw IllegalStateException(
                 "توقف $stage لحماية موارد التخزين. المساحة المتاحة: ${"%.0f".format(availableMiB)} MB؛ " +
@@ -731,7 +733,8 @@ class MainActivity : FlutterActivity() {
                                     ensureExtractionCapacity(
                                         "نسخ hard link بديل داخل RootFS: $linkName",
                                         duplicateBytes,
-                                        rootfsExpandedBytes + duplicateBytes
+                                        rootfsExpandedBytes + duplicateBytes,
+                                        reserveBytes = 64L * 1024L * 1024L
                                     )
                                     Files.copy(linkTarget, linkPath)
                                     rootfsExpandedBytes += duplicateBytes
