@@ -181,7 +181,14 @@ class SafFileService {
 
   /// Deletes a complete SAF subtree from leaves to root.
   /// Intended for rollback of a directory created by the current operation.
-  Future<void> deleteTree(String rootUri, {int maxDepth = 64}) async {
+  Future<void> deleteTree(
+    String rootUri, {
+    int maxDepth = 64,
+    int maxEntries = 10000,
+  }) async {
+    if (maxDepth < 0 || maxEntries < 1) {
+      throw ArgumentError('حدود حذف المجلد غير صالحة.');
+    }
     final visited = <String>{};
 
     Future<void> remove(String uri, int depth) async {
@@ -190,6 +197,9 @@ class SafFileService {
       }
       if (!visited.add(uri)) {
         throw StateError('تم اكتشاف تكرار URI أثناء تنظيف مجلد المشروع.');
+      }
+      if (visited.length > maxEntries) {
+        throw StateError('تجاوز عدد العناصر حد التنظيف الآمن؛ أُوقف الحذف.');
       }
       final item = await getItem(uri);
       if (item == null) return;
