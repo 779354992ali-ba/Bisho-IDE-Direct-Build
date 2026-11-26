@@ -13,7 +13,7 @@ void main() {
     test('handles empty lines and Windows line endings', () {
       final lines = EditorMinimapModel.fromText('one\r\n\r\nthree');
       expect(lines.map((line) => line.text), ['one', '', 'three']);
-      expect(lines.map((line) => line.startOffset), [0, 5, 6]);
+      expect(lines.map((line) => line.startOffset), [0, 5, 7]);
     });
 
     test('bounds the model and handles empty source', () {
