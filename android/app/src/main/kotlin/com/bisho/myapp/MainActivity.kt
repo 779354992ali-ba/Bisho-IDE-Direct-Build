@@ -54,11 +54,33 @@ class MainActivity : FlutterActivity() {
     private val minimumBuildStorageBytes = 2560L * 1024L * 1024L
 
     private fun ensureInstallCapacity(stage: String) {
-        val stats = StatFs(filesDir.absolutePath)
-        val availableBytes = stats.availableBytes
-        if (availableBytes < extractionSafetyReserveBytes) {
+        ensureExtractionCapacity(stage)
+    }
+
+    /**
+     * Check the bytes needed to finish the current file as well as the safety reserve.
+     * This prevents a large TAR entry from consuming the reserve after a one-time check.
+     */
+    private fun ensureExtractionCapacity(
+        stage: String,
+        remainingBytes: Long = 0L,
+        processedBytes: Long = 0L
+    ) {
+        val availableBytes = StatFs(filesDir.absolutePath).availableBytes
+        val remaining = remainingBytes.coerceAtLeast(0L)
+        val requiredBytes = remaining + extractionSafetyReserveBytes
+        if (availableBytes < requiredBytes) {
+            val mib = 1024.0 * 1024.0
+            val availableMiB = availableBytes / mib
+            val remainingMiB = remaining / mib
+            val reserveMiB = extractionSafetyReserveBytes / mib
+            val processedMiB = processedBytes.coerceAtLeast(0L) / mib
             throw IllegalStateException(
-                "أُوقف تثبيت المحرك بأمان أثناء $stage: المساحة الحرة ${"%.2f".format(availableBytes / (1024.0 * 1024.0 * 1024.0))} GB أقل من الاحتياطي المطلوب 1 GB. حرّر مساحة ثم أعد المحاولة؛ لن نحذف المحرك السابق أو ملفات مشاريعك."
+                "توقف $stage لحماية مساحة الهاتف. المتاح الآن: ${"%.0f".format(availableMiB)} MB؛ " +
+                    "المطلوب لإكمال الملف الحالي: ${"%.0f".format(remainingMiB)} MB؛ " +
+                    "احتياطي الأمان: ${"%.0f".format(reserveMiB)} MB؛ " +
+                    "البيانات المعالجة في هذه المرحلة: ${"%.0f".format(processedMiB)} MB. " +
+                    "حرّر مساحة داخلية إضافية ثم أعد المحاولة. لم يتم تغيير المحرك السابق."
             )
         }
     }
@@ -624,15 +646,24 @@ class MainActivity : FlutterActivity() {
                                 if (!tarEntry.isFile || tarEntry.size < 0L) throw SecurityException("نوع عنصر rootfs TAR غير مدعوم: " + raw)
                                 rootfsExpandedBytes += tarEntry.size
                                 if (rootfsExpandedBytes > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم rootfs المفكوك تجاوز 12 GB.")
-                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف استخراج rootfs لحماية مساحة الهاتف.")
+                                ensureExtractionCapacity("فك ملف RootFS: $clean", tarEntry.size, rootfsExpandedBytes)
                                 Files.createDirectories(target.parent)
                                 FileOutputStream(target.toFile()).use { out ->
                                     var copied = 0L
+                                    var lastCapacityCheck = 0L
                                     while (true) {
                                         val count = tar.read(tarBuffer)
                                         if (count < 0) break
                                         copied += count
                                         if (copied > tarEntry.size) throw SecurityException("بيانات rootfs TAR تجاوزت الحجم المعلن.")
+                                        if (copied - lastCapacityCheck >= 4L * 1024L * 1024L) {
+                                            ensureExtractionCapacity(
+                                                "متابعة فك ملف RootFS: $clean",
+                                                (tarEntry.size - copied).coerceAtLeast(0L),
+                                                rootfsExpandedBytes
+                                            )
+                                            lastCapacityCheck = copied
+                                        }
                                         out.write(tarBuffer, 0, count)
                                     }
                                     if (copied != tarEntry.size) throw SecurityException("حجم ملف rootfs TAR غير مطابق للرأس.")
@@ -802,13 +833,23 @@ class MainActivity : FlutterActivity() {
                         if (!output.exists() && !output.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد من الحزمة.")
                     } else {
                         output.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IllegalStateException("تعذر إنشاء مسار ملف المحرك.") }
+                        if (entry.size >= 0L) {
+                            ensureExtractionCapacity("فك ملف المحرك: $name", entry.size, extractedBytes)
+                        }
                         FileOutputStream(output).use { out ->
+                            var copied = 0L
+                            var lastCapacityCheck = 0L
                             while (true) {
                                 val count = zip.read(buffer)
                                 if (count < 0) break
                                 extractedBytes += count
+                                copied += count
                                 if (extractedBytes > 12L * 1024L * 1024L * 1024L) throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
-                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
+                                if (copied - lastCapacityCheck >= 4L * 1024L * 1024L) {
+                                    val remaining = if (entry.size >= copied) entry.size - copied else 0L
+                                    ensureExtractionCapacity("متابعة فك ملف المحرك: $name", remaining, extractedBytes)
+                                    lastCapacityCheck = copied
+                                }
                                 out.write(buffer, 0, count)
                             }
                             out.fd.sync()
