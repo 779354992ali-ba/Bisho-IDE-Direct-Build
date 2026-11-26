@@ -1051,17 +1051,8 @@ class MainActivity : FlutterActivity() {
                 }
                 cause = cause.cause
             }
-            if (filesystemFull) {
-                val availableMiB = StatFs(filesDir.absolutePath).availableBytes / (1024L * 1024L)
-                throw IllegalStateException(
-                    "تعذر إكمال تثبيت المحرك لأن مساحة التخزين أو موارد نظام الملفات (عدد الملفات/العُقد) نفدت. " +
-                        "المساحة الحرة المتبقية: ${availableMiB} MB؛ احتياطي الأمان: ${extractionSafetyReserveBytes / (1024L * 1024L)} MB. " +
-                        "لم يتم اعتماد المحرك الجديد، وستتم استعادة النسخة السابقة إن وجدت.",
-                    error
-                )
-            }
             if (staging.exists()) staging.deleteRecursively()
-            // Restore the previous engine if activation was interrupted by an exception.
+            // Restore the previous engine before returning any storage diagnostic.
             if (!engineRoot.exists() && backup.exists()) {
                 if (!backup.renameTo(engineRoot)) {
                     throw IllegalStateException(
@@ -1069,6 +1060,15 @@ class MainActivity : FlutterActivity() {
                         error
                     )
                 }
+            }
+            if (filesystemFull) {
+                val availableMiB = StatFs(filesDir.absolutePath).availableBytes / (1024L * 1024L)
+                throw IllegalStateException(
+                    "تعذر إكمال تثبيت المحرك لأن مساحة التخزين أو موارد نظام الملفات (عدد الملفات/العُقد) نفدت. " +
+                        "المساحة الحرة المتبقية: ${availableMiB} MB؛ احتياطي الأمان: ${extractionSafetyReserveBytes / (1024L * 1024L)} MB. " +
+                        "لم يتم اعتماد المحرك الجديد، وتم الحفاظ على النسخة السابقة إن وجدت.",
+                    error
+                )
             }
             throw error
         }
