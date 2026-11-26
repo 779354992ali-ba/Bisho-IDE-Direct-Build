@@ -124,3 +124,11 @@ When explicitly authorized to validate/build, use the validated release workflow
 - Improved no-space diagnostics to include the failing RootFS link path and current storage headroom.
 - Kept the existing engine payload and activation/rollback model unchanged.
 - Source-level review only; Android build and on-device verification remain pending.
+
+
+## Local engine installation flow — targeted repair
+- Added explicit ENOSPC detection for RootFS symbolic-link creation and actionable Arabic diagnostics with the failing path and remaining bytes/inodes.
+- Raised the best-effort inode safety reserve to 5,000 and run capacity checks more frequently during TAR extraction.
+- Clarified the in-app installation sequence, checksum verification, temporary extraction, rollback behavior, and storage requirements.
+- Scope limited to the existing local engine installer and its installation dialog; no engine payload, PRoot, Alpine version, package database, runtime script, editor, or unrelated feature was changed.
+- Source review only; no Android build or on-device installation test was run.
