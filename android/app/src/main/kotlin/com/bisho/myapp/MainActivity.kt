@@ -853,7 +853,21 @@ class MainActivity : FlutterActivity() {
                                         error
                                     )
                                 }
-                                throw error
+                                val parent = linkPath.parent
+                                val parentExists = parent != null && Files.isDirectory(parent)
+                                val parentWritable = try {
+                                    parent != null && Os.access(parent.toString(), OsConstants.W_OK or OsConstants.X_OK)
+                                } catch (_: Exception) {
+                                    false
+                                }
+                                throw IllegalStateException(
+                                    "تعذر إنشاء رابط RootFS بسبب رفض صلاحية Android (EACCES). " +
+                                        "مسار الرابط: $linkPath؛ المجلد الأب: $parent؛ " +
+                                        "المجلد الأب موجود: $parentExists؛ قابل للكتابة والعبور: $parentWritable؛ " +
+                                        "الهدف: $linkTarget؛ مجلد التثبيت المؤقت: $rootPath. " +
+                                        "لم يتم تفعيل التثبيت غير المكتمل ولم يتم استبدال المحرك السابق.",
+                                    error
+                                )
                             }
                         }
                     } else if (name.startsWith("rootfs/")) {
