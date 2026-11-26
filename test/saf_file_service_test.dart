@@ -11,10 +11,30 @@ void main() {
       for (final name in [
         '', '   ', '.', '..', '../secret', r'folder\file',
         'bad:name', 'trailing.', 'CON.txt', 'LPT1.log',
+        'control\u0001name',
       ]) {
         expect(() => SafFileService.validateChildName(name),
             throwsArgumentError, reason: 'name: $name');
       }
+    });
+
+
+    test('enforces UTF-8 child-name length without rejecting Unicode', () {
+      expect(
+        SafFileService.validateChildName('a' * SafFileService.maxChildNameUtf8Bytes),
+        hasLength(SafFileService.maxChildNameUtf8Bytes),
+      );
+      expect(
+        () => SafFileService.validateChildName(
+          'a' * (SafFileService.maxChildNameUtf8Bytes + 1),
+        ),
+        throwsArgumentError,
+      );
+      expect(SafFileService.validateChildName('ملف-📁.dart'), 'ملف-📁.dart');
+      expect(
+        () => SafFileService.validateChildName('📁' * 64),
+        throwsArgumentError,
+      );
     });
 
     test('maps common source extensions to MIME types', () {
