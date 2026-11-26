@@ -8,7 +8,7 @@ class BuildHistoryStore {
 
   static const int maxEntries = 50;
   static const int maxLogCharacters = 200000;
-  static const int maxHistoryFileBytes = 12 * 1024 * 1024;
+  static const int maxHistoryFileBytes = 48 * 1024 * 1024;
 
   Future<File> _file() async {
     await directory.create(recursive: true);
