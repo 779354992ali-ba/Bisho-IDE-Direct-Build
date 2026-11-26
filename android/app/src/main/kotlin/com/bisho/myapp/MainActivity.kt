@@ -72,7 +72,7 @@ class MainActivity : FlutterActivity() {
     ) {
         val stat = StatFs(filesDir.absolutePath)
         val availableBytes = stat.availableBytes
-        val availableInodes = stat.availableInodes.toLong()
+        val availableInodes = Os.statvfs(filesDir.absolutePath).f_favail
         val remaining = remainingBytes.coerceAtLeast(0L)
         val requiredBytes = remaining + extractionSafetyReserveBytes
         val requiredInodes = remainingInodes.coerceAtLeast(0L) + extractionSafetyReserveInodes
@@ -843,12 +843,12 @@ class MainActivity : FlutterActivity() {
                                 val noSpace = detail.contains("No space left on device", ignoreCase = true) ||
                                     detail.contains("ENOSPC", ignoreCase = true) ||
                                     latest.availableBytes < extractionSafetyReserveBytes ||
-                                    latest.availableInodes.toLong() < extractionSafetyReserveInodes
+                                    Os.statvfs(filesDir.absolutePath).f_favail < extractionSafetyReserveInodes
                                 if (noSpace) {
                                     throw IllegalStateException(
                                         "توقف تثبيت RootFS بسبب نفاد موارد التخزين عند إنشاء الرابط $linkPath. " +
                                             "المساحة الحرة: ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB؛ " +
-                                            "العُقد الحرة: ${latest.availableInodes}. " +
+                                            "العُقد الحرة: ${Os.statvfs(filesDir.absolutePath).f_favail}. " +
                                             "وفّر مساحة داخلية وموارد ملفات إضافية ثم أعد المحاولة؛ لم يتم تفعيل النسخة غير المكتملة ولم يتم استبدال المحرك السابق.",
                                         error
                                     )
