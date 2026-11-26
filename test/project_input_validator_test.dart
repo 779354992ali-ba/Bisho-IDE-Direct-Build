@@ -14,6 +14,9 @@ void main() {
       expect(ProjectInputValidator.isValidProjectName('../escape'), isFalse);
       expect(ProjectInputValidator.isValidProjectName('folder\\file'), isFalse);
       expect(ProjectInputValidator.isValidProjectName('safe app'), isTrue);
+      for (final name in ['CON', 'nul.txt', 'bad:name', 'trailing.', 'trailing ']) {
+        expect(ProjectInputValidator.isValidProjectName(name), isFalse, reason: name);
+      }
     });
 
     test('rejects absolute and traversal relative paths', () {
@@ -23,6 +26,12 @@ void main() {
       expect(ProjectInputValidator.isValidRelativePath('lib/../outside.dart'), isFalse);
       expect(ProjectInputValidator.isValidRelativePath('lib\\main.dart'), isFalse);
       expect(ProjectInputValidator.isValidRelativePath('lib//main.dart'), isFalse);
+      for (final path in [
+        'lib/bad:name.dart', 'lib/CON.txt', 'lib/trailing./main.dart',
+        'lib/trailing /main.dart', 'C:/absolute.dart', 'lib/question?.dart',
+      ]) {
+        expect(ProjectInputValidator.isValidRelativePath(path), isFalse, reason: path);
+      }
     });
 
     test('validates language-specific metadata', () {
