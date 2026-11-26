@@ -56,6 +56,7 @@ import 'package:xml/xml.dart';
 import 'package:yaml/yaml.dart';
 
 import 'core/theme/bisho_theme.dart';
+import 'core/ui/bisho_responsive_layout.dart';
 import 'core/services/saf_file_service.dart';
 import 'core/languages/language_identity.dart';
 import 'core/services/project_archive_validator.dart';
@@ -6762,11 +6763,9 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 _dashboardSectionTitle(Icons.flash_on_rounded, 'بدء سريع'),
                 const SizedBox(height: 10),
                 LayoutBuilder(builder: (context, constraints) {
-                  final columns = constraints.maxWidth >= 900
-                      ? 4
-                      : constraints.maxWidth >= 560
-                          ? 3
-                          : 2;
+                  final columns = BishoResponsiveLayout.dashboardColumns(
+                    constraints.maxWidth,
+                  );
                   final width =
                       (constraints.maxWidth - (9 * (columns - 1))) / columns;
                   final quickActions = <_DashboardAction>[
@@ -6927,11 +6926,9 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           ),
           children: [
             LayoutBuilder(builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 900
-                  ? 4
-                  : constraints.maxWidth >= 560
-                      ? 3
-                      : 2;
+              final columns = BishoResponsiveLayout.dashboardColumns(
+                constraints.maxWidth,
+              );
               final itemWidth =
                   (constraints.maxWidth - (9 * (columns - 1))) / columns;
               return Wrap(
@@ -7105,18 +7102,14 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                               itemCount: filtered.length,
                               gridDelegate:
                                   SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount:
-                                    MediaQuery.of(sheetContext).size.width >= 1000
-                                        ? 4
-                                        : MediaQuery.of(sheetContext).size.width >= 650
-                                            ? 3
-                                            : 2,
+                                crossAxisCount: BishoResponsiveLayout.dashboardColumns(
+                                  MediaQuery.of(sheetContext).size.width,
+                                ),
                                 crossAxisSpacing: 10,
                                 mainAxisSpacing: 10,
-                                childAspectRatio:
-                                    MediaQuery.of(sheetContext).size.width >= 650
-                                        ? 1.9
-                                        : 1.65,
+                                childAspectRatio: BishoResponsiveLayout.toolCardAspectRatio(
+                                  MediaQuery.of(sheetContext).size.width,
+                                ),
                               ),
                               itemBuilder: (_, index) {
                                 final action = filtered[index];
