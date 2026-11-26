@@ -66,14 +66,10 @@ void main() {
 
   test('ignores history files that exceed the storage size limit', () async {
     await directory.create(recursive: true);
-    await File('${directory.path}/build_history.json').writeAsString(
-      'oversized',
-    );
     final oversizedFile = File('${directory.path}/build_history.json');
     final handle = await oversizedFile.open(mode: FileMode.write);
     await handle.truncate(BuildHistoryStore.maxHistoryFileBytes + 1);
     await handle.close();
-    //
     expect(await store.recent(), isEmpty);
     await store.record(
       log: 'fresh log',
