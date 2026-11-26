@@ -52,6 +52,15 @@ class EngineHealthReport {
         state: value.deviceSupported ? EngineCheckState.passed : EngineCheckState.failed,
       ),
       EngineHealthCheck(
+        title: 'نظام Alpine ARM64',
+        detail: value.alpineRootfsInstalled
+            ? 'بيئة Alpine الموجودة تم تأكيدها من طبقة Android'
+            : 'لم يتم تأكيد وجود Alpine؛ لن يُعلن عن جاهزية البناء المحلي',
+        state: value.alpineRootfsInstalled
+            ? EngineCheckState.passed
+            : EngineCheckState.failed,
+      ),
+      EngineHealthCheck(
         title: 'ملفات المحرك',
         detail: value.engineInstalled ? 'تم العثور على ملفات المحرك' : 'لم يتم تأكيد وجود ملفات المحرك',
         state: value.engineInstalled ? EngineCheckState.passed : EngineCheckState.failed,
@@ -74,11 +83,11 @@ class EngineHealthReport {
       EngineHealthCheck(
         title: 'مساحة التخزين',
         detail: 'المتاح ${value.availableStorageLabel} — المطلوب ${value.requiredStorageLabel}',
-        state: value.availableBytes > 0 &&
-                value.requiredStorageBytes > 0 &&
-                value.availableBytes >= value.requiredStorageBytes
-            ? EngineCheckState.passed
-            : EngineCheckState.warning,
+        state: !value.hasKnownStorage
+            ? EngineCheckState.warning
+            : value.hasSufficientStorage
+                ? EngineCheckState.passed
+                : EngineCheckState.failed,
       ),
     ];
     final passed = checks.where((item) => item.state == EngineCheckState.passed).length;
