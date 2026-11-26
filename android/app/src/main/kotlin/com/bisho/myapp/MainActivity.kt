@@ -617,6 +617,10 @@ class MainActivity : FlutterActivity() {
                         val tarNames = HashSet<String>()
                         var rootfsExpandedBytes = 0L
                         val tarLinks = ArrayList<Pair<TarArchiveEntry, Path>>()
+                        // Keep every directory writable while files, hard links and symlinks are
+                        // materialized. Applying restrictive TAR modes earlier makes Android
+                        // reject later link creation with EACCES even inside app-private storage.
+                        val tarDirectoryModes = ArrayList<Pair<Path, Int>>()
                         var tarEntries = 0
                         TarArchiveInputStream(
                             GzipCompressorInputStream(
@@ -654,10 +658,7 @@ class MainActivity : FlutterActivity() {
                                 if (tarEntry.isCharacterDevice || tarEntry.isBlockDevice || tarEntry.isFIFO) continue
                                 if (tarEntry.isDirectory) {
                                     Files.createDirectories(target)
-                                    val directoryMode = tarEntry.mode
-                                    target.toFile().setReadable(directoryMode and 0x124 != 0, false)
-                                    target.toFile().setWritable(directoryMode and 0x092 != 0, false)
-                                    target.toFile().setExecutable(directoryMode and 0x049 != 0, false)
+                                    tarDirectoryModes.add(target to tarEntry.mode)
                                     continue
                                 }
                                 if (!tarEntry.isFile || tarEntry.size < 0L) throw SecurityException("نوع عنصر rootfs TAR غير مدعوم: " + raw)
@@ -868,6 +869,15 @@ class MainActivity : FlutterActivity() {
                                         "لم يتم تفعيل التثبيت غير المكتمل ولم يتم استبدال المحرك السابق.",
                                     error
                                 )
+                            }
+                        }
+                        // Restore the archive's directory permissions only after all entries and
+                        // links have been created. Deepest-first avoids blocking child updates.
+                        for ((directory, directoryMode) in tarDirectoryModes.sortedByDescending { it.first.nameCount }) {
+                            if (Files.isDirectory(directory, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                directory.toFile().setReadable(directoryMode and 0x124 != 0, false)
+                                directory.toFile().setWritable(directoryMode and 0x092 != 0, false)
+                                directory.toFile().setExecutable(directoryMode and 0x049 != 0, false)
                             }
                         }
                     } else if (name.startsWith("rootfs/")) {
