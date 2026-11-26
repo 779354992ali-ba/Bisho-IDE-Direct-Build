@@ -73,7 +73,7 @@ void main() {
 
       expect(environment.debugBuildVerified, isTrue);
       expect(environment.releaseBuildVerified, isFalse);
-      expect(environment.canBuildLocally, isTrue);
+      expect(environment.canBuildLocally, isFalse);
     });
 
     test('does not confuse runtime or debug verification with Release/AOT proof', () {
