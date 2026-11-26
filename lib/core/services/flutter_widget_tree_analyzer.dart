@@ -49,6 +49,15 @@ class FlutterWidgetTreeAnalyzer {
     final stack = <({String opener, int? widgetIndex})>[];
     var i = 0;
 
+    int sourceLineAt(int offset) {
+      var line = 1;
+      final limit = offset.clamp(0, source.length);
+      for (var index = 0; index < limit; index++) {
+        if (source.codeUnitAt(index) == 10) line++;
+      }
+      return line;
+    }
+
     while (i < code.length && nodes.length < maximumNodes) {
       final ch = code[i];
       if (ch == '\n') {
@@ -77,7 +86,7 @@ class FlutterWidgetTreeAnalyzer {
           final index = nodes.length;
           nodes.add(FlutterWidgetNode(
             name: name,
-            line: source.substring(0, start).split('\n').length,
+            line: sourceLineAt(start),
             offset: start,
             depth: parent == null ? 0 : nodes[parent].depth + 1,
             parentIndex: parent,
