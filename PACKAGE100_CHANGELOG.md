@@ -1,5 +1,10 @@
 # Bisho IDE — Package 100 development continuation
 
+## Phase 1 — Editor command palette
+- Fixed command matching so word-prefix searches split text on actual whitespace instead of a literal backslash sequence.
+- Added regression coverage for word-prefix ranking, fuzzy initials, stable ordering, case/whitespace normalization, and result limits.
+- The tests are committed but have not been executed; no pass is claimed.
+
 ## Phase 5 — Cloud Build Center
 - Added GitHub Actions job-level progress calculation and display.
 - Added progress model tests.
