@@ -11,6 +11,12 @@
 - Existing generated project templates and write flows were left intact; this change only rejects unsafe or non-portable input before project creation.
 - Regression tests are committed but not executed yet.
 
+## Phase 3 — Backup restore safety
+- Backup decoding now checks the combined entry count, declared per-file size, aggregate declared size, and exact base64 encoded length before allocating decoded file buffers.
+- Directory entry types are validated before processing file payloads; existing checksum and path-conflict validation remains in place.
+- Added regression tests for oversized declarations, aggregate limits, excessive entry counts, and encoded-length mismatches.
+- Tests have not been executed; static checks only. No build was started.
+
 ## Phase 5 — Cloud Build Center
 - Added GitHub Actions job-level progress calculation and display.
 - Added progress model tests.
