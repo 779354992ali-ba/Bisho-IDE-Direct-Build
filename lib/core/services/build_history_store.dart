@@ -37,7 +37,7 @@ class BuildHistoryStore {
       'mode': mode,
       'projectName': projectName,
       'log': log.length > maxLogCharacters
-          ? '${log.substring(0, maxLogCharacters)}\\n… تم اختصار سجل البناء لحفظ المساحة'
+          ? '${log.substring(0, maxLogCharacters)}\n… تم اختصار سجل البناء لحفظ المساحة'
           : log,
     });
     if (entries.length > maxEntries) {
