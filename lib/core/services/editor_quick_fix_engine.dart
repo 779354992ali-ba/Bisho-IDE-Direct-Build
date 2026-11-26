@@ -29,6 +29,16 @@ class EditorQuickFixEngine {
     var updated = source.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final fixes = <String>[];
     final diagnostics = EditorSyntaxDiagnostics.analyze(updated, language);
+    final sourceIsNormalized = source.endsWith('\n') &&
+        !source.contains('\r') &&
+        source.split('\n').every((line) => line == line.trimRight());
+    if (diagnostics.isEmpty && sourceIsNormalized) {
+      return EditorQuickFixPreview(
+        source: source,
+        updatedSource: source,
+        fixes: const [],
+      );
+    }
 
     final unmatchedOpen = diagnostics.where((item) =>
       item.message.startsWith('قوس الفتح')
