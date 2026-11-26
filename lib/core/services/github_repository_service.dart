@@ -48,22 +48,29 @@ class GitHubRepositoryService {
 
   Future<String?> readToken() => _storage.read(key: _tokenKey);
 
-  Future<void> saveToken(String token) => _storage.write(key: _tokenKey, value: token.trim());
+  Future<void> saveToken(String token) async {
+    final normalized = token.trim();
+    if (normalized.isEmpty || RegExp(r'\s').hasMatch(normalized)) {
+      throw ArgumentError('رمز GitHub فارغ أو يحتوي مسافات غير مسموحة.');
+    }
+    await _storage.write(key: _tokenKey, value: normalized);
+  }
 
   Future<void> disconnect() => _storage.delete(key: _tokenKey);
 
   Map<String, String> _headers(String token) => {
     'Accept': 'application/vnd.github+json',
-    'Authorization': 'Bearer $token',
+    'Authorization': 'Bearer $safeToken',
     'X-GitHub-Api-Version': '2022-11-28',
     'Content-Type': 'application/json',
     'User-Agent': 'Bisho-IDE',
   };
 
   Future<GitHubAccount> verifyToken(String token) async {
+    final safeToken = _validateToken(token);
     final response = await _client.get(
       Uri.https('api.github.com', '/user'),
-      headers: _headers(token),
+      headers: _headers(safeToken),
     ).timeout(const Duration(seconds: 25));
     if (response.statusCode != 200) {
       throw StateError(_apiError(response));
@@ -78,24 +85,17 @@ class GitHubRepositoryService {
   }
 
   String _apiError(http.Response response) {
-    var message = 'HTTP ${response.statusCode}';
-    try {
-      final body = jsonDecode(response.body);
-      if (body is Map && body['message'] != null) {
-        message = body['message'].toString();
-      }
-    } catch (_) {}
+    // Do not echo arbitrary server text or reflected input into UI errors.
     if (response.statusCode == 401) return 'رمز GitHub غير صالح أو منتهي الصلاحية.';
     if (response.statusCode == 403) {
-      final remaining = response.headers['x-ratelimit-remaining'];
-      if (remaining == '0' || response.body.toLowerCase().contains('rate limit')) {
+      if (response.headers['x-ratelimit-remaining'] == '0') {
         return 'وصل حساب GitHub إلى حد الطلبات المؤقت. انتظر قليلًا ثم أعد المحاولة.';
       }
       return 'رفض GitHub العملية. تحقق من صلاحيات الرمز وإمكانية إنشاء المستودعات.';
     }
     if (response.statusCode == 429) return 'GitHub يطلب تهدئة الطلبات. انتظر قليلًا ثم أعد المحاولة.';
     if (response.statusCode == 404) return 'لم يتم العثور على المورد أو لا يملك الرمز صلاحية الوصول.';
-    return 'GitHub: $message';
+    return 'تعذر إكمال طلب GitHub (HTTP ${response.statusCode}).';
   }
 
   Future<GitHubRepositoryResult> createAndPushProject({
@@ -108,7 +108,8 @@ class GitHubRepositoryService {
     required SafFileService safFiles,
     void Function(String message)? onProgress,
   }) async {
-    final account = await verifyToken(token);
+    final safeToken = _validateToken(token);
+    final account = await verifyToken(safeToken);
     final repoName = _validateRepositoryName(repositoryName);
 
     onProgress?.call('جارٍ قراءة ملفات المشروع من مساحة التخزين...');
@@ -207,7 +208,7 @@ class GitHubRepositoryService {
         try {
           final blob = await _postJsonWithRetry(
             Uri.https('api.github.com', '/repos/$owner/$repoName/git/blobs'),
-            token: token,
+            token: safeToken,
             body: {
               'content': base64Encode(file.bytes),
               'encoding': 'base64',
@@ -439,14 +440,19 @@ class GitHubRepositoryService {
     required String branch,
     required String flutterVersion,
   }) async {
-    final uri = Uri.https('api.github.com', '/repos/$owner/$repository/actions/workflows/${Uri.encodeComponent(workflow)}/dispatches');
+    final safeToken = _validateToken(token);
+    final safeOwner = _validateOwner(owner);
+    final safeRepository = _validateRepositoryName(repository);
+    final safeWorkflow = _normalizeWorkflowPath(workflow);
+    final safeBranch = _validateBranch(branch);
+    final uri = Uri.https('api.github.com', '/repos/$safeOwner/$safeRepository/actions/workflows/${Uri.encodeComponent(safeWorkflow.substring('.github/workflows/'.length))}/dispatches');
     http.Response? response;
     for (var attempt = 0; attempt < 3; attempt++) {
       response = await _client.post(
         uri,
-        headers: _headers(token),
+        headers: _headers(safeToken),
         body: jsonEncode({
-          'ref': branch,
+          'ref': safeBranch,
           'inputs': {'flutter_version': flutterVersion},
         }),
       ).timeout(const Duration(seconds: 30));
@@ -470,9 +476,13 @@ class GitHubRepositoryService {
     required int runId,
     String artifactName = 'Bisho-IDE-Build-Diagnostics',
   }) async {
-    final headers = _headers(token);
+    final safeToken = _validateToken(token);
+    final safeOwner = _validateOwner(owner);
+    final safeRepository = _validateRepositoryName(repository);
+    if (runId <= 0) throw ArgumentError('معرّف تشغيل GitHub غير صالح.');
+    final headers = _headers(safeToken);
     final artifactsResponse = await _client.get(
-      Uri.https('api.github.com', '/repos/$owner/$repository/actions/runs/$runId/artifacts'),
+      Uri.https('api.github.com', '/repos/$safeOwner/$safeRepository/actions/runs/$runId/artifacts'),
       headers: headers,
     ).timeout(const Duration(seconds: 30));
     if (artifactsResponse.statusCode != 200) {
@@ -498,9 +508,9 @@ class GitHubRepositoryService {
       throw StateError('حجم تقرير التشخيص يتجاوز الحد الآمن البالغ 50 ميجابايت.');
     }
     final downloadResponse = await _client.get(
-      Uri.https('api.github.com', '/repos/$owner/$repository/actions/artifacts/$artifactId/zip'),
+      Uri.https('api.github.com', '/repos/$safeOwner/$safeRepository/actions/artifacts/$artifactId/zip'),
       headers: {
-        'Authorization': 'Bearer $token',
+        'Authorization': 'Bearer $safeToken',
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'Bisho-IDE',
       },
@@ -540,9 +550,13 @@ class GitHubRepositoryService {
     required int runId,
     String artifactName = 'Bisho-IDE-Release-APK',
   }) async {
-    final headers = _headers(token);
+    final safeToken = _validateToken(token);
+    final safeOwner = _validateOwner(owner);
+    final safeRepository = _validateRepositoryName(repository);
+    if (runId <= 0) throw ArgumentError('معرّف تشغيل GitHub غير صالح.');
+    final headers = _headers(safeToken);
     final artifactsResponse = await _client.get(
-      Uri.https('api.github.com', '/repos/$owner/$repository/actions/runs/$runId/artifacts'),
+      Uri.https('api.github.com', '/repos/$safeOwner/$safeRepository/actions/runs/$runId/artifacts'),
       headers: headers,
     ).timeout(const Duration(seconds: 30));
     if (artifactsResponse.statusCode != 200) {
@@ -569,9 +583,9 @@ class GitHubRepositoryService {
     }
 
     final downloadResponse = await _client.get(
-      Uri.https('api.github.com', '/repos/$owner/$repository/actions/artifacts/$artifactId/zip'),
+      Uri.https('api.github.com', '/repos/$safeOwner/$safeRepository/actions/artifacts/$artifactId/zip'),
       headers: {
-        'Authorization': 'Bearer $token',
+        'Authorization': 'Bearer $safeToken',
         'Accept': 'application/vnd.github+json',
         'User-Agent': 'Bisho-IDE',
       },
@@ -668,7 +682,13 @@ class GitHubRepositoryService {
     final items = await safFiles.listDirectory(directoryUri);
     for (final item in items) {
       final name = item.name;
-      if (name.isEmpty || name == '.' || name == '..' || name.contains('/') || name.contains('\\')) continue;
+      // SAF providers are external input: validate each segment before it
+      // becomes part of a Git tree path.
+      try {
+        SafFileService.validateChildName(name);
+      } on ArgumentError {
+        continue;
+      }
       if (item.isDir) {
         if (GitHubUploadPolicy.shouldExcludeDirectory(name)) continue;
         await _collectFiles(
@@ -692,30 +712,70 @@ class GitHubRepositoryService {
     }
   }
 
-  String _normalizeWorkflowPath(String value) {
-    final trimmed = value.trim();
-    if (trimmed.isEmpty || trimmed.startsWith('/') ||
-        trimmed.contains('\\') || trimmed.split('/').any((part) => part == '..' || part == '.')) {
-      throw ArgumentError('مسار ملف Workflow غير صالح.');
+  String _validateToken(String value) {
+    final token = value.trim();
+    if (token.isEmpty || RegExp(r'\s').hasMatch(token)) {
+      throw ArgumentError('رمز GitHub فارغ أو غير صالح.');
     }
-    final path = trimmed.startsWith('.github/workflows/')
-        ? trimmed
-        : '.github/workflows/$trimmed';
-    final lowerPath = path.toLowerCase();
-    if (!lowerPath.endsWith('.yml') && !lowerPath.endsWith('.yaml')) {
-      throw ArgumentError('ملف Workflow يجب أن ينتهي بـ .yml أو .yaml.');
+    return token;
+  }
+
+  String _validateOwner(String value) {
+    final owner = value.trim();
+    if (!RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37})$').hasMatch(owner)) {
+      throw ArgumentError('اسم مالك مستودع GitHub غير صالح.');
     }
-    return path;
+    return owner;
   }
 
   String _validateRepositoryName(String value) {
     final name = value.trim();
     if (name.isEmpty || name.length > 100 ||
-        !RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(name) ||
-        name == '.' || name == '..') {
+        !RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$').hasMatch(name) ||
+        name.endsWith('.git') || name.endsWith('.')) {
       throw ArgumentError('اسم المستودع غير صالح. استخدم أحرفًا وأرقامًا وشرطة أو نقطة أو شرطة سفلية.');
     }
     return name;
+  }
+
+  String _validateBranch(String value) {
+    final branch = value.trim();
+    final parts = branch.split('/');
+    if (branch.isEmpty || branch.length > 255 ||
+        branch.startsWith('/') || branch.endsWith('/') ||
+        branch.contains('//') || branch.contains('..') ||
+        branch.contains('@{') || branch.endsWith('.') ||
+        RegExp(r'[\s~^:?*\[\]\\]').hasMatch(branch) ||
+        parts.any((part) => part.isEmpty || part.startsWith('.') || part.endsWith('.lock'))) {
+      throw ArgumentError('اسم فرع Git غير صالح.');
+    }
+    return branch;
+  }
+
+  String _normalizeWorkflowPath(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || trimmed.startsWith('/') ||
+        trimmed.contains('\\') ||
+        RegExp(r'[\x00-\x1F\x7F?#]').hasMatch(trimmed)) {
+      throw ArgumentError('مسار ملف Workflow غير صالح.');
+    }
+    final path = trimmed.startsWith('.github/workflows/')
+        ? trimmed
+        : '.github/workflows/$trimmed';
+    final segments = path.split('/');
+    if (segments.length < 3 ||
+        segments.take(2).join('/') != '.github/workflows' ||
+        segments.any((part) => part.isEmpty || part == '.' || part == '..')) {
+      throw ArgumentError('مسار ملف Workflow غير صالح.');
+    }
+    for (final segment in segments.skip(2)) {
+      SafFileService.validateChildName(segment);
+    }
+    final lowerPath = path.toLowerCase();
+    if (!lowerPath.endsWith('.yml') && !lowerPath.endsWith('.yaml')) {
+      throw ArgumentError('ملف Workflow يجب أن ينتهي بـ .yml أو .yaml.');
+    }
+    return path;
   }
 }
 
