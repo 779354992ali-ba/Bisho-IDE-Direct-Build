@@ -60,7 +60,7 @@ class GitHubRepositoryService {
 
   Map<String, String> _headers(String token) => {
     'Accept': 'application/vnd.github+json',
-    'Authorization': 'Bearer $safeToken',
+    'Authorization': 'Bearer $token',
     'X-GitHub-Api-Version': '2022-11-28',
     'Content-Type': 'application/json',
     'User-Agent': 'Bisho-IDE',
