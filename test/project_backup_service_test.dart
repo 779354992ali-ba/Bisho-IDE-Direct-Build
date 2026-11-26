@@ -34,6 +34,43 @@ void main() {
       expect(() => service.decode(jsonEncode(map)), throwsFormatException);
     });
 
+
+    test('rejects oversized declared files before base64 decoding', () {
+      final source = jsonDecode(service.encode(
+        projectName: 'x',
+        files: {'a.bin': [1]},
+      )) as Map<String, dynamic>;
+      final file = (source['files'] as List).single as Map<String, dynamic>;
+      file['bytes'] = ProjectBackupService.maxFileBytes + 1;
+      file['content'] = 'AA==';
+      expect(() => service.decode(jsonEncode(source)), throwsFormatException);
+    });
+
+    test('rejects aggregate declared size before decoding payloads', () {
+      final source = jsonDecode(service.encode(
+        projectName: 'x',
+        files: {'a.bin': [1], 'b.bin': [2]},
+      )) as Map<String, dynamic>;
+      final files = source['files'] as List;
+      for (final entry in files.cast<Map<String, dynamic>>()) {
+        entry['bytes'] = ProjectBackupService.maxTotalBytes ~/ 2 + 1;
+        entry['content'] = 'AA==';
+      }
+      expect(() => service.decode(jsonEncode(source)), throwsFormatException);
+    });
+
+    test('rejects excessive manifest entry counts before file processing', () {
+      final source = <String, Object?>{
+        'format': 'bisho-project-backup',
+        'version': ProjectBackup.currentVersion,
+        'projectName': 'x',
+        'createdAt': DateTime.utc(2026).toIso8601String(),
+        'directories': List<String>.filled(ProjectBackupService.maxEntries + 1, 'empty'),
+        'files': <Object?>[],
+      };
+      expect(() => service.decode(jsonEncode(source)), throwsFormatException);
+    });
+
     test('rejects unsupported format versions and malformed manifests', () {
       expect(() => service.decode('{"format":"other"}'), throwsFormatException);
       final encoded = service.encode(projectName: 'x', files: {'a': [1]});
