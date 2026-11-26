@@ -129,6 +129,9 @@ class LocalBuildEngineInstaller {
       if (total <= 0 || total > 8 * 1024 * 1024 * 1024) {
         throw StateError('حجم الحزمة غير معروف أو يتجاوز الحد المسموح (8 GB).');
       }
+      // This admission check runs before opening the archive sink or receiving
+      // response bytes. Therefore availableBytes is pre-download free space;
+      // requiring archive size + reserve here is intentional, not double-counting.
       final current = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
       final reserveAfterDownload =
           (current?['engineInstallStorageBytes'] as num?)?.toInt() ??
