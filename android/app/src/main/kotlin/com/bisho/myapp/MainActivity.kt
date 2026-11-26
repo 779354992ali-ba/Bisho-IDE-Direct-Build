@@ -786,8 +786,7 @@ class MainActivity : FlutterActivity() {
                                 val detail = error.message.orEmpty()
                                 val noSpace = detail.contains("No space left on device", ignoreCase = true) ||
                                     detail.contains("ENOSPC", ignoreCase = true) ||
-                                    latest.availableBytes < extractionSafetyReserveBytes ||
-                                    false
+                                    latest.availableBytes < extractionSafetyReserveBytes
                                 if (noSpace) {
                                     throw IllegalStateException(
                                         "توقف تثبيت RootFS بسبب نفاد موارد التخزين عند إنشاء الرابط $linkPath. المساحة الحرة المتبقية: ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB. وفّر مساحة داخلية إضافية ثم أعد المحاولة؛ لم يتم تفعيل النسخة غير المكتملة ولم يتم استبدال المحرك السابق.",
