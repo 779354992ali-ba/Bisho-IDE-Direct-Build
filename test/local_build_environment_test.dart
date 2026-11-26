@@ -64,6 +64,7 @@ void main() {
         'androidVersion': 35,
         'availableBytes': 8 * 1024 * 1024 * 1024,
         'engineInstalled': true,
+        'alpineRootfsInstalled': true,
         'deviceSupported': true,
         'runtimeVerified': true,
         'debugBuildVerified': true,
@@ -145,7 +146,48 @@ void main() {
       expect(environment.availableBytes, 2147483648);
       expect(environment.requiredStorageBytes, 0);
       expect(environment.missingRequirements, isEmpty);
-      expect(environment.canBuildLocally, isTrue);
+      expect(environment.canBuildLocally, isFalse);
+    });
+
+    test('requires verified runtime and Alpine before enabling local builds', () {
+      final missingRuntime = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'engineInstalled': true,
+        'alpineRootfsInstalled': true,
+        'deviceSupported': true,
+        'runtimeVerified': false,
+        'debugBuildVerified': true,
+        'canBuildLocally': true,
+      });
+      final missingAlpine = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'engineInstalled': true,
+        'alpineRootfsInstalled': false,
+        'deviceSupported': true,
+        'runtimeVerified': true,
+        'debugBuildVerified': true,
+        'canBuildLocally': true,
+      });
+
+      expect(missingRuntime.canBuildLocally, isFalse);
+      expect(missingAlpine.canBuildLocally, isFalse);
+    });
+
+    test('exposes storage sufficiency without treating unknown values as sufficient', () {
+      final enough = LocalBuildEnvironment.fromMap({
+        'availableBytes': 4 * 1024 * 1024 * 1024,
+        'requiredStorageBytes': 2 * 1024 * 1024 * 1024,
+      });
+      final insufficient = LocalBuildEnvironment.fromMap({
+        'availableBytes': 1,
+        'requiredStorageBytes': 2,
+      });
+      final unknown = LocalBuildEnvironment.fromMap({});
+
+      expect(enough.hasSufficientStorage, isTrue);
+      expect(insufficient.hasSufficientStorage, isFalse);
+      expect(unknown.hasKnownStorage, isFalse);
+      expect(unknown.hasSufficientStorage, isFalse);
     });
 
     test('formats available storage in GiB', () {
