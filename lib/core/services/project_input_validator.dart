@@ -3,7 +3,7 @@
 class ProjectInputValidator {
   const ProjectInputValidator._();
 
-  static final RegExp _portableInvalidCharacters = RegExp(r'[<>:"|?*\\x00-\\x1F]');
+  static final RegExp _portableInvalidCharacters = RegExp(r'[<>:"|?*\x00-\x1F]');
   static final RegExp _reservedDeviceName =
       RegExp(r'^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$', caseSensitive: false);
 
@@ -37,14 +37,14 @@ class ProjectInputValidator {
     if (name.trim().isEmpty || name != name.trim()) return false;
     return _isPortableSegment(name) &&
         !name.contains('/') &&
-        !name.contains(r'\\');
+        !name.contains('\\');
   }
 
   static bool isValidRelativePath(String path) {
     if (path.isEmpty ||
         path.startsWith('/') ||
-        path.startsWith(r'\\') ||
-        path.contains(r'\\')) {
+        path.startsWith('\\') ||
+        path.contains('\\')) {
       return false;
     }
     final segments = path.split('/');
@@ -63,22 +63,22 @@ class ProjectInputValidator {
   }
 
   static bool isValidVersion(String value) => RegExp(
-        r'^\\d+\\.\\d+\\.\\d+([+-][0-9A-Za-z.-]+)?$',
+        r'^\d+\.\d+\.\d+([+-][0-9A-Za-z.-]+)?$',
       ).hasMatch(value);
 
   static bool isValidSdkConstraint(String value) => value.isNotEmpty &&
-      RegExp(r'^[0-9a-zA-Z.<>=^~+\\-\\s]+$').hasMatch(value);
+      RegExp(r'^[0-9a-zA-Z.<>=^~+\-\s]+$').hasMatch(value);
 
   static bool isValidGoModule(String value) =>
       value.isNotEmpty &&
       !value.contains(' ') &&
       !value.startsWith('/') &&
       !value.endsWith('/') &&
-      !value.contains(r'\\');
+      !value.contains('\\');
 
   static bool isValidPythonVersion(String value) =>
-      RegExp(r'^\\d+\\.\\d+$').hasMatch(value);
+      RegExp(r'^\d+\.\d+$').hasMatch(value);
 
   static bool isValidNodeVersion(String value) =>
-      RegExp(r'^\\d+$').hasMatch(value);
+      RegExp(r'^\d+$').hasMatch(value);
 }
