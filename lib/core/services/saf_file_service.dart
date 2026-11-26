@@ -10,6 +10,8 @@ class SafFileService {
   ///
   /// SAF accepts provider-specific names, but a path separator or a dot
   /// segment must never be treated as a child name by this service.
+  static const int maxChildNameUtf8Bytes = 255;
+
   static String validateChildName(String value) {
     final name = value.trim();
     if (name.isEmpty) {
@@ -17,7 +19,7 @@ class SafFileService {
     }
     if (name == '.' || name == '..' ||
         name.contains('/') || name.contains('\\') ||
-        name.contains('\u0000')) {
+        RegExp(r'[\x00-\x1F\x7F]').hasMatch(name)) {
       throw ArgumentError.value(
         value,
         'name',
@@ -30,6 +32,17 @@ class SafFileService {
         value,
         'name',
         'الاسم يحتوي محارف غير متوافقة مع أنظمة الملفات الشائعة.',
+      );
+    }
+    if (name.length > maxChildNameUtf8Bytes ||
+        name.codeUnits.length != name.runes.length ||
+        name.runes.fold<int>(0, (total, rune) =>
+                total + (rune <= 0x7F ? 1 : rune <= 0x7FF ? 2 : rune <= 0xFFFF ? 3 : 4)) >
+            maxChildNameUtf8Bytes) {
+      throw ArgumentError.value(
+        value,
+        'name',
+        'اسم الملف أو المجلد يتجاوز 255 بايت UTF-8 أو يحتوي محارف غير صالحة.',
       );
     }
     final deviceName = name.split('.').first.toUpperCase();
