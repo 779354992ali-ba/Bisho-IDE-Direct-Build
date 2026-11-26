@@ -104,9 +104,9 @@ class ProjectBackupService {
       }
       // Base64 length can be checked before decoding to avoid allocating a
       // decoded buffer for an oversized or forged manifest entry.
-      final maxEncodedLength = ((maxFileBytes + 2) ~/ 3) * 4;
-      if (encodedContent.length > maxEncodedLength) {
-        throw FormatException('محتوى الملف يتجاوز الحد المسموح: $path');
+      final expectedEncodedLength = ((declaredBytes + 2) ~/ 3) * 4;
+      if (encodedContent.length != expectedEncodedLength) {
+        throw FormatException('طول المحتوى المشفر لا يطابق الحجم المعلن: $path');
       }
       decodedTotalBytes += declaredBytes;
       if (decodedTotalBytes > maxTotalBytes) {
