@@ -51,22 +51,14 @@ class MainActivity : FlutterActivity() {
     private val alpineInstallStorageBytes = 1024L * 1024L * 1024L
     // Keep a full 1 GiB byte reserve while expanding large RootFS archives.
     private val extractionSafetyReserveBytes = 1024L * 1024L * 1024L
-    // RootFS contains many small files and symlinks; leave inode headroom as well.
-    private val minimumInstallAvailableInodes = 5000
     private val minimumBuildStorageBytes = 2560L * 1024L * 1024L
 
     private fun ensureInstallCapacity(stage: String) {
         val stats = StatFs(filesDir.absolutePath)
         val availableBytes = stats.availableBytes
-        val availableInodes = stats.availableInodes
         if (availableBytes < extractionSafetyReserveBytes) {
             throw IllegalStateException(
                 "أُوقف تثبيت المحرك بأمان أثناء $stage: المساحة الحرة ${"%.2f".format(availableBytes / (1024.0 * 1024.0 * 1024.0))} GB أقل من الاحتياطي المطلوب 1 GB. حرّر مساحة ثم أعد المحاولة؛ لن نحذف المحرك السابق أو ملفات مشاريعك."
-            )
-        }
-        if (availableInodes > 0 && availableInodes < minimumInstallAvailableInodes) {
-            throw IllegalStateException(
-                "أُوقف تثبيت المحرك بأمان أثناء $stage: عدد الملفات المتاح منخفض جدًا ($availableInodes inode). حرّر مساحة/ملفات من التخزين الداخلي ثم أعد المحاولة؛ لم يتم استبدال المحرك السابق."
             )
         }
     }
@@ -795,10 +787,10 @@ class MainActivity : FlutterActivity() {
                                 val noSpace = detail.contains("No space left on device", ignoreCase = true) ||
                                     detail.contains("ENOSPC", ignoreCase = true) ||
                                     latest.availableBytes < extractionSafetyReserveBytes ||
-                                    (latest.availableInodes > 0 && latest.availableInodes < minimumInstallAvailableInodes)
+                                    false
                                 if (noSpace) {
                                     throw IllegalStateException(
-                                        "توقف تثبيت RootFS بسبب نفاد موارد التخزين عند إنشاء الرابط $linkPath. المتاح: ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB و ${latest.availableInodes} inode. وفّر مساحة داخلية إضافية ثم أعد المحاولة؛ لم يتم تفعيل النسخة غير المكتملة ولم يتم استبدال المحرك السابق.",
+                                        "توقف تثبيت RootFS بسبب نفاد موارد التخزين عند إنشاء الرابط $linkPath. المساحة الحرة المتبقية: ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB. وفّر مساحة داخلية إضافية ثم أعد المحاولة؛ لم يتم تفعيل النسخة غير المكتملة ولم يتم استبدال المحرك السابق.",
                                         error
                                     )
                                 }
