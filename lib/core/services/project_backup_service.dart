@@ -80,31 +80,52 @@ class ProjectBackupService {
         rawFiles is! List || rawDirectories is! List) {
       throw const FormatException('بيانات النسخة الاحتياطية الأساسية ناقصة أو غير صالحة.');
     }
+    if (rawFiles.length + rawDirectories.length > maxEntries) {
+      throw const FormatException('عدد عناصر النسخة يتجاوز الحد المسموح.');
+    }
+    if (rawDirectories.any((item) => item is! String)) {
+      throw const FormatException('مسار مجلد غير صالح في النسخة الاحتياطية.');
+    }
     final date = DateTime.tryParse(dateText);
     if (date == null) throw const FormatException('تاريخ النسخة الاحتياطية غير صالح.');
 
     final fileBytes = <String, List<int>>{};
+    var decodedTotalBytes = 0;
     for (final item in rawFiles) {
       if (item is! Map<String, dynamic> || item['path'] is! String ||
           item['bytes'] is! int || item['checksum'] is! String || item['content'] is! String) {
         throw const FormatException('سجل ملف غير صالح داخل النسخة الاحتياطية.');
       }
       final path = _normalizePath(item['path'] as String);
+      final declaredBytes = item['bytes'] as int;
+      final encodedContent = item['content'] as String;
+      if (declaredBytes < 0 || declaredBytes > maxFileBytes) {
+        throw FormatException('الملف يتجاوز 64 ميجابايت: $path');
+      }
+      // Base64 length can be checked before decoding to avoid allocating a
+      // decoded buffer for an oversized or forged manifest entry.
+      final maxEncodedLength = ((maxFileBytes + 2) ~/ 3) * 4;
+      if (encodedContent.length > maxEncodedLength) {
+        throw FormatException('محتوى الملف يتجاوز الحد المسموح: $path');
+      }
+      decodedTotalBytes += declaredBytes;
+      if (decodedTotalBytes > maxTotalBytes) {
+        throw const FormatException('الحجم الإجمالي للنسخة يتجاوز 256 ميجابايت.');
+      }
       final List<int> bytes;
       try {
-        bytes = base64Decode(item['content'] as String);
+        bytes = base64Decode(encodedContent);
       } catch (_) {
         throw FormatException('محتوى الملف غير صالح: $path');
       }
-      if (bytes.length != item['bytes']) throw FormatException('حجم الملف لا يطابق بياناته: $path');
+      if (bytes.length != declaredBytes) throw FormatException('حجم الملف لا يطابق بياناته: $path');
       if (_checksum(bytes) != item['checksum']) throw FormatException('فشل التحقق من سلامة الملف: $path');
       if (fileBytes.containsKey(path)) throw FormatException('مسار ملف مكرر: $path');
       fileBytes[path] = bytes;
     }
     final dirs = <String>[];
     for (final item in rawDirectories) {
-      if (item is! String) throw const FormatException('مسار مجلد غير صالح في النسخة الاحتياطية.');
-      dirs.add(_normalizePath(item));
+      dirs.add(_normalizePath(item as String));
     }
     return _build(projectName: name, files: fileBytes, directories: dirs, createdAt: date);
   }
