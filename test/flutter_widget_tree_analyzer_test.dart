@@ -38,8 +38,8 @@ Widget build(BuildContext context) {
   );
 }
 ''');
-      expect(nodes.first.line, 3);
-      expect(nodes.last.line, 4);
+      expect(nodes.first.line, 2);
+      expect(nodes.last.line, 3);
       expect(nodes.last.offset, greaterThan(nodes.first.offset));
     });
 
