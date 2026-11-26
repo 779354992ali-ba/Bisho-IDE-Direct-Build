@@ -348,8 +348,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
                   const SizedBox(height: 5),
                   const Text(
-                    '1) اختر ملف ZIP أو رابط الحزمة وبصمة SHA-256 الصحيحة.\\n'
-                    '2) يتحقق التطبيق من البصمة والمساحة، ثم يفك RootFS داخل مجلد مؤقت.\\n'
+                    '1) اختر ملف ZIP أو رابط الحزمة وبصمة SHA-256 الصحيحة.\n'
+                    '2) يتحقق التطبيق من البصمة والمساحة، ثم يفك RootFS داخل مجلد مؤقت.\n'
                     '3) يختبر التطبيق المحرك قبل اعتماده، ويحتفظ بالنسخة السابقة عند الفشل.',
                     style: TextStyle(fontSize: 11, height: 1.5, color: _muted),
                   ),
