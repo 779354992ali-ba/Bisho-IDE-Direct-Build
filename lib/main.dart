@@ -6356,11 +6356,12 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             ],
           ),
           actions: [
-            IconButton(
-              onPressed: searchCode,
-              icon: const Icon(Icons.search_rounded),
-              tooltip: 'بحث في المشروع والكود',
-            ),
+            if (MediaQuery.of(context).size.width >= 420)
+              IconButton(
+                onPressed: searchCode,
+                icon: const Icon(Icons.search_rounded),
+                tooltip: 'بحث في المشروع والكود',
+              ),
             IconButton(
               onPressed: _openCommandPalette,
               icon: const Icon(Icons.keyboard_command_key_rounded, color: Color(0xFF38BDF8)),
@@ -6371,11 +6372,12 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               icon: const Icon(Icons.save_rounded),
               tooltip: 'حفظ الملف',
             ),
-            IconButton(
-              onPressed: _showTerminalPanel,
-              icon: const Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
-              tooltip: 'فتح الطرفية',
-            ),
+            if (MediaQuery.of(context).size.width >= 420)
+              IconButton(
+                onPressed: _showTerminalPanel,
+                icon: const Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
+                tooltip: 'فتح الطرفية',
+              ),
             PopupMenuButton<String>(
               tooltip: 'المزيد من الأدوات',
               icon: const Icon(Icons.more_vert_rounded),
