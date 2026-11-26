@@ -46,6 +46,17 @@ void main() {
       expect(() => service.decode(jsonEncode(source)), throwsFormatException);
     });
 
+
+    test('rejects base64 payloads inconsistent with declared byte length', () {
+      final source = jsonDecode(service.encode(
+        projectName: 'x',
+        files: {'empty.bin': []},
+      )) as Map<String, dynamic>;
+      final file = (source['files'] as List).single as Map<String, dynamic>;
+      file['content'] = 'AAAA';
+      expect(() => service.decode(jsonEncode(source)), throwsFormatException);
+    });
+
     test('rejects aggregate declared size before decoding payloads', () {
       final source = jsonDecode(service.encode(
         projectName: 'x',
