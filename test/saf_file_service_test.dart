@@ -21,18 +21,18 @@ void main() {
 
     test('enforces UTF-8 child-name length without rejecting Unicode', () {
       expect(
-        SafFileService.validateChildName('a' * SafFileService.maxChildNameUtf8Bytes),
+        SafFileService.validateChildName(List<String>.filled(SafFileService.maxChildNameUtf8Bytes, 'a').join()),
         hasLength(SafFileService.maxChildNameUtf8Bytes),
       );
       expect(
         () => SafFileService.validateChildName(
-          'a' * (SafFileService.maxChildNameUtf8Bytes + 1),
+          List<String>.filled(SafFileService.maxChildNameUtf8Bytes + 1, 'a').join(),
         ),
         throwsArgumentError,
       );
       expect(SafFileService.validateChildName('ملف-📁.dart'), 'ملف-📁.dart');
       expect(
-        () => SafFileService.validateChildName('📁' * 64),
+        () => SafFileService.validateChildName(List<String>.filled(64, '📁').join()),
         throwsArgumentError,
       );
     });
