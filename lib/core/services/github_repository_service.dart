@@ -177,7 +177,7 @@ class GitHubRepositoryService {
     onProgress?.call('جارٍ إنشاء مستودع خاص على GitHub...');
     final create = await _client.post(
       Uri.https('api.github.com', '/user/repos'),
-      headers: _headers(token),
+      headers: _headers(safeToken),
       body: jsonEncode({
         'name': repoName,
         'description': description,
@@ -187,7 +187,7 @@ class GitHubRepositoryService {
     ).timeout(const Duration(seconds: 30));
     if (create.statusCode != 201) throw StateError(_apiError(create));
     final repo = jsonDecode(create.body) as Map<String, dynamic>;
-    final owner = (repo['owner'] as Map?)?['login']?.toString() ?? account.login;
+    final owner = _validateOwner((repo['owner'] as Map?)?['login']?.toString() ?? account.login);
     final branch = 'main';
 
     // Upload a small bounded number of blobs in parallel. This is much faster
@@ -250,14 +250,14 @@ class GitHubRepositoryService {
     onProgress?.call('جارٍ إنشاء شجرة Git والالتزام الأول...');
     final treeResponse = await _client.post(
       Uri.https('api.github.com', '/repos/$owner/$repoName/git/trees'),
-      headers: _headers(token),
+      headers: _headers(safeToken),
       body: jsonEncode({'tree': completedTree}),
     ).timeout(const Duration(seconds: 45));
     if (treeResponse.statusCode != 201) {
       if (_isEmptyRepositoryError(treeResponse)) {
         onProgress?.call('المستودع فارغ؛ جارٍ تهيئته بأول Commit ثم متابعة الرفع...');
         await _bootstrapEmptyRepositoryAndPush(
-          token: token,
+          token: safeToken,
           owner: owner,
           repository: repoName,
           branch: branch,
@@ -278,7 +278,7 @@ class GitHubRepositoryService {
 
     final commitResponse = await _client.post(
       Uri.https('api.github.com', '/repos/$owner/$repoName/git/commits'),
-      headers: _headers(token),
+      headers: _headers(safeToken),
       body: jsonEncode({
         'message': 'Initial project upload from Bisho IDE',
         'tree': treeSha,
@@ -288,7 +288,7 @@ class GitHubRepositoryService {
       if (_isEmptyRepositoryError(commitResponse)) {
         onProgress?.call('المستودع لا يحتوي على Commit؛ جارٍ إنشاء نقطة بداية آمنة...');
         await _bootstrapEmptyRepositoryAndPush(
-          token: token,
+          token: safeToken,
           owner: owner,
           repository: repoName,
           branch: branch,
@@ -309,14 +309,14 @@ class GitHubRepositoryService {
 
     final refResponse = await _client.post(
       Uri.https('api.github.com', '/repos/$owner/$repoName/git/refs'),
-      headers: _headers(token),
+      headers: _headers(safeToken),
       body: jsonEncode({'ref': 'refs/heads/$branch', 'sha': commitSha}),
     ).timeout(const Duration(seconds: 30));
     if (refResponse.statusCode != 201) {
       if (_isEmptyRepositoryError(refResponse)) {
         onProgress?.call('GitHub لم يجد فرعًا بعد؛ جارٍ تهيئة الفرع الرئيسي...');
         await _bootstrapEmptyRepositoryAndPush(
-          token: token,
+          token: safeToken,
           owner: owner,
           repository: repoName,
           branch: branch,
@@ -685,7 +685,7 @@ class GitHubRepositoryService {
       // SAF providers are external input: validate each segment before it
       // becomes part of a Git tree path.
       try {
-        SafFileService.validateChildName(name);
+        if (SafFileService.validateChildName(name) != name) continue;
       } on ArgumentError {
         continue;
       }
