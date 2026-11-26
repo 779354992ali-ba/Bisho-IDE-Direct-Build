@@ -1,3 +1,10 @@
+## Phase 7 — Responsive dashboard and mobile workspace
+- Dashboard action groups and quick actions now adapt between 2, 3, and 4 columns for phone/tablet/wide layouts.
+- The all-tools sheet uses responsive columns and card proportions.
+- Narrow phone app bars hide duplicate Search/Terminal shortcuts; both remain accessible through the More menu and command palette.
+- Added responsive breakpoint unit tests. Tests/analyzer remain pending; no APK build was started.
+- No local engine, Alpine RootFS, PRoot, or runtime files were changed.
+
 # Bisho IDE — Package 100 development continuation
 
 ## Phase 1 — Editor command palette
