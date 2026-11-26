@@ -49,8 +49,11 @@ class MainActivity : FlutterActivity() {
     // Dynamic admission: actual archive size + a reserve, not a fixed 20 GB gate.
     private val engineInstallStorageBytes = 2560L * 1024L * 1024L
     private val alpineInstallStorageBytes = 1024L * 1024L * 1024L
-    // Keep a full 1 GiB byte reserve while expanding large RootFS archives.
+    // Keep byte and inode reserves while expanding large RootFS archives.
+    // RootFS extraction creates many files and symlinks; free bytes alone do not
+    // guarantee that the filesystem can allocate another inode.
     private val extractionSafetyReserveBytes = 1024L * 1024L * 1024L
+    private val extractionSafetyReserveInodes = 4096L
     private val minimumBuildStorageBytes = 2560L * 1024L * 1024L
 
     private fun ensureInstallCapacity(stage: String) {
@@ -64,23 +67,30 @@ class MainActivity : FlutterActivity() {
     private fun ensureExtractionCapacity(
         stage: String,
         remainingBytes: Long = 0L,
-        processedBytes: Long = 0L
+        processedBytes: Long = 0L,
+        remainingInodes: Long = 0L
     ) {
-        val availableBytes = StatFs(filesDir.absolutePath).availableBytes
+        val stat = StatFs(filesDir.absolutePath)
+        val availableBytes = stat.availableBytes
+        val availableInodes = stat.availableInodes.toLong()
         val remaining = remainingBytes.coerceAtLeast(0L)
         val requiredBytes = remaining + extractionSafetyReserveBytes
-        if (availableBytes < requiredBytes) {
+        val requiredInodes = remainingInodes.coerceAtLeast(0L) + extractionSafetyReserveInodes
+        val bytesInsufficient = availableBytes < requiredBytes
+        val inodesInsufficient = availableInodes < requiredInodes
+        if (bytesInsufficient || inodesInsufficient) {
             val mib = 1024.0 * 1024.0
             val availableMiB = availableBytes / mib
             val remainingMiB = remaining / mib
             val reserveMiB = extractionSafetyReserveBytes / mib
             val processedMiB = processedBytes.coerceAtLeast(0L) / mib
             throw IllegalStateException(
-                "توقف $stage لحماية مساحة الهاتف. المتاح الآن: ${"%.0f".format(availableMiB)} MB؛ " +
+                "توقف $stage لحماية موارد التخزين. المساحة المتاحة: ${"%.0f".format(availableMiB)} MB؛ " +
                     "المطلوب لإكمال الملف الحالي: ${"%.0f".format(remainingMiB)} MB؛ " +
-                    "احتياطي الأمان: ${"%.0f".format(reserveMiB)} MB؛ " +
-                    "البيانات المعالجة في هذه المرحلة: ${"%.0f".format(processedMiB)} MB. " +
-                    "حرّر مساحة داخلية إضافية ثم أعد المحاولة. لم يتم تغيير المحرك السابق."
+                    "احتياطي المساحة: ${"%.0f".format(reserveMiB)} MB؛ " +
+                    "العُقد المتاحة: $availableInodes؛ العُقد المطلوبة مع الاحتياطي: $requiredInodes؛ " +
+                    "البيانات المعالجة: ${"%.0f".format(processedMiB)} MB. " +
+                    "حرّر مساحة داخلية وموارد ملفات إضافية ثم أعد المحاولة. لم يتم تغيير المحرك السابق."
             )
         }
     }
@@ -789,7 +799,15 @@ class MainActivity : FlutterActivity() {
                         // a parent symlink. Absolute guest targets stay inside rootfs.
                         val symbolicLinks = tarLinks.filter { it.first.isSymbolicLink }
                             .sortedByDescending { it.second.nameCount }
-                        for ((tarEntry, linkPath) in symbolicLinks) {
+                        for ((linkIndex, linkPair) in symbolicLinks.withIndex()) {
+                            val (tarEntry, linkPath) = linkPair
+                            // Reserve enough free inodes for every remaining symlink,
+                            // plus a small safety margin, before creating any of them.
+                            val remainingLinks = (symbolicLinks.size - linkIndex).toLong()
+                            ensureExtractionCapacity(
+                                "إنشاء روابط RootFS الرمزية",
+                                remainingInodes = remainingLinks
+                            )
                             val linkName = tarEntry.linkName.replace('\\', '/')
                             if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
                             val linkTarget = RootfsSymlinkTargets.resolveGuestTarget(rootPath, linkPath, linkName)
@@ -824,10 +842,14 @@ class MainActivity : FlutterActivity() {
                                 val detail = error.message.orEmpty()
                                 val noSpace = detail.contains("No space left on device", ignoreCase = true) ||
                                     detail.contains("ENOSPC", ignoreCase = true) ||
-                                    latest.availableBytes < extractionSafetyReserveBytes
+                                    latest.availableBytes < extractionSafetyReserveBytes ||
+                                    latest.availableInodes.toLong() < extractionSafetyReserveInodes
                                 if (noSpace) {
                                     throw IllegalStateException(
-                                        "توقف تثبيت RootFS بسبب نفاد موارد التخزين عند إنشاء الرابط $linkPath. المساحة الحرة المتبقية: ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB. وفّر مساحة داخلية إضافية ثم أعد المحاولة؛ لم يتم تفعيل النسخة غير المكتملة ولم يتم استبدال المحرك السابق.",
+                                        "توقف تثبيت RootFS بسبب نفاد موارد التخزين عند إنشاء الرابط $linkPath. " +
+                                            "المساحة الحرة: ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB؛ " +
+                                            "العُقد الحرة: ${latest.availableInodes}. " +
+                                            "وفّر مساحة داخلية وموارد ملفات إضافية ثم أعد المحاولة؛ لم يتم تفعيل النسخة غير المكتملة ولم يتم استبدال المحرك السابق.",
                                         error
                                     )
                                 }
