@@ -6762,7 +6762,13 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 _dashboardSectionTitle(Icons.flash_on_rounded, 'بدء سريع'),
                 const SizedBox(height: 10),
                 LayoutBuilder(builder: (context, constraints) {
-                  final width = (constraints.maxWidth - 9) / 2;
+                  final columns = constraints.maxWidth >= 900
+                      ? 4
+                      : constraints.maxWidth >= 560
+                          ? 3
+                          : 2;
+                  final width =
+                      (constraints.maxWidth - (9 * (columns - 1))) / columns;
                   final quickActions = <_DashboardAction>[
                     _DashboardAction(Icons.create_new_folder_rounded, 'مشروع جديد', createNewProject, cyan),
                     _DashboardAction(Icons.folder_open_rounded, 'فتح مشروع', openProjectFolder, green),
@@ -6921,13 +6927,22 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           ),
           children: [
             LayoutBuilder(builder: (context, constraints) {
-              final width = (constraints.maxWidth - 9) / 2;
+              final columns = constraints.maxWidth >= 900
+                  ? 4
+                  : constraints.maxWidth >= 560
+                      ? 3
+                      : 2;
+              final itemWidth =
+                  (constraints.maxWidth - (9 * (columns - 1))) / columns;
               return Wrap(
                 spacing: 9,
                 runSpacing: 9,
                 children: [
                   for (final action in actions)
-                    SizedBox(width: width, child: _dashboardFeatureCard(action)),
+                    SizedBox(
+                      width: itemWidth,
+                      child: _dashboardFeatureCard(action),
+                    ),
                 ],
               );
             }),
@@ -7089,11 +7104,19 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                               padding: const EdgeInsets.all(12),
                               itemCount: filtered.length,
                               gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                 crossAxisSpacing: 10,
-                                 mainAxisSpacing: 10,
-                                 childAspectRatio: 1.65,
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount:
+                                    MediaQuery.of(sheetContext).size.width >= 1000
+                                        ? 4
+                                        : MediaQuery.of(sheetContext).size.width >= 650
+                                            ? 3
+                                            : 2,
+                                crossAxisSpacing: 10,
+                                mainAxisSpacing: 10,
+                                childAspectRatio:
+                                    MediaQuery.of(sheetContext).size.width >= 650
+                                        ? 1.9
+                                        : 1.65,
                               ),
                               itemBuilder: (_, index) {
                                 final action = filtered[index];
