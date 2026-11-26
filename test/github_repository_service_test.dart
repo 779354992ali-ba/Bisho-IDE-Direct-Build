@@ -78,5 +78,71 @@ void main() {
       );
       client.close();
     });
+    test('rejects empty or whitespace-containing tokens before network access', () async {
+      final client = MockClient((request) async {
+        fail('Invalid tokens must be rejected before sending a request.');
+      });
+      final service = GitHubRepositoryService(client: client);
+      await expectLater(service.verifyToken('  '), throwsArgumentError);
+      await expectLater(service.verifyToken('token with spaces'), throwsArgumentError);
+      client.close();
+    });
+
+    test('rejects unsafe repository, owner, workflow and branch inputs', () async {
+      final client = MockClient((request) async {
+        fail('Unsafe path components must be rejected before network access.');
+      });
+      final service = GitHubRepositoryService(client: client);
+      Future<void> dispatch({
+        String owner = 'demo',
+        String repository = 'app',
+        String workflow = 'build-android.yml',
+        String branch = 'main',
+      }) => service.dispatchBuild(
+        token: 'test-token',
+        owner: owner,
+        repository: repository,
+        workflow: workflow,
+        branch: branch,
+        flutterVersion: '3.47.9',
+      );
+
+      await expectLater(dispatch(owner: '../attacker'), throwsArgumentError);
+      await expectLater(dispatch(repository: '../repo'), throwsArgumentError);
+      await expectLater(dispatch(workflow: '../outside.yml'), throwsArgumentError);
+      await expectLater(dispatch(branch: 'main\\nmalicious'), throwsArgumentError);
+      client.close();
+    });
+
+    test('does not echo arbitrary GitHub error response text', () async {
+      const reflectedSecret = 'reflected-sensitive-server-detail';
+      final client = MockClient((request) async =>
+          http.Response(jsonEncode({'message': reflectedSecret}), 500));
+      final service = GitHubRepositoryService(client: client);
+      await expectLater(
+        service.verifyToken('test-token'),
+        throwsA(isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          allOf(contains('HTTP 500'), isNot(contains(reflectedSecret))),
+        )),
+      );
+      client.close();
+    });
+
+    test('rejects non-positive workflow run identifiers before network access', () async {
+      final client = MockClient((request) async {
+        fail('Invalid run IDs must be rejected before network access.');
+      });
+      final service = GitHubRepositoryService(client: client);
+      await expectLater(
+        service.downloadBuildDiagnostics(
+          token: 'test-token', owner: 'demo', repository: 'app', runId: 0,
+        ),
+        throwsArgumentError,
+      );
+      client.close();
+    });
+
   });
 }
