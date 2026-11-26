@@ -332,6 +332,35 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
           title: const Text('تثبيت محرك البناء المحلي'),
           content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
             const Text('يمكنك اختيار ملف GitHub الموجود على الهاتف Bisho-Flutter-Local-Engine-ARM64.zip مباشرة دون تنزيله أو فك الملف الداخلي يدويًا؛ سيقرأ التطبيق المحرك من داخله مباشرة. يمكنك أيضًا اختيار ZIP الداخلي أو استخدام رابط HTTPS مع بصمته الصحيحة.'),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFF10243A),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF2B4965)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('خطوات التثبيت الآمن',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+                  const SizedBox(height: 5),
+                  const Text(
+                    '1) اختر ملف ZIP أو رابط الحزمة وبصمة SHA-256 الصحيحة.\\n'
+                    '2) يتحقق التطبيق من البصمة والمساحة، ثم يفك RootFS داخل مجلد مؤقت.\\n'
+                    '3) يختبر التطبيق المحرك قبل اعتماده، ويحتفظ بالنسخة السابقة عند الفشل.',
+                    style: TextStyle(fontSize: 11, height: 1.5, color: _muted),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'المساحة المتاحة الآن: ${_localBuildEnvironment?.availableStorageLabel ?? 'غير متاحة'}. يلزم 2.5 GB لبدء التثبيت مع بقاء احتياطي لا يقل عن 1 GB أثناء فك الملفات. اترك مساحة إضافية لأن RootFS يحتوي آلاف الملفات والروابط.',
+                    style: const TextStyle(fontSize: 11, height: 1.45, color: Colors.orangeAccent),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 12),
             OutlinedButton.icon(
               onPressed: () async {
