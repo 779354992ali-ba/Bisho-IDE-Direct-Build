@@ -49,8 +49,27 @@ class MainActivity : FlutterActivity() {
     // Dynamic admission: actual archive size + a reserve, not a fixed 20 GB gate.
     private val engineInstallStorageBytes = 2560L * 1024L * 1024L
     private val alpineInstallStorageBytes = 1024L * 1024L * 1024L
-    private val extractionSafetyReserveBytes = 512L * 1024L * 1024L
+    // Keep a full 1 GiB byte reserve while expanding large RootFS archives.
+    private val extractionSafetyReserveBytes = 1024L * 1024L * 1024L
+    // RootFS contains many small files and symlinks; leave inode headroom as well.
+    private val minimumInstallAvailableInodes = 2000
     private val minimumBuildStorageBytes = 2560L * 1024L * 1024L
+
+    private fun ensureInstallCapacity(stage: String) {
+        val stats = StatFs(filesDir.absolutePath)
+        val availableBytes = stats.availableBytes
+        val availableInodes = stats.availableInodes
+        if (availableBytes < extractionSafetyReserveBytes) {
+            throw IllegalStateException(
+                "أُوقف تثبيت المحرك بأمان أثناء $stage: المساحة الحرة ${"%.2f".format(availableBytes / (1024.0 * 1024.0 * 1024.0))} GB أقل من الاحتياطي المطلوب 1 GB. حرّر مساحة ثم أعد المحاولة؛ لن نحذف المحرك السابق أو ملفات مشاريعك."
+            )
+        }
+        if (availableInodes > 0 && availableInodes < minimumInstallAvailableInodes) {
+            throw IllegalStateException(
+                "أُوقف تثبيت المحرك بأمان أثناء $stage: عدد الملفات المتاح منخفض جدًا ($availableInodes inode). حرّر مساحة/ملفات من التخزين الداخلي ثم أعد المحاولة؛ لم يتم استبدال المحرك السابق."
+            )
+        }
+    }
     private val buildExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var activeBuildProcess: Process? = null
     @Volatile private var stagingCancelled: Boolean = false
@@ -472,6 +491,7 @@ class MainActivity : FlutterActivity() {
                 "المساحة غير كافية لتثبيت المحرك بأمان. نظّف التطبيق الملفات المؤقتة الآمنة وحرّر ${"%.1f".format(minimumBuildStorageBytes / (1024.0 * 1024.0 * 1024.0))} GB على الأقل؛ المتاح الآن ${"%.1f".format(freeBytes / (1024.0 * 1024.0 * 1024.0))} GB. لم نحذف مشاريعك أو المحرك السابق. تم توفير ${"%.2f".format(freedBytes / (1024.0 * 1024.0 * 1024.0))} GB تلقائياً."
             )
         }
+        ensureInstallCapacity("بدء التثبيت")
         emitBuildEvent("جارٍ حساب SHA-256 لحزمة المحرك...")
         val digest = MessageDigest.getInstance("SHA-256")
         openArchive().use { input ->
@@ -585,6 +605,7 @@ class MainActivity : FlutterActivity() {
                                 val tarEntry = tar.nextTarEntry ?: break
                                 tarEntries++
                                 if (tarEntries > 100000) throw SecurityException("rootfs TAR يحتوي عدداً مفرطاً من العناصر.")
+                                if (tarEntries % 128 == 0) ensureInstallCapacity("فك ملفات RootFS")
                                 val raw = tarEntry.name.replace('\\', '/')
                                 var clean = raw.removeSuffix("/")
                                 while (clean.startsWith("./")) clean = clean.removePrefix("./")
@@ -761,10 +782,24 @@ class MainActivity : FlutterActivity() {
                                 // duplicates are coalesced; conflicting data fails safely.
                                 mergeDirectoryContents(linkPath, linkTarget)
                             }
-                            Files.createSymbolicLink(
-                                linkPath,
-                                RootfsSymlinkTargets.targetForCreation(linkPath, linkTarget, linkName)
-                            )
+                            // Creating a symlink consumes filesystem metadata/inodes too.
+                            ensureInstallCapacity("إنشاء روابط RootFS الرمزية")
+                            try {
+                                Files.createSymbolicLink(
+                                    linkPath,
+                                    RootfsSymlinkTargets.targetForCreation(linkPath, linkTarget, linkName)
+                                )
+                            } catch (error: java.io.IOException) {
+                                val latest = StatFs(filesDir.absolutePath)
+                                if (latest.availableBytes < extractionSafetyReserveBytes ||
+                                    (latest.availableInodes > 0 && latest.availableInodes < minimumInstallAvailableInodes)) {
+                                    throw IllegalStateException(
+                                        "نفدت موارد التخزين أثناء إنشاء رابط RootFS ($linkPath): المتاح ${"%.2f".format(latest.availableBytes / (1024.0 * 1024.0 * 1024.0))} GB و ${latest.availableInodes} inode. أُوقف التثبيت دون استبدال المحرك السابق.",
+                                        error
+                                    )
+                                }
+                                throw error
+                            }
                         }
                     } else if (name.startsWith("rootfs/")) {
                         throw SecurityException("صيغة الحزمة تتطلب rootfs.tar.gz ولا تقبل مجلد rootfs مفكوكاً داخل ZIP.")
