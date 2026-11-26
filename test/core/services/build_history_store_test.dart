@@ -49,6 +49,21 @@ void main() {
     expect(await store.recent(limit: 100), hasLength(50));
   });
 
+  test('truncates oversized logs and clamps requested history limits', () async {
+    await store.record(
+      log: 'x' * (BuildHistoryStore.maxLogCharacters + 10),
+      success: true,
+      mode: 'debug',
+      projectName: 'Demo',
+    );
+    final entries = await store.recent(limit: 500);
+    expect(entries, hasLength(1));
+    expect((entries.single['log'] as String).length,
+        lessThan(BuildHistoryStore.maxLogCharacters + 50));
+    expect(await store.recent(limit: 0), isEmpty);
+    expect(await store.recent(limit: -1), isEmpty);
+  });
+
   test('returns an empty history when storage is malformed', () async {
     await directory.create(recursive: true);
     await File('${directory.path}/build_history.json').writeAsString('{bad');
