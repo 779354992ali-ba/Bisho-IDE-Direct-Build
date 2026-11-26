@@ -5,6 +5,12 @@
 - Added regression coverage for word-prefix ranking, fuzzy initials, stable ordering, case/whitespace normalization, and result limits.
 - The tests are committed but have not been executed; no pass is claimed.
 
+## Phase 2 — Project creation and portability
+- Hardened project-name and relative-path validation against Windows-reserved device names, control characters, forbidden filename characters, trailing dots/spaces, drive-qualified paths, and traversal.
+- Added regression cases for reserved names and non-portable paths.
+- Existing generated project templates and write flows were left intact; this change only rejects unsafe or non-portable input before project creation.
+- Regression tests are committed but not executed yet.
+
 ## Phase 5 — Cloud Build Center
 - Added GitHub Actions job-level progress calculation and display.
 - Added progress model tests.
