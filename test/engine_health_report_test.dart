@@ -48,6 +48,47 @@ void main() {
       expect(report.isReady, isTrue);
     });
 
+
+    test('reports missing Alpine as a blocking failure', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'engineInstalled': true,
+        'alpineRootfsInstalled': false,
+        'deviceSupported': true,
+        'runtimeVerified': true,
+        'debugBuildVerified': true,
+        'releaseBuildVerified': true,
+        'availableBytes': 8 * 1024 * 1024 * 1024,
+        'requiredStorageBytes': 2 * 1024 * 1024 * 1024,
+      });
+
+      final report = EngineHealthReport.fromEnvironment(environment);
+      expect(report.checks.any((check) =>
+          check.title == 'نظام Alpine ARM64' &&
+          check.state == EngineCheckState.failed), isTrue);
+      expect(report.isReady, isFalse);
+    });
+
+    test('reports known insufficient storage as a blocking failure', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'deviceAbi': 'arm64-v8a',
+        'engineInstalled': true,
+        'alpineRootfsInstalled': true,
+        'deviceSupported': true,
+        'runtimeVerified': true,
+        'debugBuildVerified': true,
+        'releaseBuildVerified': true,
+        'availableBytes': 1,
+        'requiredStorageBytes': 2,
+      });
+
+      final report = EngineHealthReport.fromEnvironment(environment);
+      expect(report.checks.any((check) =>
+          check.title == 'مساحة التخزين' &&
+          check.state == EngineCheckState.failed), isTrue);
+      expect(report.isReady, isFalse);
+    });
+
     test('fails health report for a non-ARM64 device', () {
       final environment = LocalBuildEnvironment.fromMap({
         'deviceAbi': 'armeabi-v7a',
