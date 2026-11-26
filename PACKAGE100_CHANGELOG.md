@@ -38,6 +38,10 @@
 - Hardened parsing of native engine diagnostic responses.
 - Made read-only engine probing return structured failures instead of leaking channel exceptions.
 - Changed health readiness to require zero warnings as well as zero failures.
+- Tightened the local-build readiness gate to require native confirmation of the existing engine, Alpine RootFS, supported device, verified runtime, and Debug build.
+- Added explicit Alpine and storage checks; unknown storage remains a warning and known insufficient storage blocks readiness.
+- Added regression cases for missing runtime/Alpine and insufficient/unknown storage.
+- Diagnostics-only: the already-built ARM64 engine, Alpine RootFS, PRoot, package database, installers, and execution flow were not changed.
 - Added regression tests for malformed diagnostics and engine readiness.
 - Did not modify the existing ARM64 engine, Alpine RootFS 3.24.4, PRoot 5.1.0, package database, installer, or execution flow.
 
