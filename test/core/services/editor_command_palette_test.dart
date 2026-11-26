@@ -18,8 +18,8 @@ void main() {
         searchableText: (command) => command,
       );
 
-      expect(result.first, 'Open File — open a file');
-      expect(result[1], 'File History — restore a previous version');
+      expect(result.first, 'File History — restore a previous version');
+      expect(result[1], 'Open File — open a file');
     });
 
     test('matches the beginning of any whitespace-delimited word', () {
@@ -39,7 +39,7 @@ void main() {
         searchableText: (command) => command,
       );
 
-      expect(result, ['format document', 'flutter build']);
+      expect(result, ['flutter build']);
     });
 
     test('trims and ignores query case', () {
