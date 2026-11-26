@@ -73,10 +73,10 @@ void main() {
 
       expect(environment.debugBuildVerified, isTrue);
       expect(environment.releaseBuildVerified, isFalse);
-      expect(environment.canBuildLocally, isFalse);
+      expect(environment.canBuildLocally, isTrue);
     });
 
-    test('does not confuse runtime or debug verification with Release/AOT proof', () {
+    test('does not enable local builds without runtime verification', () {
       final environment = LocalBuildEnvironment.fromMap({
         'deviceAbi': 'arm64-v8a',
         'androidVersion': 35,
@@ -93,7 +93,7 @@ void main() {
 
       expect(environment.debugBuildVerified, isTrue);
       expect(environment.releaseBuildVerified, isFalse);
-      expect(environment.canBuildLocally, isTrue);
+      expect(environment.canBuildLocally, isFalse);
     });
 
     test('exposes missing requirements from native diagnostics', () {
