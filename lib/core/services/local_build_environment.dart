@@ -67,7 +67,9 @@ class LocalBuildEnvironment {
       // end-to-end build test and cannot enable the build button.
       canBuildLocally: map['canBuildLocally'] == true &&
           engineInstalled &&
+          alpineRootfsInstalled &&
           deviceSupported &&
+          runtimeVerified &&
           debugBuildVerified,
       message: map['message']?.toString() ?? 'تعذر تحديد حالة بيئة البناء.',
     );
@@ -76,6 +78,11 @@ class LocalBuildEnvironment {
   String get availableStorageLabel => _formatBytes(availableBytes);
 
   String get requiredStorageLabel => _formatBytes(requiredStorageBytes);
+
+  bool get hasKnownStorage => availableBytes > 0 && requiredStorageBytes > 0;
+
+  bool get hasSufficientStorage =>
+      hasKnownStorage && availableBytes >= requiredStorageBytes;
 
   static String _formatBytes(int bytes) {
     if (bytes <= 0) return 'غير متاح';
