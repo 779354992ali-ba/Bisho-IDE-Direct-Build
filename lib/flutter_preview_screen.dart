@@ -1099,6 +1099,23 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
     }
   }
 
+  Widget _buildJobCount(
+    IconData icon,
+    String label,
+    int count,
+    Color color,
+  ) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 3),
+        Text('$label: $count',
+            style: TextStyle(color: color, fontSize: 10)),
+      ],
+    );
+  }
+
   String _statusArabic(String? status) {
     switch (status) {
       case 'queued': return 'في قائمة الانتظار';
@@ -1731,6 +1748,25 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                       minHeight: 7,
                       backgroundColor: const Color(0xFF26374E),
                     ),
+                  ),
+                  const SizedBox(height: 7),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 5,
+                    children: [
+                      if (_workflowProgressSnapshot.activeJobs > 0)
+                        _buildJobCount(Icons.play_circle_outline, 'قيد التنفيذ',
+                            _workflowProgressSnapshot.activeJobs, _cyan),
+                      if (_workflowProgressSnapshot.queuedJobs > 0)
+                        _buildJobCount(Icons.schedule, 'بالانتظار',
+                            _workflowProgressSnapshot.queuedJobs, _muted),
+                      if (_workflowProgressSnapshot.failedJobs > 0)
+                        _buildJobCount(Icons.error_outline, 'فاشلة',
+                            _workflowProgressSnapshot.failedJobs, Colors.redAccent),
+                      if (_workflowProgressSnapshot.skippedJobs > 0)
+                        _buildJobCount(Icons.skip_next, 'متجاوزة',
+                            _workflowProgressSnapshot.skippedJobs, Colors.orangeAccent),
+                    ],
                   ),
                   if (_workflowProgressSnapshot.jobLines.isNotEmpty) ...[
                     const SizedBox(height: 8),
