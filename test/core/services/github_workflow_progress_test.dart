@@ -52,6 +52,49 @@ void main() {
       expect(result.jobLines.single, contains('failure'));
     });
 
+
+    test('summarizes failed, skipped, active and waiting jobs separately', () {
+      final result = GitHubWorkflowProgress.fromApiPayload({
+        'jobs': [
+          {'name': 'analyze', 'status': 'completed', 'conclusion': 'failure'},
+          {'name': 'optional', 'status': 'completed', 'conclusion': 'skipped'},
+          {'name': 'tests', 'status': 'in_progress', 'steps': [
+            {'name': 'setup', 'status': 'skipped'},
+            {'name': 'test', 'status': 'in_progress'},
+          ]},
+          {'name': 'release', 'status': 'waiting'},
+        ],
+      });
+
+      expect(result.completedJobs, 2);
+      expect(result.failedJobs, 1);
+      expect(result.skippedJobs, 1);
+      expect(result.activeJobs, 1);
+      expect(result.queuedJobs, 1);
+      expect(result.progress, closeTo(5 / 8, 0.0001));
+    });
+
+    test('does not count malformed job entries as jobs', () {
+      final result = GitHubWorkflowProgress.fromApiPayload({
+        'jobs': [null, 'invalid', 7, {'name': 'build', 'status': 'queued'}],
+      });
+
+      expect(result.totalJobs, 1);
+      expect(result.queuedJobs, 1);
+      expect(result.progress, 0);
+    });
+
+    test('keeps progress bounded for unexpected step payloads', () {
+      final result = GitHubWorkflowProgress.fromApiPayload({
+        'jobs': [
+          {'name': 'build', 'status': 'in_progress', 'steps': 'not-a-list'},
+        ],
+      });
+
+      expect(result.progress, 0);
+      expect(result.activeJobs, 1);
+    });
+
     test('handles absent or malformed job payloads safely', () {
       final result = GitHubWorkflowProgress.fromApiPayload({'jobs': null});
 
