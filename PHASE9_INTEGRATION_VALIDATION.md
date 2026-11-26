@@ -5,7 +5,8 @@
 - Reviewed the current integration test inventory across editor helpers, project archive validation, backup catalog/codec, SAF validation, GitHub workflow progress, repository security, local-engine diagnostics, responsive layout, and build history.
 - Bounded each retained build-history log to 200,000 characters. The store continues to retain at most 50 entries.
 - Bounded history reads to the supported retention range. Zero and negative limits now return an empty result without touching storage.
-- Added regression coverage for oversized build logs and invalid read limits.
+- Added a 12 MiB on-disk history-file ceiling; oversized/corrupt history is ignored on read and safely replaced when a new build is recorded.
+- Added regression coverage for oversized build logs/files and invalid read limits.
 - Preserved the existing build-history JSON shape and ordering for normal-sized entries.
 
 ## Validation status
