@@ -713,7 +713,31 @@ class MainActivity : FlutterActivity() {
                                 if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
                                     throw IllegalStateException("مسار hard link موجود مسبقاً في rootfs: " + linkPath)
                                 }
-                                Os.link(linkTarget.toString(), linkPath.toString())
+                                try {
+                                    Os.link(linkTarget.toString(), linkPath.toString())
+                                } catch (linkError: android.system.ErrnoException) {
+                                    // Some Android app-private filesystems or security policies reject
+                                    // hard links (EACCES/EPERM/EXDEV/EMLINK). A TAR hard link is still
+                                    // reproducible as an independent file with the same bytes and mode.
+                                    val fallbackAllowed = linkError.errno == OsConstants.EACCES ||
+                                        linkError.errno == OsConstants.EPERM ||
+                                        linkError.errno == OsConstants.EXDEV ||
+                                        linkError.errno == OsConstants.EMLINK
+                                    if (!fallbackAllowed) throw linkError
+                                    val duplicateBytes = Files.size(linkTarget)
+                                    if (rootfsExpandedBytes + duplicateBytes > 12L * 1024L * 1024L * 1024L) {
+                                        throw IllegalStateException("تجاوز نسخ hard link حد حجم RootFS الآمن البالغ 12 GB.", linkError)
+                                    }
+                                    ensureExtractionCapacity(
+                                        "نسخ hard link بديل داخل RootFS: $linkName",
+                                        duplicateBytes,
+                                        rootfsExpandedBytes + duplicateBytes
+                                    )
+                                    Files.copy(linkTarget, linkPath)
+                                    rootfsExpandedBytes += duplicateBytes
+                                    val sourceMode = Os.stat(linkTarget.toString()).st_mode and 0x1ff
+                                    Os.chmod(linkPath.toString(), sourceMode)
+                                }
                                 iterator.remove()
                                 resolvedAny = true
                             }
