@@ -253,6 +253,18 @@ class MainActivity : FlutterActivity() {
         callback?.success(selected.toString())
     }
 
+    /** Report the live free-space value and extraction progress without changing the safety reserve. */
+    private fun extractionSpaceFailure(stage: String, processedBytes: Long): IllegalStateException {
+        val available = StatFs(filesDir.absolutePath).availableBytes
+        val mib = 1024L * 1024L
+        val availableMiB = available / mib
+        val reserveMiB = extractionSafetyReserveBytes / mib
+        val processedMiB = processedBytes.coerceAtLeast(0L) / mib
+        return IllegalStateException(
+            "توقف $stage لحماية مساحة الهاتف. المتاح الآن: ${availableMiB} MB؛ حد الأمان: ${reserveMiB} MB؛ البيانات المعالجة في هذه المرحلة: ${processedMiB} MB. حرّر مساحة إضافية ثم أعد المحاولة. لم يتم تغيير المحرك السابق."
+        )
+    }
+
     /** Install the official Alpine minirootfs TAR.GZ after a caller-supplied SHA-256 check. */
     private fun installAlpineRootfs(archivePath: String, expectedSha256: String): Map<String, Any> {
         if (!expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) throw IllegalArgumentException("بصمة Alpine غير صالحة.")
@@ -313,7 +325,7 @@ class MainActivity : FlutterActivity() {
                     if (!entry.isFile || entry.size < 0L) throw SecurityException("نوع عنصر TAR غير مدعوم: $raw")
                     expanded += entry.size
                     if (expanded > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم Alpine المفكوك تجاوز 12 GB.")
-                    if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف الاستخراج لحماية مساحة الهاتف.")
+                    if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw extractionSpaceFailure("استخراج Alpine", expanded)
                     Files.createDirectories(target.parent)
                     FileOutputStream(target.toFile()).use { out ->
                         var copied = 0L
@@ -574,7 +586,7 @@ class MainActivity : FlutterActivity() {
                                             throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
                                         }
                                         if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) {
-                                            throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
+                                            throw extractionSpaceFailure("فك حزمة المحرك", extractedBytes.toLong())
                                         }
                                     }), 256 * 1024
                                 )
@@ -611,7 +623,7 @@ class MainActivity : FlutterActivity() {
                                 if (!tarEntry.isFile || tarEntry.size < 0L) throw SecurityException("نوع عنصر rootfs TAR غير مدعوم: " + raw)
                                 rootfsExpandedBytes += tarEntry.size
                                 if (rootfsExpandedBytes > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم rootfs المفكوك تجاوز 12 GB.")
-                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف استخراج rootfs لحماية مساحة الهاتف.")
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw extractionSpaceFailure("استخراج rootfs", rootfsExpandedBytes)
                                 Files.createDirectories(target.parent)
                                 FileOutputStream(target.toFile()).use { out ->
                                     var copied = 0L
@@ -778,7 +790,7 @@ class MainActivity : FlutterActivity() {
                                 if (count < 0) break
                                 extractedBytes += count
                                 if (extractedBytes > 12L * 1024L * 1024L * 1024L) throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
-                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw extractionSpaceFailure("فك حزمة المحرك", extractedBytes.toLong())
                                 out.write(buffer, 0, count)
                             }
                             out.fd.sync()
