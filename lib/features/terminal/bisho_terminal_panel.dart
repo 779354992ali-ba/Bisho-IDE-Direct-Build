@@ -9,6 +9,8 @@ import '../../core/services/saf_file_service.dart';
 
 /// A project-scoped command interpreter backed by Android Storage Access Framework.
 /// It intentionally does not execute arbitrary operating-system processes.
+/// Hosts up to four independent terminal sessions while keeping each
+/// session's command history, working directory and output alive when switched.
 class BishoTerminalPanel extends StatefulWidget {
   final SafFileService files;
   final String? projectUri;
@@ -27,6 +29,143 @@ class BishoTerminalPanel extends StatefulWidget {
   State<BishoTerminalPanel> createState() => _BishoTerminalPanelState();
 }
 
+class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
+  final List<int> _sessions = [1];
+  int _activeSession = 0;
+  int _nextSessionId = 2;
+
+  void _addSession() {
+    if (_sessions.length >= 4) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('الحد الأقصى أربع جلسات طرفية لتقليل استهلاك الذاكرة')),
+      );
+      return;
+    }
+    setState(() {
+      _sessions.add(_nextSessionId++);
+      _activeSession = _sessions.length - 1;
+    });
+  }
+
+  void _closeSession(int index) {
+    if (_sessions.length == 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يجب الاحتفاظ بجلسة طرفية واحدة على الأقل')),
+      );
+      return;
+    }
+    setState(() {
+      _sessions.removeAt(index);
+      if (_activeSession > index) {
+        _activeSession--;
+      } else if (_activeSession >= _sessions.length) {
+        _activeSession = _sessions.length - 1;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xFF080D19),
+      child: Column(children: [
+        Container(
+          height: 42,
+          decoration: const BoxDecoration(
+            color: Color(0xFF101B2D),
+            border: Border(bottom: BorderSide(color: Color(0xFF26374E))),
+          ),
+          child: Row(children: [
+            Expanded(
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                itemCount: _sessions.length,
+                itemBuilder: (context, index) {
+                  final selected = index == _activeSession;
+                  final id = _sessions[index];
+                  return InkWell(
+                    onTap: () => setState(() => _activeSession = index),
+                    child: Container(
+                      constraints: const BoxConstraints(minWidth: 116, maxWidth: 150),
+                      padding: const EdgeInsetsDirectional.only(start: 10, end: 4),
+                      decoration: BoxDecoration(
+                        color: selected ? const Color(0xFF1B3551) : Colors.transparent,
+                        border: Border(
+                          bottom: BorderSide(
+                            color: selected ? const Color(0xFF38BDF8) : Colors.transparent,
+                            width: 2,
+                          ),
+                          right: const BorderSide(color: Color(0xFF26374E), width: .6),
+                        ),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.terminal_rounded, size: 15,
+                          color: selected ? const Color(0xFF38BDF8) : Colors.white54),
+                        const SizedBox(width: 6),
+                        Expanded(child: Text('طرفية $id',
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 11,
+                            color: selected ? Colors.white : Colors.white60,
+                            fontWeight: selected ? FontWeight.w700 : FontWeight.w500))),
+                        if (_sessions.length > 1)
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(width: 26, height: 28),
+                            tooltip: 'إغلاق الجلسة',
+                            onPressed: () => _closeSession(index),
+                            icon: const Icon(Icons.close_rounded, size: 14, color: Colors.white54),
+                          ),
+                      ]),
+                    ),
+                  );
+                },
+              ),
+            ),
+            IconButton(
+              tooltip: _sessions.length >= 4 ? 'تم بلوغ حد الجلسات' : 'جلسة طرفية جديدة',
+              visualDensity: VisualDensity.compact,
+              onPressed: _sessions.length >= 4 ? null : _addSession,
+              icon: const Icon(Icons.add_rounded, color: Color(0xFF38BDF8)),
+            ),
+            const SizedBox(width: 4),
+          ]),
+        ),
+        Expanded(
+          child: IndexedStack(
+            index: _activeSession,
+            children: _sessions.map((id) => _BishoTerminalSessionPanel(
+              key: ValueKey('terminal-session-$id'),
+              files: widget.files,
+              projectUri: widget.projectUri,
+              projectName: widget.projectName,
+              onOpenFile: widget.onOpenFile,
+            )).toList(),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+class _BishoTerminalSessionPanel extends StatefulWidget {
+  final SafFileService files;
+  final String? projectUri;
+  final String projectName;
+  final Future<void> Function(SafDocumentFile file, String parentUri) onOpenFile;
+
+  const _BishoTerminalSessionPanel({
+    super.key,
+    required this.files,
+    required this.projectUri,
+    required this.projectName,
+    required this.onOpenFile,
+  });
+
+  @override
+  State<_BishoTerminalSessionPanel> createState() => _BishoTerminalSessionPanelState();
+}
+
 class _TerminalLine {
   final String text;
   final Color color;
@@ -39,7 +178,7 @@ class _ResolvedPath {
   const _ResolvedPath(this.item, this.parentUri);
 }
 
-class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
+class _BishoTerminalSessionPanelState extends State<_BishoTerminalSessionPanel> {
   static const Color _green = Color(0xFF86EFAC);
   static const Color _cyan = Color(0xFF7DD3FC);
   static const Color _red = Color(0xFFFCA5A5);
@@ -72,7 +211,7 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
   }
 
   @override
-  void didUpdateWidget(covariant BishoTerminalPanel oldWidget) {
+  void didUpdateWidget(covariant _BishoTerminalSessionPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.projectUri != widget.projectUri) {
       _resetDirectory();
@@ -930,19 +1069,26 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
 
   Widget _quickBar() {
     Widget chip(String label, VoidCallback onTap, {IconData? icon}) => Padding(
-          padding: const EdgeInsets.only(right: 6),
+          padding: const EdgeInsetsDirectional.only(end: 7),
           child: ActionChip(
             visualDensity: VisualDensity.compact,
+            side: const BorderSide(color: Color(0xFF2A3C55)),
+            backgroundColor: const Color(0xFF152238),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             avatar: icon == null ? null : Icon(icon, size: 15, color: _cyan),
             label: Text(label, style: const TextStyle(fontSize: 11, fontFamily: 'monospace')),
             onPressed: _busy ? null : onTap,
           ),
         );
-    return SizedBox(
-      height: 38,
+    return Container(
+      height: 46,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0E1929),
+        border: Border(top: BorderSide(color: Color(0xFF26374E))),
+      ),
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         children: [
           chip('Tab', _complete, icon: Icons.keyboard_tab_rounded),
           chip('↑', () => _historyMove(-1)),
@@ -971,20 +1117,48 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
       child: Column(
         children: [
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-              itemCount: _output.length,
-              itemBuilder: (context, index) => SelectableText(
-                _output[index].text,
-                style: TextStyle(
-                  color: _output[index].color,
-                  fontSize: 11,
-                  height: 1.45,
-                  fontFamily: 'monospace',
-                ),
-              ),
-            ),
+            child: _output.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            width: 58,
+                            height: 58,
+                            decoration: BoxDecoration(
+                              color: _cyan.withValues(alpha: .10),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: const Color(0xFF26374E)),
+                            ),
+                            child: const Icon(Icons.terminal_rounded, color: _cyan, size: 29),
+                          ),
+                          const SizedBox(height: 13),
+                          const Text('الطرفية جاهزة',
+                            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
+                          const SizedBox(height: 6),
+                          const Text('اكتب أمراً في الأسفل أو استخدم الاختصارات السريعة.\nاكتب help لعرض الأوامر المتاحة.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: _muted, fontSize: 11, height: 1.6)),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+                    itemCount: _output.length,
+                    itemBuilder: (context, index) => SelectableText(
+                      _output[index].text,
+                      style: TextStyle(
+                        color: _output[index].color,
+                        fontSize: 12,
+                        height: 1.5,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
           ),
           const Divider(height: 1, color: Color(0xFF263449)),
           _quickBar(),
@@ -994,7 +1168,14 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
               children: [
                 const Icon(Icons.chevron_right, color: _green, size: 19),
                 Expanded(
-                  child: Shortcuts(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF111D30),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFF2A3C55)),
+                    ),
+                    child: Shortcuts(
                     shortcuts: <ShortcutActivator, Intent>{
                       const SingleActivator(LogicalKeyboardKey.arrowUp):
                           const _TerminalHistoryIntent(-1),
@@ -1048,6 +1229,7 @@ class _BishoTerminalPanelState extends State<BishoTerminalPanel> {
                         ),
                         onSubmitted: _execute,
                       ),
+                    ),
                     ),
                   ),
                 ),

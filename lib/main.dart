@@ -1,6 +1,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Directory;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -28,8 +29,27 @@ import 'package:highlight/languages/rust.dart' as rust_lang;
 import 'package:highlight/languages/php.dart' as php_lang;
 import 'package:highlight/languages/yaml.dart' as yaml_lang;
 import 'package:highlight/languages/markdown.dart' as markdown_lang;
+import 'package:highlight/languages/cs.dart' as cs_lang;
+import 'package:highlight/languages/ruby.dart' as ruby_lang;
+import 'package:highlight/languages/powershell.dart' as powershell_lang;
+import 'package:highlight/languages/lua.dart' as lua_lang;
+import 'package:highlight/languages/r.dart' as r_lang;
+import 'package:highlight/languages/graphql.dart' as graphql_lang;
+import 'package:highlight/languages/dockerfile.dart' as dockerfile_lang;
+import 'package:highlight/languages/makefile.dart' as makefile_lang;
+import 'package:highlight/languages/objectivec.dart' as objectivec_lang;
+import 'package:highlight/languages/scala.dart' as scala_lang;
+import 'package:highlight/languages/groovy.dart' as groovy_lang;
+import 'package:highlight/languages/perl.dart' as perl_lang;
+import 'package:highlight/languages/haskell.dart' as haskell_lang;
+import 'package:highlight/languages/elixir.dart' as elixir_lang;
+import 'package:highlight/languages/erlang.dart' as erlang_lang;
+import 'package:highlight/languages/julia.dart' as julia_lang;
+import 'package:highlight/languages/clojure.dart' as clojure_lang;
+import 'package:highlight/languages/ini.dart' as ini_lang;
 
 import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:saf/saf.dart';
 import 'package:xml/xml.dart';
@@ -48,15 +68,26 @@ import 'core/services/editor_editing_assist.dart';
 import 'core/services/editor_line_actions.dart';
 import 'core/services/editor_text_navigation.dart';
 import 'core/services/editor_syntax_diagnostics.dart';
+import 'core/services/editor_diagnostic_navigation.dart';
+import 'core/services/editor_extension_manifest.dart';
 import 'core/services/editor_bracket_matcher.dart';
 import 'core/services/editor_completion_engine.dart';
+import 'core/services/editor_command_palette.dart';
 import 'core/services/editor_symbol_insert.dart';
 import 'core/services/workspace_metrics.dart';
 import 'core/services/project_insights_analyzer.dart';
 import 'core/services/project_backup_service.dart';
 import 'core/services/project_backup_repository.dart';
 import 'core/services/project_text_diff.dart';
+import 'core/services/project_text_replacement.dart';
+import 'core/services/github_repository_service.dart';
+import 'core/services/flutter_widget_tree_analyzer.dart';
+import 'core/services/flutter_package_catalog_service.dart';
+import 'core/services/local_code_assistant.dart';
+import 'core/services/editor_minimap_model.dart';
 import 'features/terminal/bisho_terminal_panel.dart';
+import 'features/tools/ide_tool_sheets.dart';
+import 'core/services/file_version_history.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -235,6 +266,24 @@ class _BishoSplashGateState extends State<_BishoSplashGate>
 
 }
 
+class _PaletteCommand {
+  const _PaletteCommand({
+    required this.title,
+    required this.description,
+    required this.icon,
+    required this.run,
+    this.keywords = '',
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
+  final FutureOr<void> Function() run;
+  final String keywords;
+
+  String get searchableText => '$title $description $keywords';
+}
+
 class EditorTab {
   final String id;
   final CodeController controller;
@@ -309,6 +358,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
   final Saf saf = Saf();
   final SafFileService safFiles = SafFileService();
+  final GitHubRepositoryService _githubService = GitHubRepositoryService();
+  final FlutterPackageCatalogService _packageCatalog = FlutterPackageCatalogService();
 
   final Map<String, dynamic> languages = {
     'Dart': dart_lang.dart,
@@ -331,6 +382,25 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     'PHP': php_lang.php,
     'Markdown': markdown_lang.markdown,
     'YAML': yaml_lang.yaml,
+    'C#': cs_lang.cs,
+    'Ruby': ruby_lang.ruby,
+    'PowerShell': powershell_lang.powershell,
+    'Lua': lua_lang.lua,
+    'R': r_lang.r,
+    'GraphQL': graphql_lang.graphql,
+    'Dockerfile': dockerfile_lang.dockerfile,
+    'Makefile': makefile_lang.makefile,
+    'Objective-C': objectivec_lang.objectivec,
+    'Scala': scala_lang.scala,
+    'Groovy': groovy_lang.groovy,
+    'Perl': perl_lang.perl,
+    'Haskell': haskell_lang.haskell,
+    'Elixir': elixir_lang.elixir,
+    'Erlang': erlang_lang.erlang,
+    'Julia': julia_lang.julia,
+    'Clojure': clojure_lang.clojure,
+    'TOML': ini_lang.ini,
+    'SVG': xml_lang.xml,
   };
 
   final Map<String, String> extensions = {
@@ -354,6 +424,26 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     'PHP': 'php',
     'Markdown': 'md',
     'YAML': 'yaml',
+    'C#': 'cs',
+    'Ruby': 'rb',
+    'PowerShell': 'ps1',
+    'Lua': 'lua',
+    'R': 'r',
+    'GraphQL': 'graphql',
+    'Dockerfile': 'Dockerfile',
+    'Makefile': 'Makefile',
+    'Objective-C': 'm',
+    'Scala': 'scala',
+    'Groovy': 'groovy',
+    'Perl': 'pl',
+    'Haskell': 'hs',
+    'Elixir': 'ex',
+    'Erlang': 'erl',
+    'Julia': 'jl',
+    'Clojure': 'clj',
+    'TOML': 'toml',
+    'SVG': 'svg',
+    'Assembly': 'asm',
   };
 
   final List<EditorTab> tabs = [];
@@ -362,6 +452,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   int nextTabId = 1;
   int _explorerRevision = 0;
   String _explorerFilter = '';
+  String _explorerTypeFilter = 'all';
   final TextEditingController _explorerFilterController = TextEditingController();
 
   String status = 'جاهز';
@@ -375,6 +466,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   bool isRestoring = false;
   bool explorerVisible = true;
   bool _editorFullScreen = false;
+  String? _splitTabId;
   bool _terminalFullScreen = false;
   bool _bottomPanelVisible = false;
   int _bottomPanelTab = 0;
@@ -1125,6 +1217,39 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     return types[ext] ?? 'application/octet-stream';
   }
 
+  FileVersionHistory? _fileVersionHistory;
+
+  Future<FileVersionHistory?> _ensureVersionHistory() async {
+    if (_fileVersionHistory != null) return _fileVersionHistory;
+    try {
+      final base = await getApplicationDocumentsDirectory();
+      _fileVersionHistory = FileVersionHistory(
+        Directory('${base.path}/bisho_file_versions'),
+      );
+    } catch (_) {
+      return null;
+    }
+    return _fileVersionHistory;
+  }
+
+  String _versionKeyFor(EditorTab tab) =>
+      '${tab.parentUri ?? 'standalone'}|${tab.fileName}';
+
+  Future<void> _snapshotTabVersion(EditorTab tab, {String label = 'حفظ'}) async {
+    try {
+      final history = await _ensureVersionHistory();
+      if (history == null) return;
+      await history.snapshot(
+        _versionKeyFor(tab),
+        tab.fileName,
+        tab.controller.text,
+        label: label,
+      );
+    } catch (_) {
+      // Version history is best-effort and must never block saving.
+    }
+  }
+
   Future<bool> saveTabToSAF(EditorTab tab) async {
     if (tab.parentUri == null || tab.parentUri!.isEmpty) {
       return false;
@@ -1144,6 +1269,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     tab.fileUri = document.uri;
     tab.isSaved = true;
+    await _snapshotTabVersion(tab);
 
     return true;
   }
@@ -1260,7 +1386,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     if (index < 0 || index >= tabs.length) return;
 
     setState(() {
+      final previousId = activeTab.id;
       activeIndex = index;
+      if (_splitTabId == tabs[index].id && previousId != tabs[index].id) {
+        _splitTabId = previousId;
+      }
       status = 'تم فتح ${activeTab.fileName}';
     });
     saveTabStateSilently();
@@ -1358,6 +1488,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         status = 'تم فتح الملف';
       });
 
+      await _snapshotTabVersion(tabs.last, label: 'عند الفتح');
       await saveTabStateSilently();
     } catch (e) {
       showMessage('تعذر فتح الملف: $e');
@@ -1411,6 +1542,297 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         showMessage('تم ربط المشروع، لكن تعذر قراءة محتوياته: $error');
       }
     }
+  }
+
+  static const String _recentProjectsKey = 'bisho_recent_projects_v1';
+  static const String _favoriteProjectsKey = 'bisho_favorite_projects_v1';
+
+  Future<List<Map<String, String>>> _readRecentProjects() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_recentProjectsKey);
+      if (raw == null || raw.isEmpty) return <Map<String, String>>[];
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return <Map<String, String>>[];
+      return decoded.whereType<Map>().map((item) => <String, String>{
+        'uri': item['uri']?.toString() ?? '',
+        'name': item['name']?.toString() ?? 'مشروع',
+        'openedAt': item['openedAt']?.toString() ?? '',
+      }).where((item) => item['uri']!.isNotEmpty).toList();
+    } catch (_) {
+      return <Map<String, String>>[];
+    }
+  }
+
+  Future<void> _rememberProject(String uri, String name) async {
+    if (uri.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final recent = await _readRecentProjects();
+      final favorites = await _readFavoriteProjects();
+      recent.removeWhere((item) => item['uri'] == uri);
+      recent.insert(0, <String, String>{
+        'uri': uri,
+        'name': name.isEmpty ? 'مشروع' : name,
+        'openedAt': DateTime.now().toIso8601String(),
+      });
+      while (recent.length > 12) {
+        final removableIndex = recent.lastIndexWhere(
+          (item) => !favorites.contains(item['uri']),
+        );
+        if (removableIndex < 0) break;
+        recent.removeAt(removableIndex);
+      }
+      await prefs.setString(_recentProjectsKey, jsonEncode(recent));
+    } catch (_) {
+      // Project opening must remain available when optional history storage fails.
+    }
+  }
+
+  Future<Set<String>> _readFavoriteProjects() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getStringList(_favoriteProjectsKey)?.toSet() ?? <String>{};
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
+  Future<void> _toggleFavoriteProject(String uri) async {
+    if (uri.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final favorites = await _readFavoriteProjects();
+      if (!favorites.add(uri)) {
+        favorites.remove(uri);
+      }
+      await prefs.setStringList(_favoriteProjectsKey, favorites.toList());
+    } catch (_) {
+      showMessage('تعذر حفظ قائمة المشاريع المفضلة');
+    }
+  }
+
+  Future<void> _openRememberedProject(String uri, String name) async {
+    try {
+      final permissions = await safFiles.getPersistedPermissions();
+      final permission = permissions.where((item) =>
+        item.uri == uri && item.read && item.write,
+      );
+      if (permission.isEmpty) {
+        showMessage('انتهت صلاحية الوصول لهذا المشروع. أعد فتحه من اختيار المجلد.');
+        return;
+      }
+      final directory = await safFiles.getItem(uri);
+      if (directory == null || !directory.isDir) {
+        showMessage('المشروع لم يعد متاحاً في موقعه الأصلي.');
+        return;
+      }
+      if (projectUri != uri) {
+        final projectTabs = tabs.where((tab) =>
+          tab.parentUri != null && tab.parentUri!.isNotEmpty,
+        ).toList();
+        final unsavedCount = projectTabs.where((tab) => !tab.isSaved).length;
+        if (projectUri != null && projectTabs.isNotEmpty) {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('تبديل المشروع؟'),
+              content: Text(
+                unsavedCount > 0
+                  ? 'يوجد $unsavedCount ملف غير محفوظ. ستبقى التبويبات القديمة مرتبطة بمجلداتها ولن تُحذف.'
+                  : 'ستبقى التبويبات القديمة مفتوحة ومرتبطة بمجلداتها الأصلية.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('إلغاء'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('متابعة'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true || !mounted) return;
+        }
+      }
+      await saveTabStateSilently();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('bisho_project_uri', uri);
+      await prefs.setString('bisho_project_name', directory.name.isNotEmpty ? directory.name : name);
+      await prefs.remove(_savedDirectoryUriKey);
+      await prefs.remove(_savedDirectoryNameKey);
+      if (!mounted) return;
+      setState(() {
+        projectUri = uri;
+        projectName = directory.name.isNotEmpty ? directory.name : name;
+        selectedDirectoryUri = null;
+        selectedDirectoryName = '';
+        explorerVisible = true;
+        _explorerRevision++;
+        status = 'تم فتح المشروع من المدير الذكي';
+      });
+      await _rememberProject(uri, projectName);
+      showMessage('تم فتح $projectName');
+    } catch (error) {
+      showMessage('تعذر فتح المشروع المحفوظ: $error');
+    }
+  }
+
+  Future<void> showProjectManager() async {
+    var recent = await _readRecentProjects();
+    var favorites = await _readFavoriteProjects();
+    if (!mounted) return;
+    final searchController = TextEditingController();
+    var query = '';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final normalized = query.trim().toLowerCase();
+          final filtered = recent.where((item) {
+            final name = item['name']!.toLowerCase();
+            final uri = item['uri']!.toLowerCase();
+            return normalized.isEmpty || name.contains(normalized) || uri.contains(normalized);
+          }).toList();
+          final favoriteItems = filtered.where((item) => favorites.contains(item['uri'])).toList();
+          final otherItems = filtered.where((item) => !favorites.contains(item['uri'])).toList();
+
+          Widget projectTile(Map<String, String> item) {
+            final uri = item['uri']!;
+            final name = item['name']!;
+            final isCurrent = projectUri == uri;
+            final isFavorite = favorites.contains(uri);
+            return ListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+              leading: CircleAvatar(
+                radius: 19,
+                backgroundColor: const Color(0xFF38BDF8).withValues(alpha: .12),
+                child: Icon(isCurrent ? Icons.folder_open_rounded : Icons.folder_rounded,
+                  color: const Color(0xFF38BDF8), size: 20),
+              ),
+              title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontWeight: isCurrent ? FontWeight.w800 : FontWeight.w600)),
+              subtitle: Text(
+                isCurrent ? 'المشروع المفتوح حالياً' : 'آخر فتح: ${item['openedAt']!.isEmpty ? 'غير محدد' : item['openedAt']!.replaceFirst('T', ' ').split('.').first}',
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Wrap(
+                spacing: 0,
+                children: [
+                  IconButton(
+                    tooltip: isFavorite ? 'إزالة من المفضلة' : 'إضافة إلى المفضلة',
+                    onPressed: () async {
+                      await _toggleFavoriteProject(uri);
+                      favorites = await _readFavoriteProjects();
+                      if (context.mounted) setDialogState(() {});
+                    },
+                    icon: Icon(isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+                      color: isFavorite ? const Color(0xFFFBBF24) : Colors.white54),
+                  ),
+                  IconButton(
+                    tooltip: 'فتح المشروع',
+                    onPressed: () async {
+                      Navigator.pop(dialogContext);
+                      await _openRememberedProject(uri, name);
+                    },
+                    icon: const Icon(Icons.open_in_new_rounded, color: Color(0xFF34D399)),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return AlertDialog(
+            titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+            contentPadding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            title: Row(
+              children: [
+                const Icon(Icons.workspaces_rounded, color: Color(0xFF38BDF8)),
+                const SizedBox(width: 10),
+                const Expanded(child: Text('مدير المشاريع الذكي')),
+                IconButton(
+                  tooltip: 'تحديث القائمة',
+                  onPressed: () async {
+                    recent = await _readRecentProjects();
+                    favorites = await _readFavoriteProjects();
+                    if (context.mounted) setDialogState(() {});
+                  },
+                  icon: const Icon(Icons.refresh_rounded),
+                ),
+              ],
+            ),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: MediaQuery.of(dialogContext).size.height * .62,
+              child: Column(
+                children: [
+                  TextField(
+                    controller: searchController,
+                    onChanged: (value) => setDialogState(() => query = value),
+                    decoration: InputDecoration(
+                      hintText: 'ابحث عن مشروع أو مساره...',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: query.isEmpty ? null : IconButton(
+                        onPressed: () {
+                          searchController.clear();
+                          setDialogState(() => query = '');
+                        },
+                        icon: const Icon(Icons.close_rounded),
+                      ),
+                      isDense: true,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: recent.isEmpty
+                      ? const Center(child: Text('ستظهر هنا المشاريع التي تفتحها لاحقاً.'))
+                      : filtered.isEmpty
+                        ? const Center(child: Text('لا توجد مشاريع مطابقة للبحث.'))
+                        : ListView(
+                            children: [
+                              if (favoriteItems.isNotEmpty) ...[
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(4, 4, 4, 6),
+                                  child: Text('المشاريع المفضلة', style: TextStyle(
+                                    color: Color(0xFFFBBF24), fontWeight: FontWeight.w800)),
+                                ),
+                                ...favoriteItems.map(projectTile),
+                              ],
+                              if (otherItems.isNotEmpty) ...[
+                                const Padding(
+                                  padding: EdgeInsets.fromLTRB(4, 12, 4, 6),
+                                  child: Text('المشاريع الأخيرة', style: TextStyle(
+                                    color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                                ),
+                                ...otherItems.map(projectTile),
+                              ],
+                            ],
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton.icon(
+                onPressed: () async {
+                  Navigator.pop(dialogContext);
+                  await openProjectFolder();
+                },
+                icon: const Icon(Icons.folder_open_rounded),
+                label: const Text('فتح مجلد آخر'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('إغلاق'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    searchController.dispose();
   }
 
   Future<void> openProjectFolder() async {
@@ -1486,6 +1908,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         status = 'تم فتح المشروع عبر SAF';
       });
 
+      await _rememberProject(directory.uri, directory.name);
       showMessage('تم فتح مجلد المشروع');
     } catch (e) {
       showMessage('تعذر فتح المجلد: $e');
@@ -1589,6 +2012,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
             status = 'تم إنشاء المشروع ${project.name}';
           });
+
+          await _rememberProject(project.rootUri, project.name);
 
           // البحث عن ملف البداية داخل المشروع.
           try {
@@ -1710,6 +2135,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         status = 'تم فتح ${file.name}';
       });
 
+      await _snapshotTabVersion(tabs.last, label: 'عند الفتح');
       await saveTabStateSilently();
       if (closeOverlay && mounted && Navigator.of(context).canPop()) {
         Navigator.of(context).pop();
@@ -3053,6 +3479,891 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
     saveTabStateSilently();
   }
+  Future<void> _openLocalCodeAssistant() async {
+    final tab = activeTab;
+    final questionController = TextEditingController();
+    var report = LocalCodeAssistant.run(
+      source: tab.controller.text,
+      language: tab.language,
+      task: LocalAssistantTask.explain,
+    );
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          void run(LocalAssistantTask task) {
+            setDialogState(() {
+              report = LocalCodeAssistant.run(
+                source: tab.controller.text,
+                language: tab.language,
+                task: task,
+              );
+            });
+          }
+
+          void ask() {
+            final question = questionController.text.toLowerCase();
+            final task = question.contains('خطأ') || question.contains('مشكلة') ||
+                    question.contains('error') || question.contains('debug')
+                ? LocalAssistantTask.diagnose
+                : question.contains('أمان') || question.contains('سر') ||
+                    question.contains('token') || question.contains('secret')
+                    ? LocalAssistantTask.security
+                    : question.contains('تحسين') || question.contains('أداء') ||
+                        question.contains('refactor')
+                        ? LocalAssistantTask.improve
+                        : LocalAssistantTask.explain;
+            run(task);
+          }
+
+          return AlertDialog(
+            title: const Row(children: [
+              Icon(Icons.smart_toy_rounded, color: Color(0xFFA78BFA)),
+              SizedBox(width: 8),
+              Expanded(child: Text('مساعد الكود المحلي')),
+              Badge(label: Text('Offline')),
+            ]),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: MediaQuery.of(dialogContext).size.height * .62,
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('${tab.fileName} · ${tab.language}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: questionController,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: (_) => ask(),
+                  decoration: InputDecoration(
+                    hintText: 'اسأل عن شرح أو أخطاء أو تحسين أو أمان الكود',
+                    prefixIcon: const Icon(Icons.chat_bubble_outline_rounded),
+                    suffixIcon: IconButton(
+                      tooltip: 'تحليل السؤال',
+                      onPressed: ask,
+                      icon: const Icon(Icons.send_rounded, color: Color(0xFF38BDF8)),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Wrap(spacing: 6, runSpacing: 5, children: [
+                  ActionChip(
+                    avatar: const Icon(Icons.menu_book_rounded, size: 15),
+                    label: const Text('شرح الملف'),
+                    onPressed: () => run(LocalAssistantTask.explain),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.bug_report_rounded, size: 15),
+                    label: const Text('فحص الأخطاء'),
+                    onPressed: () => run(LocalAssistantTask.diagnose),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.auto_fix_high_rounded, size: 15),
+                    label: const Text('تحسينات'),
+                    onPressed: () => run(LocalAssistantTask.improve),
+                  ),
+                  ActionChip(
+                    avatar: const Icon(Icons.security_rounded, size: 15),
+                    label: const Text('الأمان'),
+                    onPressed: () => run(LocalAssistantTask.security),
+                  ),
+                ]),
+                const Divider(height: 18),
+                Text(report.title, style: const TextStyle(
+                  fontWeight: FontWeight.w800, color: Color(0xFF38BDF8))),
+                const SizedBox(height: 5),
+                Text(report.summary, style: const TextStyle(fontSize: 11, height: 1.5)),
+                const SizedBox(height: 8),
+                Expanded(child: ListView.separated(
+                  itemCount: report.items.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, index) => ListTile(
+                    dense: true,
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.lightbulb_outline_rounded,
+                      size: 17, color: Color(0xFFFBBF24)),
+                    title: SelectableText(report.items[index],
+                      style: const TextStyle(fontSize: 11, height: 1.4)),
+                  ),
+                )),
+                const Text(
+                  'تحليل محلي بقواعد ثابتة — لا يستخدم نموذجًا لغويًا ولا يرسل كودك إلى الإنترنت.',
+                  style: TextStyle(fontSize: 9, color: Colors.white38),
+                ),
+              ]),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('إغلاق'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    questionController.dispose();
+  }
+
+  Future<void> _openFlutterPackageManager() async {
+    final rootUri = projectUri;
+    if (rootUri == null || rootUri.isEmpty) {
+      showMessage('افتح مشروع Flutter أولاً');
+      return;
+    }
+    try {
+      final pubspec = await safFiles.findChild(parentUri: rootUri, name: 'pubspec.yaml');
+      if (pubspec == null || pubspec.isDir) {
+        showMessage('لم يتم العثور على pubspec.yaml في جذر المشروع');
+        return;
+      }
+      var source = utf8.decode(await safFiles.readFile(pubspec.uri), allowMalformed: false);
+      var dependencies = FlutterPackageCatalogService.readDependencies(source);
+      final searchController = TextEditingController();
+      var results = <String>[];
+      var busy = false;
+      var statusMessage = 'إدارة dependencies من pub.dev';
+      var searchError = '';
+
+      Future<void> saveSource(String updated) async {
+        await safFiles.saveFile(
+          parentUri: rootUri,
+          fileName: 'pubspec.yaml',
+          bytes: Uint8List.fromList(utf8.encode(updated)),
+          overwrite: true,
+        );
+        source = updated;
+        dependencies = FlutterPackageCatalogService.readDependencies(source);
+        for (final tab in tabs.where((item) => item.fileUri == pubspec.uri)) {
+          tab.controller.value = TextEditingValue(
+            text: updated,
+            selection: TextSelection.collapsed(offset: updated.length),
+          );
+          tab.isSaved = true;
+        }
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) {
+            final installed = dependencies.entries.toList()
+              ..sort((a, b) => a.key.compareTo(b.key));
+            return AlertDialog(
+              title: const Row(children: [
+                Icon(Icons.inventory_2_rounded, color: Color(0xFF38BDF8)),
+                SizedBox(width: 8),
+                Text('مدير حزم Flutter وDart'),
+              ]),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: MediaQuery.of(dialogContext).size.height * .65,
+                child: Column(children: [
+                  TextField(
+                    controller: searchController,
+                    enabled: !busy,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (value) async {
+                      if (value.trim().isEmpty) return;
+                      setDialogState(() { busy = true; searchError = ''; });
+                      try {
+                        final found = await _packageCatalog.searchPackages(value);
+                        if (context.mounted) setDialogState(() {
+                          results = found;
+                          statusMessage = 'نتائج pub.dev: ${found.length}';
+                        });
+                      } catch (error) {
+                        if (context.mounted) setDialogState(() => searchError = '$error');
+                      } finally {
+                        if (context.mounted) setDialogState(() => busy = false);
+                      }
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'ابحث عن حزمة مثل http أو provider',
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      suffixIcon: IconButton(
+                        tooltip: 'بحث في pub.dev',
+                        onPressed: busy ? null : () async {
+                          final value = searchController.text.trim();
+                          if (value.isEmpty) return;
+                          setDialogState(() { busy = true; searchError = ''; });
+                          try {
+                            final found = await _packageCatalog.searchPackages(value);
+                            if (context.mounted) setDialogState(() {
+                              results = found;
+                              statusMessage = 'نتائج pub.dev: ${found.length}';
+                            });
+                          } catch (error) {
+                            if (context.mounted) setDialogState(() => searchError = '$error');
+                          } finally {
+                            if (context.mounted) setDialogState(() => busy = false);
+                          }
+                        },
+                        icon: const Icon(Icons.travel_explore_rounded),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Row(children: [
+                    const Icon(Icons.check_circle_outline_rounded, color: Color(0xFF34D399), size: 15),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text('الحزم المثبتة: ${dependencies.length}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))),
+                    Text('pubspec.yaml', style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                  ]),
+                  const Divider(height: 14),
+                  if (busy) const LinearProgressIndicator(minHeight: 2),
+                  if (searchError.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(6),
+                      child: Text(searchError, style: const TextStyle(color: Colors.orangeAccent, fontSize: 11)),
+                    ),
+                  Expanded(
+                    child: ListView(children: [
+                      if (installed.isNotEmpty) ...[
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 5),
+                          child: Text('الحزم الحالية', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF34D399))),
+                        ),
+                        ...installed.map((entry) {
+                          final protected = entry.key == 'flutter' || entry.value.isEmpty;
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.inventory_2_outlined, size: 18),
+                            title: Text(entry.key, style: const TextStyle(fontSize: 12)),
+                            subtitle: Text(entry.value.isEmpty ? 'اعتماد SDK' : entry.value,
+                              style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                            trailing: protected ? const Icon(Icons.lock_outline, size: 16, color: Colors.white38)
+                                : IconButton(
+                                    tooltip: 'إزالة من pubspec',
+                                    onPressed: busy ? null : () async {
+                                      final updated = FlutterPackageCatalogService.removeDependency(
+                                        source, name: entry.key,
+                                      );
+                                      setDialogState(() { busy = true; });
+                                      try {
+                                        await saveSource(updated);
+                                        if (context.mounted) setDialogState(() => statusMessage = 'تمت إزالة ${entry.key} من pubspec.yaml');
+                                      } catch (error) {
+                                        if (context.mounted) setDialogState(() => statusMessage = 'تعذر الحفظ: $error');
+                                      } finally {
+                                        if (context.mounted) setDialogState(() => busy = false);
+                                      }
+                                    },
+                                    icon: const Icon(Icons.remove_circle_outline, color: Colors.redAccent, size: 19),
+                                  ),
+                          );
+                        }),
+                      ],
+                      if (results.isNotEmpty) ...[
+                        const Divider(),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 5),
+                          child: Text('نتائج pub.dev', style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF38BDF8))),
+                        ),
+                        ...results.map((name) {
+                          final alreadyInstalled = dependencies.containsKey(name);
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.extension_outlined, color: Color(0xFF60A5FA), size: 19),
+                            title: Text(name, style: const TextStyle(fontSize: 12)),
+                            subtitle: Text(alreadyInstalled ? 'مضافة إلى المشروع' : 'إضافة أحدث إصدار مستقر',
+                              style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                            trailing: alreadyInstalled
+                                ? const Icon(Icons.check_circle, color: Color(0xFF34D399), size: 19)
+                                : IconButton(
+                                    tooltip: 'إضافة الحزمة',
+                                    onPressed: busy ? null : () async {
+                                      setDialogState(() { busy = true; statusMessage = 'جارٍ جلب أحدث إصدار من $name…'; });
+                                      try {
+                                        final info = await _packageCatalog.packageInfo(name);
+                                        final updated = FlutterPackageCatalogService.addDependency(
+                                          source, name: info.name, version: info.latestVersion,
+                                        );
+                                        await saveSource(updated);
+                                        if (context.mounted) setDialogState(() => statusMessage = 'تمت إضافة $name: ^${info.latestVersion} إلى pubspec.yaml');
+                                      } catch (error) {
+                                        if (context.mounted) setDialogState(() => statusMessage = 'تعذرت إضافة الحزمة: $error');
+                                      } finally {
+                                        if (context.mounted) setDialogState(() => busy = false);
+                                      }
+                                    },
+                                    icon: const Icon(Icons.add_circle, color: Color(0xFF38BDF8), size: 21),
+                                  ),
+                          );
+                        }),
+                      ],
+                      if (installed.isEmpty && results.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(20),
+                          child: Center(child: Text('ابحث عن حزمة أو راجع dependencies في المشروع')),
+                        ),
+                    ]),
+                  ),
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: Text(statusMessage,
+                      maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 10, color: Colors.white60)),
+                  ),
+                  const Text('يتم تحديث pubspec.yaml فقط؛ حلّ الحزم يتم عبر Flutter pub get في بيئة البناء.',
+                    style: TextStyle(fontSize: 10, color: Colors.white38)),
+                ]),
+              ),
+              actions: [
+                TextButton(onPressed: busy ? null : () => Navigator.pop(dialogContext), child: const Text('إغلاق')),
+              ],
+            );
+          },
+        ),
+      );
+      searchController.dispose();
+    } catch (error) {
+      showMessage('تعذر فتح مدير الحزم: $error');
+    }
+  }
+
+  Future<void> _openWidgetTreeInspector() async {
+    final tab = activeTab;
+    if (tab.language != 'Dart' && !tab.fileName.toLowerCase().endsWith('.dart')) {
+      showMessage('مستكشف Widget Tree يعمل مع ملفات Dart/Flutter فقط');
+      return;
+    }
+    final nodes = FlutterWidgetTreeAnalyzer.analyze(tab.controller.text);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(children: [
+          const Icon(Icons.account_tree_rounded, color: Color(0xFF38BDF8)),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('Flutter Widget Inspector')),
+          Text('${nodes.length}', style: const TextStyle(fontSize: 12, color: Color(0xFF38BDF8))),
+        ]),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: MediaQuery.of(dialogContext).size.height * .58,
+          child: nodes.isEmpty
+              ? const Center(child: Text('لم يتم العثور على Widgets معروفة في الملف الحالي'))
+              : Column(children: [
+                  const Text(
+                    'شجرة بنية المصدر — تحليل ساكن، وليست بيانات تشغيل حي.',
+                    style: TextStyle(fontSize: 11, color: Colors.white60),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(child: ListView.builder(
+                    itemCount: nodes.length,
+                    itemBuilder: (context, index) {
+                      final node = nodes[index];
+                      return Padding(
+                        padding: EdgeInsetsDirectional.only(start: node.depth * 13.0),
+                        child: ListTile(
+                          dense: true,
+                          visualDensity: VisualDensity.compact,
+                          leading: Icon(
+                            node.parentIndex == null
+                                ? Icons.account_tree_rounded
+                                : Icons.subdirectory_arrow_right_rounded,
+                            color: node.parentIndex == null
+                                ? const Color(0xFF38BDF8)
+                                : const Color(0xFFA78BFA),
+                            size: 18,
+                          ),
+                          title: Text(node.name,
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+                          subtitle: Text('السطر ${node.line}',
+                            style: const TextStyle(fontSize: 10, color: Colors.white54)),
+                          onTap: () {
+                            Navigator.pop(dialogContext);
+                            final offset = node.offset.clamp(0, tab.controller.text.length).toInt();
+                            tab.controller.selection = TextSelection.collapsed(offset: offset);
+                            showMessage('تم الانتقال إلى ${node.name} في السطر ${node.line}');
+                          },
+                        ),
+                      );
+                    },
+                  )),
+                ]),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إغلاق')),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openGitHubManager() async {
+    if (projectUri == null || projectUri!.isEmpty) {
+      showMessage('افتح مشروع Flutter أولاً قبل ربط GitHub');
+      return;
+    }
+    final repositoryController = TextEditingController(text: 'bisho-project');
+    final descriptionController = TextEditingController(text: 'Flutter project created with Bisho IDE');
+    final tokenController = TextEditingController();
+    var token = await _githubService.readToken();
+    GitHubAccount? account;
+    var connectionMessage = '';
+    if (token != null && token.isNotEmpty) {
+      try {
+        account = await _githubService.verifyToken(token);
+      } catch (error) {
+        connectionMessage = 'تعذر التحقق من الرمز المحفوظ: $error';
+        token = null;
+      }
+    }
+    var isPrivate = true;
+    var busy = false;
+    var progress = '';
+    String? repositoryUrl;
+    var uploadedFiles = 0;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: !busy,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Row(children: [
+            Icon(Icons.account_tree_rounded, color: Color(0xFF34D399)),
+            SizedBox(width: 9),
+            Text('GitHub داخل Bisho IDE'),
+          ]),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: SingleChildScrollView(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (account != null)
+                  Container(
+                    padding: const EdgeInsets.all(11),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF12352E),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF237A5B)),
+                    ),
+                    child: Row(children: [
+                      const Icon(Icons.verified_rounded, color: Color(0xFF34D399)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text('متصل بالحساب ${account!.login}',
+                        style: const TextStyle(fontWeight: FontWeight.w700))),
+                      TextButton(
+                        onPressed: busy ? null : () async {
+                          await _githubService.disconnect();
+                          setDialogState(() {
+                            account = null;
+                            token = null;
+                            connectionMessage = 'تم فصل حساب GitHub من هذا الجهاز';
+                          });
+                        },
+                        child: const Text('فصل'),
+                      ),
+                    ]),
+                  )
+                else ...[
+                  const Text('رمز الوصول الشخصي (PAT)',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 5),
+                  TextField(
+                    controller: tokenController,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: const InputDecoration(
+                      hintText: 'ghp_… أو github_pat_…',
+                      prefixIcon: Icon(Icons.key_rounded),
+                      helperText: 'يُحفظ بعد التحقق داخل التخزين الآمن على Android فقط',
+                    ),
+                  ),
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: TextButton.icon(
+                      onPressed: busy ? null : () async {
+                        final entered = tokenController.text.trim();
+                        if (entered.isEmpty) {
+                          setDialogState(() => connectionMessage = 'أدخل رمز GitHub أولاً');
+                          return;
+                        }
+                        setDialogState(() { busy = true; connectionMessage = 'جارٍ التحقق من الرمز…'; });
+                        try {
+                          final verified = await _githubService.verifyToken(entered);
+                          await _githubService.saveToken(entered);
+                          if (!context.mounted) return;
+                          setDialogState(() {
+                            token = entered;
+                            account = verified;
+                            connectionMessage = 'تم التحقق وحفظ الرمز بأمان';
+                          });
+                          tokenController.clear();
+                        } catch (error) {
+                          if (context.mounted) setDialogState(() => connectionMessage = 'فشل التحقق: $error');
+                        } finally {
+                          if (context.mounted) setDialogState(() => busy = false);
+                        }
+                      },
+                      icon: const Icon(Icons.verified_user_outlined),
+                      label: const Text('تحقق واربط الحساب'),
+                    ),
+                  ),
+                ],
+                if (connectionMessage.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Text(connectionMessage,
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF93C5FD))),
+                  ),
+                const Divider(),
+                const Text('رفع مشروع Flutter إلى مستودع جديد',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+                const SizedBox(height: 9),
+                TextField(
+                  controller: repositoryController,
+                  enabled: !busy,
+                  decoration: const InputDecoration(
+                    labelText: 'اسم المستودع',
+                    prefixIcon: Icon(Icons.folder_copy_outlined),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                TextField(
+                  controller: descriptionController,
+                  enabled: !busy,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'وصف المستودع'),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  value: isPrivate,
+                  onChanged: busy ? null : (value) => setDialogState(() => isPrivate = value),
+                  title: const Text('مستودع خاص'),
+                  subtitle: const Text('لا يظهر للعامة'),
+                ),
+                if (progress.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(children: [
+                      if (busy) const SizedBox(width: 16, height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                      if (busy) const SizedBox(width: 9),
+                      Expanded(child: Text(progress, style: const TextStyle(fontSize: 11))),
+                    ]),
+                  ),
+                if (repositoryUrl != null) ...[
+                  const SizedBox(height: 10),
+                  const Text('تم رفع المشروع بنجاح',
+                    style: TextStyle(color: Color(0xFF34D399), fontWeight: FontWeight.w800)),
+                  SelectableText(repositoryUrl!, textDirection: TextDirection.ltr),
+                  Text('عدد الملفات: $uploadedFiles',
+                    style: const TextStyle(fontSize: 11, color: Colors.white70)),
+                  Align(
+                    alignment: AlignmentDirectional.centerEnd,
+                    child: TextButton.icon(
+                      onPressed: () => Clipboard.setData(ClipboardData(text: repositoryUrl!)),
+                      icon: const Icon(Icons.copy_rounded),
+                      label: const Text('نسخ الرابط'),
+                    ),
+                  ),
+                ],
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(dialogContext),
+              child: const Text('إغلاق'),
+            ),
+            FilledButton.icon(
+              onPressed: busy || token == null || account == null || repositoryUrl != null
+                  ? null
+                  : () async {
+                      final name = repositoryController.text.trim();
+                      if (name.isEmpty) {
+                        setDialogState(() => progress = 'اكتب اسم المستودع أولاً');
+                        return;
+                      }
+                      setDialogState(() { busy = true; progress = 'جارٍ تجهيز المشروع…'; });
+                      try {
+                        final result = await _githubService.createAndPushProject(
+                          token: token!,
+                          projectUri: projectUri!,
+                          repositoryName: name,
+                          description: descriptionController.text.trim(),
+                          isPrivate: isPrivate,
+                          workflowFile: 'build-android.yml',
+                          safFiles: safFiles,
+                          onProgress: (message) {
+                            if (context.mounted) setDialogState(() => progress = message);
+                          },
+                        );
+                        if (!context.mounted) return;
+                        setDialogState(() {
+                          repositoryUrl = result.htmlUrl;
+                          uploadedFiles = result.uploadedFiles;
+                          progress = 'تم الرفع إلى الفرع ${result.branch}';
+                        });
+                      } catch (error) {
+                        if (context.mounted) setDialogState(() => progress = 'تعذر الرفع: $error');
+                      } finally {
+                        if (context.mounted) setDialogState(() => busy = false);
+                      }
+                    },
+              icon: const Icon(Icons.cloud_upload_rounded),
+              label: const Text('إنشاء المستودع ورفع المشروع'),
+            ),
+          ],
+        ),
+      ),
+    );
+    repositoryController.dispose();
+    descriptionController.dispose();
+    tokenController.dispose();
+  }
+
+  Future<void> _openSplitEditor() async {
+    if (tabs.length < 2) {
+      showMessage('افتح ملفًا ثانيًا أولاً ثم فعّل تقسيم المحرر');
+      await openFile();
+      if (!mounted || tabs.length < 2) return;
+    }
+    final candidates = tabs.where((item) => item.id != activeTab.id).toList();
+    if (candidates.isEmpty) {
+      showMessage('لا يوجد ملف آخر لعرضه في الجزء الثاني');
+      return;
+    }
+    final selectedId = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('اختر الملف للجزء الثاني'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 260,
+          child: ListView.builder(
+            itemCount: candidates.length,
+            itemBuilder: (context, index) {
+              final item = candidates[index];
+              return ListTile(
+                leading: const Icon(Icons.insert_drive_file_outlined, color: Color(0xFF38BDF8)),
+                title: Text(item.fileName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(item.language),
+                onTap: () => Navigator.pop(dialogContext, item.id),
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إلغاء')),
+        ],
+      ),
+    );
+    if (selectedId == null || !mounted) return;
+    setState(() {
+      _splitTabId = selectedId;
+      status = 'تم تفعيل المحرر المقسّم';
+    });
+  }
+
+  void _closeSplitEditor() {
+    setState(() {
+      _splitTabId = null;
+      status = 'تم إغلاق العرض المقسّم';
+    });
+  }
+
+  Widget _buildSplitEditorPanel() {
+    final secondaryIndex = tabs.indexWhere((item) => item.id == _splitTabId);
+    if (secondaryIndex < 0 || tabs.length < 2 || tabs[secondaryIndex].id == activeTab.id) {
+      return const SizedBox.shrink();
+    }
+    final primary = activeTab;
+    final secondary = tabs[secondaryIndex];
+
+    Widget pane(EditorTab item, {required bool isPrimary}) {
+      return Container(
+        height: 210,
+        decoration: BoxDecoration(
+          color: const Color(0xFF080D19),
+          borderRadius: BorderRadius.circular(11),
+          border: Border.all(color: isPrimary ? const Color(0xFF38BDF8) : const Color(0xFFA78BFA)),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(children: [
+          Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            color: const Color(0xFF142239),
+            child: Row(children: [
+              Icon(Icons.code_rounded, size: 15,
+                color: isPrimary ? const Color(0xFF38BDF8) : const Color(0xFFA78BFA)),
+              const SizedBox(width: 7),
+              Expanded(child: Text(item.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700))),
+              Text(item.isSaved ? 'محفوظ' : '●', style: TextStyle(
+                color: item.isSaved ? const Color(0xFF34D399) : const Color(0xFFFBBF24),
+                fontSize: 9,
+              )),
+            ]),
+          ),
+          Expanded(child: CodeTheme(
+            data: CodeThemeData(styles: monokaiSublimeTheme),
+            child: CodeField(
+              key: ValueKey('split-${item.id}'),
+              controller: item.controller,
+              expands: true,
+              padding: const EdgeInsets.all(9),
+              textStyle: TextStyle(fontFamily: 'monospace', fontSize: (_editorFontSize - 2).clamp(10.0, 18.0).toDouble()),
+              gutterStyle: const GutterStyle(
+                showLineNumbers: true,
+                showErrors: true,
+                showFoldingHandles: true,
+              ),
+            ),
+          )),
+        ]),
+      );
+    }
+
+    return _dashboardPanel(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.vertical_split_rounded, color: Color(0xFF38BDF8), size: 19),
+          const SizedBox(width: 8),
+          const Expanded(child: Text('المحرر المقسّم', style: TextStyle(fontWeight: FontWeight.w800))),
+          DropdownButton<String>(
+            value: secondary.id,
+            isDense: true,
+            underline: const SizedBox(),
+            dropdownColor: const Color(0xFF18263B),
+            items: tabs.where((item) => item.id != primary.id).map((item) =>
+              DropdownMenuItem(value: item.id, child: SizedBox(width: 130, child: Text(item.fileName,
+                maxLines: 1, overflow: TextOverflow.ellipsis)))
+            ).toList(),
+            onChanged: (value) => setState(() => _splitTabId = value),
+          ),
+          IconButton(
+            tooltip: 'إغلاق التقسيم',
+            visualDensity: VisualDensity.compact,
+            onPressed: _closeSplitEditor,
+            icon: const Icon(Icons.close_rounded, size: 18),
+          ),
+        ]),
+        const SizedBox(height: 10),
+        LayoutBuilder(builder: (context, constraints) {
+          if (constraints.maxWidth >= 620) {
+            return Row(children: [
+              Expanded(child: pane(primary, isPrimary: true)),
+              const SizedBox(width: 9),
+              Expanded(child: pane(secondary, isPrimary: false)),
+            ]);
+          }
+          return Column(children: [
+            pane(primary, isPrimary: true),
+            const SizedBox(height: 9),
+            pane(secondary, isPrimary: false),
+          ]);
+        }),
+      ]),
+    );
+  }
+
+  Future<void> _openCommandPalette() async {
+    final commands = <_PaletteCommand>[
+      _PaletteCommand(title: 'ملف جديد', description: 'إنشاء تبويب وملف فارغ', icon: Icons.note_add_rounded, run: createNewTab, keywords: 'new file'),
+      _PaletteCommand(title: 'مشروع جديد', description: 'إنشاء مشروع باستخدام المعالج', icon: Icons.create_new_folder_rounded, run: createNewProject, keywords: 'new project'),
+      _PaletteCommand(title: 'فتح ملف', description: 'اختيار ملف من الجهاز', icon: Icons.file_open_rounded, run: openFile, keywords: 'open file'),
+      _PaletteCommand(title: 'فتح مشروع', description: 'اختيار مجلد مشروع', icon: Icons.folder_open_rounded, run: openProjectFolder, keywords: 'open folder'),
+      _PaletteCommand(title: 'مدير المشاريع', description: 'المشاريع الأخيرة والمفضلة', icon: Icons.workspaces_rounded, run: showProjectManager, keywords: 'projects'),
+      _PaletteCommand(title: 'إدارة GitHub', description: 'ربط الحساب ورفع مشروع Flutter', icon: Icons.account_tree_rounded, run: _openGitHubManager, keywords: 'git github repository push'),
+      _PaletteCommand(title: 'Flutter Widget Inspector', description: 'استعراض شجرة Widgets والتنقل للأسطر', icon: Icons.account_tree_rounded, run: _openWidgetTreeInspector, keywords: 'widget tree inspector flutter'),
+      _PaletteCommand(title: 'مدير حزم Flutter وDart', description: 'البحث في pub.dev وإدارة dependencies', icon: Icons.inventory_2_rounded, run: _openFlutterPackageManager, keywords: 'pub package dependencies pub.dev'),
+      _PaletteCommand(title: 'مساعد الكود المحلي', description: 'شرح وفحص وتحسين وأمان دون اتصال', icon: Icons.smart_toy_rounded, run: _openLocalCodeAssistant, keywords: 'local assistant ai explain debug security'),
+      _PaletteCommand(title: 'حفظ الملف', description: 'حفظ التعديلات الحالية', icon: Icons.save_rounded, run: saveCurrentToDisk, keywords: 'save'),
+      _PaletteCommand(title: 'حفظ جميع الملفات', description: 'حفظ كل التبويبات المفتوحة', icon: Icons.save_as_rounded, run: saveAllTabs, keywords: 'save all'),
+      _PaletteCommand(title: 'بحث واستبدال', description: 'البحث داخل الملف أو المشروع', icon: Icons.find_replace_rounded, run: () => searchCode(startInReplaceMode: true), keywords: 'search replace find'),
+      _PaletteCommand(title: 'بحث في المشروع', description: 'البحث داخل جميع الملفات', icon: Icons.search_rounded, run: searchCode, keywords: 'find in files'),
+      _PaletteCommand(title: 'تقسيم المحرر', description: 'تحرير ملفين جنبًا إلى جنب', icon: Icons.vertical_split_rounded, run: _openSplitEditor, keywords: 'split editor side by side'),
+      _PaletteCommand(title: 'الإكمال البرمجي', description: 'اقتراح الكلمات والمقاطع', icon: Icons.auto_awesome_rounded, run: showCodeCompletions, keywords: 'autocomplete intellisense'),
+      _PaletteCommand(title: 'الطرفية', description: 'فتح جلسة الأوامر', icon: Icons.terminal_rounded, run: _showTerminalPanel, keywords: 'terminal shell console'),
+      _PaletteCommand(title: 'فحص المشكلات', description: 'عرض التشخيصات والإصلاحات', icon: Icons.bug_report_rounded, run: _openDiagnosticsPanel, keywords: 'diagnostics errors lint'),
+      _PaletteCommand(title: 'مساعد إصلاح الأخطاء', description: 'اقتراح تعديلات مع معاينة', icon: Icons.auto_fix_high_rounded, run: _openFixAssistant, keywords: 'fix errors'),
+      _PaletteCommand(title: 'تنسيق الكود', description: 'معاينة تنسيق النص', icon: Icons.format_align_left_rounded, run: _openFormatPreview, keywords: 'format code'),
+      _PaletteCommand(title: 'سجل إصدارات الملف', description: 'استعادة نسخة سابقة', icon: Icons.history_rounded, run: _openVersionHistory, keywords: 'history restore'),
+      _PaletteCommand(title: 'فحص جودة المشروع', description: 'تحليل بنية المشروع', icon: Icons.health_and_safety_rounded, run: _openProjectInsightsPanel, keywords: 'project health'),
+      _PaletteCommand(title: 'الإضافات والأدوات', description: 'فتح مركز الإضافات المدمجة', icon: Icons.extension_rounded, run: _showPluginsHub, keywords: 'extensions plugins'),
+      _PaletteCommand(title: 'شاشة المحرر الكاملة', description: 'توسيع مساحة تحرير الكود', icon: Icons.fullscreen_rounded, run: _openEditorFullScreen, keywords: 'fullscreen editor'),
+      _PaletteCommand(title: 'تبديل المظهر', description: 'فاتح أو داكن', icon: Icons.palette_rounded, run: BishoThemeController.toggle, keywords: 'theme appearance'),
+    ];
+
+    final controller = TextEditingController();
+    var query = '';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final filtered = EditorCommandPalette.filter(
+            commands,
+            query: query,
+            searchableText: (command) => command.searchableText,
+          );
+          return AlertDialog(
+            title: const Row(children: [
+              Icon(Icons.keyboard_command_key_rounded, color: Color(0xFF38BDF8)),
+              SizedBox(width: 9),
+              Text('لوحة الأوامر'),
+            ]),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 390,
+              child: Column(children: [
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  onChanged: (value) => setDialogState(() => query = value),
+                  decoration: InputDecoration(
+                    hintText: 'ابحث عن أمر…',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: query.isEmpty ? null : IconButton(
+                      onPressed: () {
+                        controller.clear();
+                        setDialogState(() => query = '');
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? const Center(child: Text('لا توجد أوامر مطابقة'))
+                      : ListView.separated(
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final command = filtered[index];
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(command.icon, color: const Color(0xFF38BDF8)),
+                              title: Text(command.title),
+                              subtitle: Text(command.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+                              onTap: () async {
+                                Navigator.pop(dialogContext);
+                                await command.run();
+                              },
+                            );
+                          },
+                        ),
+                ),
+                const SizedBox(height: 5),
+                const Text('اكتب للبحث ثم اختر الأمر المطلوب', style: TextStyle(fontSize: 11, color: Colors.white54)),
+              ]),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(dialogContext), child: const Text('إغلاق')),
+            ],
+          );
+        },
+      ),
+    );
+    controller.dispose();
+  }
+
   Future<void> searchCode({bool startInReplaceMode = false}) async {
     final findController = TextEditingController();
     final replaceController = TextEditingController();
@@ -3096,6 +4407,19 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   ),
                 ),
               ),
+              if (replaceMode)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => Navigator.pop(dialogContext, {
+                      'find': findController.text,
+                      'replace': replaceController.text,
+                      'mode': 'projectReplace',
+                    }),
+                    icon: const Icon(Icons.drive_file_rename_outline_rounded),
+                    label: const Text('استبدال في جميع ملفات المشروع'),
+                  ),
+                ),
               Align(
                 alignment: Alignment.centerLeft,
                 child: TextButton.icon(
@@ -3138,6 +4462,15 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       await searchProjectFiles(query);
       return;
     }
+    if (result['mode'] == 'projectReplace') {
+      final replacement = result['replace'] ?? '';
+      if (replacement == query) {
+        showMessage('النص البديل مطابق لنص البحث؛ لا توجد تغييرات');
+        return;
+      }
+      await _replaceProjectFiles(query, replacement);
+      return;
+    }
 
     final source = activeTab.controller.text;
     if (result['mode'] == 'replace') {
@@ -3174,6 +4507,185 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     showMessage('تم العثور على النص');
   }
 
+  Future<void> _replaceProjectFiles(String query, String replacement) async {
+    final rootUri = projectUri;
+    if (rootUri == null || rootUri.isEmpty) {
+      showMessage('افتح مجلد المشروع أولاً');
+      return;
+    }
+    final extensions = <String>{
+      'dart', 'py', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'html', 'htm',
+      'css', 'scss', 'sass', 'json', 'xml', 'yaml', 'yml', 'md', 'markdown',
+      'txt', 'java', 'kt', 'kts', 'swift', 'c', 'h', 'cpp', 'hpp', 'sql',
+      'sh', 'bash', 'go', 'rs', 'php', 'toml', 'ini', 'gradle', 'properties',
+    };
+    final candidates = <({
+      SafDocumentFile file,
+      String parentUri,
+      String path,
+      String updated,
+      int count,
+    })>[];
+    var scanned = 0;
+    var skipped = 0;
+    var totalMatches = 0;
+    const maxFiles = 500;
+    const maxBytes = 1024 * 1024;
+    const ignored = {
+      '.git', '.dart_tool', '.idea', '.gradle', 'build',
+      'node_modules', '.bisho-backups',
+    };
+
+    Future<void> scan(String directoryUri, String prefix) async {
+      if (scanned >= maxFiles || candidates.length >= 200) return;
+      List<SafDocumentFile> children;
+      try {
+        children = await safFiles.listDirectory(directoryUri);
+      } catch (_) {
+        skipped++;
+        return;
+      }
+      for (final child in children) {
+        if (scanned >= maxFiles || candidates.length >= 200) break;
+        final path = prefix.isEmpty ? child.name : '$prefix/${child.name}';
+        if (child.isDir) {
+          if (!ignored.contains(child.name.toLowerCase())) {
+            await scan(child.uri, path);
+          }
+          continue;
+        }
+        final dot = child.name.lastIndexOf('.');
+        final ext = dot < 0 ? '' : child.name.substring(dot + 1).toLowerCase();
+        if (!extensions.contains(ext)) continue;
+        scanned++;
+        try {
+          final bytes = await safFiles.readFile(child.uri);
+          if (bytes.length > maxBytes) {
+            skipped++;
+            continue;
+          }
+          final source = utf8.decode(bytes, allowMalformed: false);
+          final result = ProjectTextReplacement.replaceAll(
+            source: source,
+            query: query,
+            replacement: replacement,
+            caseSensitive: true,
+          );
+          if (result.replacements == 0) continue;
+          candidates.add((
+            file: child,
+            parentUri: directoryUri,
+            path: path,
+            updated: result.text,
+            count: result.replacements,
+          ));
+          totalMatches += result.replacements;
+        } catch (_) {
+          skipped++;
+        }
+      }
+    }
+
+    showMessage('جارٍ فحص ملفات المشروع قبل الاستبدال...');
+    await scan(rootUri, '');
+    if (!mounted) return;
+    if (candidates.isEmpty) {
+      showMessage('لم يتم العثور على تطابقات قابلة للاستبدال');
+      return;
+    }
+
+    final affectedUris = candidates.map((item) => item.file.uri).toSet();
+    final unsaved = tabs.where((tab) =>
+      tab.fileUri != null && affectedUris.contains(tab.fileUri) && !tab.isSaved
+    ).toList();
+    if (unsaved.isNotEmpty) {
+      showMessage('احفظ الملفات المفتوحة المعدّلة أولاً ثم أعد الاستبدال؛ لم يتم تغيير أي ملف');
+      return;
+    }
+
+    final preview = candidates.take(8).map((item) =>
+      '${item.path}  ·  ${item.count} استبدال'
+    ).join('\n');
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('تأكيد استبدال ملفات المشروع'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('سيتم استبدال $totalMatches تطابقًا في ${candidates.length} ملف.'),
+              const SizedBox(height: 10),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 190),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Theme.of(dialogContext).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: SingleChildScrollView(child: Text(
+                  preview + (candidates.length > 8 ? '\n... و${candidates.length - 8} ملفات أخرى' : ''),
+                  style: const TextStyle(fontSize: 12),
+                )),
+              ),
+              const SizedBox(height: 8),
+              const Text('الاستبدال حساس لحالة الأحرف، ولن يشمل مجلدات البناء أو .git.'),
+              if (scanned >= maxFiles || candidates.length >= 200 || skipped > 0)
+                Text('ملاحظة: فُحص $scanned ملفًا وتُخطّي $skipped ملفًا بسبب الحدود أو تعذّر القراءة.',
+                  style: const TextStyle(fontSize: 11, color: Colors.orange)),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.done_all_rounded),
+            label: const Text('تأكيد الاستبدال'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    var savedFiles = 0;
+    var savedMatches = 0;
+    Object? failure;
+    for (final item in candidates) {
+      try {
+        await safFiles.saveFile(
+          parentUri: item.parentUri,
+          fileName: item.file.name,
+          bytes: Uint8List.fromList(utf8.encode(item.updated)),
+          overwrite: true,
+        );
+        savedFiles++;
+        savedMatches += item.count;
+        for (final tab in tabs.where((tab) => tab.fileUri == item.file.uri)) {
+          tab.controller.value = TextEditingValue(
+            text: item.updated,
+            selection: TextSelection.collapsed(offset: item.updated.length),
+          );
+          tab.isSaved = true;
+        }
+      } catch (error) {
+        failure = error;
+        break;
+      }
+    }
+    if (mounted) {
+      setState(() {
+        status = failure == null ? 'تم استبدال نص المشروع' : 'اكتمل الاستبدال جزئيًا';
+      });
+      final suffix = failure == null
+          ? ''
+          : '، وتوقف بسبب خطأ: $failure';
+      showMessage('تم تحديث $savedFiles من ${candidates.length} ملفًا ($savedMatches استبدال)$suffix');
+    }
+  }
+
   Future<void> searchProjectFiles(String query) async {
     final rootUri = projectUri;
     if (rootUri == null || rootUri.isEmpty) {
@@ -3192,7 +4704,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     var skippedFiles = 0;
     const maxFiles = 500;
     const maxFileBytes = 1024 * 1024;
-    final needle = query.toLowerCase();
+    const ignoredDirectories = {
+      '.git', '.dart_tool', '.idea', '.gradle', 'build',
+      'node_modules', '.bisho-backups',
+    };
+    final needle = query.trim().toLowerCase();
 
     Future<void> scanDirectory(
       String directoryUri,
@@ -3213,21 +4729,43 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             ? item.name
             : '$relativeDirectory/${item.name}';
         if (item.isDir) {
+          if (ignoredDirectories.contains(item.name.toLowerCase())) continue;
           await scanDirectory(item.uri, relativePath);
           continue;
         }
 
+        final matchesFileName = item.name.toLowerCase().contains(needle) ||
+            relativePath.toLowerCase().contains(needle);
         final dot = item.name.lastIndexOf('.');
         final extension = dot < 0
             ? ''
             : item.name.substring(dot + 1).toLowerCase();
-        if (!searchableExtensions.contains(extension)) continue;
+        final canReadContent = searchableExtensions.contains(extension);
+        if (!canReadContent) {
+          if (matchesFileName) {
+            results.add(_ProjectSearchResult(
+              file: item,
+              parentUri: directoryUri,
+              relativePath: relativePath,
+              matchingLines: const [],
+            ));
+          }
+          continue;
+        }
 
         visitedFiles++;
         try {
           final bytes = await safFiles.readFile(item.uri);
           if (bytes.length > maxFileBytes) {
             skippedFiles++;
+            if (matchesFileName) {
+              results.add(_ProjectSearchResult(
+                file: item,
+                parentUri: directoryUri,
+                relativePath: relativePath,
+                matchingLines: const [],
+              ));
+            }
             continue;
           }
           final content = utf8.decode(bytes, allowMalformed: true);
@@ -3239,7 +4777,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               if (matchingLines.length >= 20) break;
             }
           }
-          if (matchingLines.isNotEmpty) {
+          if (matchesFileName || matchingLines.isNotEmpty) {
             results.add(_ProjectSearchResult(
               file: item,
               parentUri: directoryUri,
@@ -3249,12 +4787,21 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           }
         } catch (_) {
           skippedFiles++;
+          if (matchesFileName) {
+            results.add(_ProjectSearchResult(
+              file: item,
+              parentUri: directoryUri,
+              relativePath: relativePath,
+              matchingLines: const [],
+            ));
+          }
         }
       }
     }
 
-    showMessage('جارٍ البحث داخل ملفات المشروع...');
+    showMessage('جارٍ البحث في أسماء الملفات ومحتوياتها...');
     await scanDirectory(rootUri, '');
+    results.sort((a, b) => a.relativePath.toLowerCase().compareTo(b.relativePath.toLowerCase()));
     if (!mounted) return;
 
     await showDialog<void>(
@@ -3271,8 +4818,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (context, index) {
                     final result = results[index];
-                    final lineSummary =
-                        result.matchingLines.take(5).join(', ');
+                    final lineSummary = result.matchingLines.isEmpty
+                        ? 'تطابق في اسم الملف أو مساره'
+                        : 'الأسطر: ${result.matchingLines.take(5).join(', ')}'
+                            '${result.matchingLines.length > 5 ? ' ...' : ''}';
                     return ListTile(
                       dense: true,
                       leading: const Icon(Icons.description_outlined),
@@ -3282,9 +4831,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        '${result.relativePath}\n'
-                        'الأسطر: $lineSummary'
-                        '${result.matchingLines.length > 5 ? ' ...' : ''}',
+                        '${result.relativePath}\n$lineSummary',
                         maxLines: 3,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -3453,8 +5000,29 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     _scheduleTabStateSave();
   }
 
+  String? _diagnosticsCacheTabId;
+  String? _diagnosticsCacheLanguage;
+  String? _diagnosticsCacheSource;
+  List<String> _diagnosticsCache = const <String>[];
+
+  /// Memoised per tab/language/text so repeated rebuilds do not re-parse the
+  /// whole file when nothing changed.
   List<String> _getCurrentDiagnostics(EditorTab tab) {
     final source = tab.controller.text;
+    if (_diagnosticsCacheTabId == tab.id &&
+        _diagnosticsCacheLanguage == tab.language &&
+        _diagnosticsCacheSource == source) {
+      return List<String>.of(_diagnosticsCache);
+    }
+    final result = _computeDiagnostics(tab, source);
+    _diagnosticsCacheTabId = tab.id;
+    _diagnosticsCacheLanguage = tab.language;
+    _diagnosticsCacheSource = source;
+    _diagnosticsCache = result;
+    return List<String>.of(result);
+  }
+
+  List<String> _computeDiagnostics(EditorTab tab, String source) {
     final diagnostics = <String>[];
     try {
       switch (tab.language) {
@@ -3642,18 +5210,52 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                       )
                     : ListView.builder(
                         itemCount: diagnostics.length,
-                        itemBuilder: (context, index) => ListTile(
-                          dense: true,
-                          leading: const Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.orangeAccent,
-                            size: 18,
-                          ),
-                          title: Text(
-                            diagnostics[index],
-                            style: const TextStyle(fontSize: 11),
-                          ),
-                        ),
+                        itemBuilder: (context, index) {
+                          final diagnostic = diagnostics[index];
+                          final location = RegExp(
+                            r'السطر\s+(\d+)،\s*العمود\s+(\d+)',
+                          ).firstMatch(diagnostic);
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(
+                              Icons.warning_amber_rounded,
+                              color: Colors.orangeAccent,
+                              size: 18,
+                            ),
+                            title: Text(
+                              diagnostic,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF9AABC0),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            trailing: location == null
+                                ? null
+                                : const Icon(
+                                    Icons.my_location_outlined,
+                                    size: 15,
+                                    color: Color(0xFF38BDF8),
+                                  ),
+                            onTap: location == null
+                                ? null
+                                : () {
+                                    final offset =
+                                        EditorDiagnosticNavigation.offsetForLineColumn(
+                                      tab.controller.text,
+                                      int.parse(location.group(1)!),
+                                      int.parse(location.group(2)!),
+                                    );
+                                    if (offset == null) return;
+                                    tab.controller.selection =
+                                        TextSelection.collapsed(offset: offset);
+                                    setState(() {
+                                      status = 'الانتقال إلى السطر ${location.group(1)}';
+                                    });
+                                    _scheduleTabStateSave();
+                                  },
+                          );
+                        },
                       )
                 : isFileInfo
                     ? Padding(
@@ -3714,19 +5316,39 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         : source.length;
     final beforeCursor = source.substring(0, cursor);
     final match = RegExp(r'[A-Za-z_][A-Za-z0-9_]*$').firstMatch(beforeCursor);
-    final prefix = match?.group(0) ?? '';
+    final memberMatch = RegExp(
+      r'([A-Za-z_][A-Za-z0-9_]*)\.([A-Za-z_][A-Za-z0-9_]*)?$',
+    ).firstMatch(beforeCursor);
+    final prefix = memberMatch?.group(2) ?? match?.group(0) ?? '';
+    final contextual = memberMatch == null
+        ? const <String>[]
+        : EditorCompletionEngine.contextualCandidates(
+            receiver: memberMatch.group(1) ?? '',
+            language: tab.language,
+          );
 
     final Map<String, List<String>> completions = {
       'Dart': [
         'void main() {\n  \n}',
         'print()',
+        'debugPrint()',
         'final ',
         'const ',
+        'late final ',
         'class ',
+        'abstract class ',
         'Future<void> ',
         'async',
-        'if () {\n  \n}',
-        'for (var i = 0; i < ; i++) {\n  \n}',
+        'await ',
+        'try {\n  \n} catch (error, stackTrace) {\n  debugPrint(error.toString());\n}',
+        'if (mounted) {\n  setState(() {\n    \n  });\n}',
+        'Widget build(BuildContext context) {\n  return const SizedBox.shrink();\n}',
+        'StatelessWidget',
+        'StatefulWidget',
+        'ListView.builder(',
+        'FutureBuilder<',
+        'StreamBuilder<',
+        'for (var i = 0; i < items.length; i++) {\n  \n}',
       ],
       'JavaScript': [
         'console.log()',
@@ -3753,7 +5375,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         'def ',
         'class ',
         'if __name__ == "__main__":\n    ',
-        'for item in :\n    ',
+        'for item in items:\n    ',
+        'with open("file.txt", "r", encoding="utf-8") as file:\n    content = file.read()',
         'try:\n    \nexcept Exception as error:\n    print(error)',
         'import ',
       ],
@@ -3779,6 +5402,40 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         'UPDATE  SET  =  WHERE ;',
         'CREATE TABLE  (\n  id INTEGER PRIMARY KEY\n);',
       ],
+      'Java': [
+        'public static void main(String[] args) {\n    \n}',
+        'System.out.println()',
+        'private final ',
+        'try {\n    \n} catch (Exception error) {\n    error.printStackTrace();\n}',
+        '@Override',
+        'class ',
+      ],
+      'Kotlin': [
+        'fun main() {\n    \n}',
+        'fun ',
+        'suspend fun ',
+        'data class ',
+        'sealed class ',
+        'val ',
+        'var ',
+        'when (value) {\n    else -> {}\n}',
+        'try {\n    \n} catch (error: Exception) {\n    error.printStackTrace()\n}',
+      ],
+      'C++': [
+        '#include <iostream>',
+        'int main() {\n    std::cout << "Hello" << std::endl;\n    return 0;\n}',
+        'std::vector<int> ',
+        'std::string ',
+        'for (int i = 0; i < ; ++i) {\n    \n}',
+        'class ',
+      ],
+      'Bash': [
+        '#!/usr/bin/env bash',
+        'set -euo pipefail',
+        'if [[  ]]; then\n  \nfi',
+        'for item in "\${items[@]}"; do\n  \n done',
+        'function () {\n  \n}',
+      ],
       'Markdown': ['# ', '## ', '- ', '1. ', '```\n\n```', '> '],
       'YAML': ['name: ', 'version: ', 'dependencies:\n  ', 'scripts:\n  '],
       'JSON': ['{\n  "": ""\n}', '[\n  \n]'],
@@ -3791,6 +5448,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       language: tab.language,
       prefix: prefix,
       snippets: [
+        ...contextual,
         ...candidates,
         ...EditorCompletionEngine.identifiersIn(
           source,
@@ -3835,22 +5493,33 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     );
 
     if (chosen == null || !mounted) return;
-    final current = controller.text;
-    final currentCursor = controller.selection.isValid
-        ? controller.selection.extentOffset.clamp(0, current.length).toInt()
-        : current.length;
-    final currentBefore = current.substring(0, currentCursor);
-    final currentMatch = RegExp(r'[A-Za-z_][A-Za-z0-9_]*$').firstMatch(currentBefore);
-    final start = currentMatch?.start ?? currentCursor;
-    final updated = current.replaceRange(start, currentCursor, chosen);
+    // Do not apply a stale completion if the document changed while the
+    // suggestion dialog was open. This preserves newer user edits.
+    if (controller.text != source) {
+      setState(() {
+        status = 'تغير محتوى المحرر أثناء عرض الاقتراح؛ لم يتم إدراج الإكمال.';
+      });
+      return;
+    }
+    final currentSelection = controller.selection;
+    final hasSelection =
+        currentSelection.isValid && !currentSelection.isCollapsed;
+    final replaceStart = hasSelection
+        ? currentSelection.start.clamp(0, source.length).toInt()
+        : (match?.start ?? cursor);
+    final replaceEnd = hasSelection
+        ? currentSelection.end.clamp(0, source.length).toInt()
+        : cursor;
+    final updated = source.replaceRange(replaceStart, replaceEnd, chosen);
     controller.value = TextEditingValue(
       text: updated,
-      selection: TextSelection.collapsed(offset: start + chosen.length),
+      selection: TextSelection.collapsed(offset: replaceStart + chosen.length),
     );
     setState(() {
-      activeTab.isSaved = false;
+      tab.isSaved = false;
       status = 'تم إدراج الإكمال';
     });
+    _scheduleTabStateSave();
   }
 
   Future<void> copyCode() async {
@@ -4048,9 +5717,21 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             List<SafDocumentFile>.from(snapshot.data ?? []);
 
         final filter = _explorerFilter.trim().toLowerCase();
-        if (filter.isNotEmpty) {
-          items.removeWhere((item) => !item.name.toLowerCase().contains(filter));
-        }
+        const explorerTypeExtensions = <String, Set<String>>{
+          'code': {'dart', 'py', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'java', 'kt', 'kts', 'swift', 'c', 'h', 'cpp', 'hpp', 'go', 'rs', 'php', 'sh', 'bash'},
+          'config': {'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'properties', 'gradle'},
+          'web': {'html', 'htm', 'css', 'scss', 'sass', 'md', 'markdown'},
+          'media': {'png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'mp3', 'wav', 'mp4', 'webm'},
+        };
+        items.removeWhere((item) {
+          if (item.isDir) return false;
+          if (filter.isNotEmpty && !item.name.toLowerCase().contains(filter)) return true;
+          final allowed = explorerTypeExtensions[_explorerTypeFilter];
+          if (allowed == null) return false;
+          final dot = item.name.lastIndexOf('.');
+          final extension = dot < 0 ? '' : item.name.substring(dot + 1).toLowerCase();
+          return !allowed.contains(extension);
+        });
 
         items.sort((a, b) {
           if (a.isDir && !b.isDir) return -1;
@@ -4227,19 +5908,33 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   Widget buildExplorer() {
     return Container(
       width: 300,
-      color: const Color(0xFF111827),
+      color: const Color(0xFF0F1A2A),
       child: Column(
         children: [
           Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            height: 58,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFF16263B),
+              border: Border(bottom: BorderSide(color: Color(0xFF30445E))),
+            ),
             child: Row(
               children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF38BDF8).withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.folder_copy_rounded, color: Color(0xFF38BDF8), size: 19),
+                ),
+                const SizedBox(width: 9),
                 const Expanded(
                   child: Text(
-                    'المستكشف',
+                    'مستكشف الملفات',
                     style: TextStyle(
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w800,
                       fontSize: 13,
                     ),
                   ),
@@ -4287,6 +5982,27 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
+              ),
+            ),
+          if (projectUri != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+              child: DropdownButtonFormField<String>(
+                initialValue: _explorerTypeFilter,
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'نوع الملفات',
+                  prefixIcon: Icon(Icons.filter_alt_outlined, size: 18),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'all', child: Text('كل الملفات')),
+                  DropdownMenuItem(value: 'code', child: Text('ملفات البرمجة')),
+                  DropdownMenuItem(value: 'config', child: Text('ملفات الإعدادات')),
+                  DropdownMenuItem(value: 'web', child: Text('الويب والتوثيق')),
+                  DropdownMenuItem(value: 'media', child: Text('الصور والوسائط')),
+                ],
+                onChanged: (value) => setState(() => _explorerTypeFilter = value ?? 'all'),
               ),
             ),
           if (projectUri == null)
@@ -4413,8 +6129,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
 
   Widget buildTabBar() {
     return Container(
-      height: 46,
-      color: const Color(0xFF111827),
+      height: 56,
+      decoration: const BoxDecoration(
+        color: Color(0xFF0C1727),
+        border: Border(bottom: BorderSide(color: Color(0xFF30445E))),
+      ),
       child: Row(
         children: [
           Expanded(
@@ -4435,15 +6154,13 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                     padding: const EdgeInsets.symmetric(horizontal: 9),
                     decoration: BoxDecoration(
                       color: selected
-                          ? const Color(0xFF0B1020)
+                          ? const Color(0xFF182A40)
                           : Colors.transparent,
-                      border: Border(
-                        top: BorderSide(
-                          color: selected
-                              ? const Color(0xFF38BDF8)
-                              : Colors.transparent,
-                          width: 2,
-                        ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF3B7198)
+                            : Colors.transparent,
                       ),
                     ),
                     child: Row(
@@ -4457,7 +6174,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                           child: Text(
                             tab.fileName,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: selected ? const Color(0xFFE6F4FF) : const Color(0xFF9AABC0),
+                              fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                            ),
                           ),
                         ),
                         if (!tab.isSaved)
@@ -4533,6 +6254,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _explorerFilterController.dispose();
+    _githubService.close();
+    _packageCatalog.close();
     _isDisposing = true;
     _tabStateSaveTimer?.cancel();
     // Capture the final editor state before releasing the controllers.
@@ -4600,50 +6323,59 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 ),
               ),
         appBar: _editorFullScreen ? null : AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: false,
+          titleSpacing: 14,
+          shape: const Border(
+            bottom: BorderSide(color: Color(0xFF26374E), width: 0.8),
+          ),
           title: const Row(
             children: [
-              Icon(
-                Icons.code,
-                color: Color(0xFF38BDF8),
-              ),
-              SizedBox(width: 8),
-              Text(
-                'Bisho IDE',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              Icon(Icons.code_rounded, color: Color(0xFF38BDF8), size: 25),
+              SizedBox(width: 9),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Bisho IDE', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                  SizedBox(height: 1),
+                  Text('بيئة التطوير', style: TextStyle(color: Color(0xFF91A4BE), fontSize: 9, fontWeight: FontWeight.w500)),
+                ],
               ),
             ],
           ),
           actions: [
             IconButton(
-              onPressed: _openEditorFullScreen,
-              icon: const Icon(Icons.code),
-              tooltip: 'فتح المحرر في شاشة كاملة',
+              onPressed: searchCode,
+              icon: const Icon(Icons.search_rounded),
+              tooltip: 'بحث في المشروع والكود',
+            ),
+            IconButton(
+              onPressed: _openCommandPalette,
+              icon: const Icon(Icons.keyboard_command_key_rounded, color: Color(0xFF38BDF8)),
+              tooltip: 'لوحة الأوامر',
             ),
             IconButton(
               onPressed: saveCurrentToDisk,
-              icon: const Icon(Icons.save),
+              icon: const Icon(Icons.save_rounded),
               tooltip: 'حفظ الملف',
             ),
             IconButton(
               onPressed: _showTerminalPanel,
-              icon: const Icon(Icons.terminal, color: Color(0xFF38BDF8)),
+              icon: const Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
               tooltip: 'فتح الطرفية',
             ),
-            IconButton(
-              onPressed: BishoThemeController.toggle,
-              icon: Icon(
-                Theme.of(context).brightness == Brightness.dark
-                    ? Icons.light_mode_rounded
-                    : Icons.dark_mode_rounded,
-              ),
-              tooltip: 'تبديل الثيم (فاتح/داكن)',
-            ),
             PopupMenuButton<String>(
+              tooltip: 'المزيد من الأدوات',
+              icon: const Icon(Icons.more_vert_rounded),
               onSelected: (value) {
                 if (value == 'new') createNewTab();
                 if (value == 'new_project') createNewProject();
                 if (value == 'open') openFile();
                 if (value == 'folder') openProjectFolder();
+                if (value == 'projects') showProjectManager();
                 if (value == 'export') exportFile();
                 if (value == 'export_project') exportProjectArchive();
                 if (value == 'import_zip') importProjectArchive();
@@ -4652,6 +6384,8 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 if (value == 'saveall') saveAllTabs();
                 if (value == 'terminal') _showTerminalPanel();
                 if (value == 'complete') showCodeCompletions();
+                if (value == 'fullscreen') _openEditorFullScreen();
+                if (value == 'theme') BishoThemeController.toggle();
                 if (value == 'exit') _confirmApplicationExit();
               },
               itemBuilder: (context) => [
@@ -4659,6 +6393,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 _bishoMenuItem('new_project', Icons.create_new_folder_rounded, 'إنشاء مشروع جديد'),
                 _bishoMenuItem('open', Icons.file_open_rounded, 'فتح ملف'),
                 _bishoMenuItem('folder', Icons.folder_open_rounded, 'فتح مجلد مشروع'),
+                _bishoMenuItem('projects', Icons.workspaces_rounded, 'مدير المشاريع الذكي'),
                 const PopupMenuDivider(),
                 _bishoMenuItem('export', Icons.download_rounded, 'تصدير الملف'),
                 _bishoMenuItem('export_project', Icons.archive_rounded, 'تصدير المشروع ZIP كاملاً'),
@@ -4669,10 +6404,13 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                 _bishoMenuItem('complete', Icons.auto_awesome_rounded, 'الإكمال التلقائي'),
                 _bishoMenuItem('saveall', Icons.save_rounded, 'حفظ جميع الملفات'),
                 _bishoMenuItem('terminal', Icons.terminal_rounded, 'فتح الطرفية'),
+                _bishoMenuItem('fullscreen', Icons.fullscreen_rounded, 'فتح المحرر في شاشة كاملة'),
+                _bishoMenuItem('theme', Icons.palette_outlined, 'تبديل المظهر'),
                 const PopupMenuDivider(),
                 _bishoMenuItem('exit', Icons.exit_to_app_rounded, 'الخروج من التطبيق', color: Colors.orangeAccent),
               ],
             ),
+            const SizedBox(width: 4),
           ],
         ),
         body: Column(
@@ -4757,13 +6495,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
               Theme(data: BishoTheme.darkTheme, child: buildBottomPanel(tab)),
             if (!_editorFullScreen)
               Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHigh,
-                border: Border(
-                  top: BorderSide(color: Theme.of(context).colorScheme.outline),
-                ),
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: const BoxDecoration(
+                color: Color(0xFF101B2D),
+                border: Border(top: BorderSide(color: Color(0xFF26374E))),
               ),
               child: Row(
                 children: [
@@ -4814,163 +6550,460 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }
 
   Widget _buildToolsDashboard(EditorTab tab) {
-    const cyan = Color(0xFF08B9F4);
-    const blue = Color(0xFF247BFF);
-    const violet = Color(0xFF8B42F5);
-    const green = Color(0xFF19D889);
-    const red = Color(0xFFFF456A);
-    const amber = Color(0xFFFFC247);
+    final selection = tab.controller.selection;
+    final cursorOffset = selection.isValid
+        ? selection.extentOffset.clamp(0, tab.controller.text.length).toInt()
+        : tab.controller.text.length;
+    final cursorPosition = _cursorLineColumn(tab.controller.text, cursorOffset);
+    const cyan = Color(0xFF38BDF8);
+    const blue = Color(0xFF60A5FA);
+    const violet = Color(0xFFA78BFA);
+    const green = Color(0xFF34D399);
+    const amber = Color(0xFFFBBF24);
+    const red = Color(0xFFFB7185);
 
-    final primary = <_DashboardAction>[
-      _DashboardAction(Icons.download_rounded, 'تصدير ملف', exportFile, cyan),
-      _DashboardAction(Icons.archive_rounded, 'تصدير ZIP', exportProjectArchive, cyan),
-      _DashboardAction(Icons.unarchive_rounded, 'استيراد ZIP', importProjectArchive, green),
-      _DashboardAction(Icons.backup_rounded, 'نسخ احتياطي', exportProjectBackup, green),
-      _DashboardAction(Icons.settings_backup_restore_rounded, 'استعادة نسخة', restoreProjectBackup, green),
-      _DashboardAction(Icons.history_rounded, 'سجل النسخ', manageProjectBackups, green),
-      _DashboardAction(Icons.save_rounded, 'حفظ', saveCurrentToDisk, cyan),
-      _DashboardAction(Icons.create_new_folder_rounded, 'مشروع جديد', createNewProject, cyan),
-      _DashboardAction(Icons.folder_rounded, 'مشروع', openProjectFolder, cyan),
+    // Keep every existing command reachable; this is a presentation-only
+    // regrouping. Action callbacks and their underlying services are unchanged.
+    final projectActions = <_DashboardAction>[
+      _DashboardAction(Icons.create_new_folder_rounded, 'إنشاء مشروع', createNewProject, cyan),
+      _DashboardAction(Icons.folder_open_rounded, 'فتح مجلد مشروع', openProjectFolder, cyan),
+      _DashboardAction(Icons.workspaces_rounded, 'مدير المشاريع الذكي', showProjectManager, violet),
+      _DashboardAction(Icons.account_tree_rounded, 'GitHub وربط المستودع', _openGitHubManager, green),
       _DashboardAction(Icons.drive_folder_upload_rounded, 'استيراد مشروع', importExistingProject, green),
-      _DashboardAction(Icons.folder_open_rounded, 'فتح', openFile, cyan),
-      _DashboardAction(Icons.add_rounded, 'جديد', createNewTab, cyan),
+      _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, cyan),
+      _DashboardAction(Icons.file_open_rounded, 'فتح ملف', openFile, cyan),
+      _DashboardAction(Icons.save_rounded, 'حفظ الملف', saveCurrentToDisk, cyan),
+      _DashboardAction(Icons.save_as_rounded, 'حفظ جميع الملفات', saveAllTabs, green),
+      _DashboardAction(Icons.download_rounded, 'تصدير ملف', exportFile, blue),
+      _DashboardAction(Icons.archive_rounded, 'تصدير المشروع ZIP', exportProjectArchive, blue),
+      _DashboardAction(Icons.unarchive_rounded, 'استيراد مشروع ZIP', importProjectArchive, green),
+      _DashboardAction(Icons.backup_rounded, 'إنشاء نسخة احتياطية', exportProjectBackup, green),
+      _DashboardAction(Icons.settings_backup_restore_rounded, 'استعادة نسخة احتياطية', restoreProjectBackup, green),
+      _DashboardAction(Icons.history_rounded, 'سجل النسخ الاحتياطية', manageProjectBackups, green),
     ];
-    final tools = <_DashboardAction>[
-      _DashboardAction(Icons.search_rounded, 'بحث', searchCode, cyan),
-      _DashboardAction(Icons.find_replace_rounded, 'استبدال', () => searchCode(startInReplaceMode: true), violet),
+
+    final buildActions = <_DashboardAction>[
+      _DashboardAction(Icons.build_circle_rounded, 'مركز البناء والمحرك', openFlutterPreview, blue),
+    ];
+
+    final editingActions = <_DashboardAction>[
+      _DashboardAction(Icons.search_rounded, 'البحث في الكود', searchCode, cyan),
+      _DashboardAction(Icons.vertical_split_rounded, 'تقسيم المحرر', _openSplitEditor, violet),
+      _DashboardAction(Icons.find_replace_rounded, 'البحث والاستبدال', () => searchCode(startInReplaceMode: true), violet),
+      _DashboardAction(Icons.manage_search_rounded, 'بحث متقدم (Regex)', _openAdvancedSearch, cyan),
       _DashboardAction(Icons.undo_rounded, 'تراجع', undoCodeEdit, red),
       _DashboardAction(Icons.redo_rounded, 'إعادة', redoCodeEdit, green),
-    ];
-    final extras = <_DashboardAction>[
-      _DashboardAction(Icons.palette_rounded, 'تبديل الثيم', _showDashboardThemeInfo, green),
-      _DashboardAction(Icons.rocket_launch_rounded, 'أدوات سريعة', showCodeCompletions, violet),
-      _DashboardAction(Icons.analytics_rounded, 'تحليل الكود', _openDiagnosticsPanel, cyan),
-      _DashboardAction(Icons.health_and_safety_rounded, 'فحص المشروع', _openProjectInsightsPanel, green),
-      _DashboardAction(Icons.extension_rounded, 'إضافات', _showPluginsHub, blue),
-    ];
-    final allTools = <_DashboardAction>[
-      ...tools,
+      _DashboardAction(Icons.auto_awesome_rounded, 'الإكمال التلقائي', showCodeCompletions, violet),
       _DashboardAction(Icons.copy_all_rounded, 'تكرار الأسطر', duplicateSelectedLines, cyan),
       _DashboardAction(Icons.arrow_upward_rounded, 'نقل السطر لأعلى', moveCurrentLineUp, cyan),
       _DashboardAction(Icons.arrow_downward_rounded, 'نقل السطر لأسفل', moveCurrentLineDown, cyan),
-      _DashboardAction(Icons.comment_rounded, 'تعليق / إلغاء', toggleSelectedLineComments, green),
-      _DashboardAction(Icons.compare_arrows_rounded, 'القوس المطابق', jumpToMatchingBracket, cyan),
+      _DashboardAction(Icons.comment_rounded, 'تعليق أو إلغاء التعليق', toggleSelectedLineComments, green),
+      _DashboardAction(Icons.compare_arrows_rounded, 'الانتقال للقوس المطابق', jumpToMatchingBracket, cyan),
+      _DashboardAction(Icons.copy_rounded, 'نسخ الكود', copyCode, blue),
+      _DashboardAction(Icons.text_increase_rounded, 'تكبير خط المحرر', () => changeEditorFontSize(1), cyan),
+      _DashboardAction(Icons.text_decrease_rounded, 'تصغير خط المحرر', () => changeEditorFontSize(-1), cyan),
       _DashboardAction(Icons.difference_rounded, 'مقارنة النص', _openTextDiffDialog, violet),
-      _DashboardAction(Icons.copy_rounded, 'نسخ', copyCode, cyan),
-      _DashboardAction(Icons.text_increase_rounded, 'تكبير الخط', () => changeEditorFontSize(1), cyan),
-      _DashboardAction(Icons.text_decrease_rounded, 'تصغير الخط', () => changeEditorFontSize(-1), cyan),
-      _DashboardAction(Icons.vertical_align_bottom_rounded, 'لوحة المشكلات', _openDiagnosticsPanel, amber),
-      _DashboardAction(Icons.save_rounded, 'حفظ جميع الملفات', saveAllTabs, green),
-      _DashboardAction(Icons.settings_rounded, 'إعدادات مساحة العمل', _showWorkspaceSettings, green),
-      _DashboardAction(Icons.extension_rounded, 'اللغات المدعومة', _showLanguageCapabilities, cyan),
-      _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, cyan),
+    ];
+
+    final qualityActions = <_DashboardAction>[
+      _DashboardAction(Icons.auto_fix_high_rounded, 'مساعد إصلاح الأخطاء', _openDiagnosticsPanel, amber),
+      _DashboardAction(Icons.auto_fix_high_rounded, 'إصلاحات مقترحة بمعاينة', _openFixAssistant, amber),
+      _DashboardAction(Icons.format_align_left_rounded, 'تنسيق الكود', _openFormatPreview, cyan),
+      _DashboardAction(Icons.restore_rounded, 'سجل إصدارات الملف', _openVersionHistory, green),
+      _DashboardAction(Icons.health_and_safety_rounded, 'فحص جودة المشروع', _openProjectInsightsPanel, green),
+      _DashboardAction(Icons.extension_rounded, 'الإضافات والأدوات المدمجة', _showPluginsHub, blue),
+      _DashboardAction(Icons.account_tree_rounded, 'مستكشف شجرة Widgets', _openWidgetTreeInspector, cyan),
+      _DashboardAction(Icons.inventory_2_rounded, 'مدير حزم Flutter وDart', _openFlutterPackageManager, blue),
+      _DashboardAction(Icons.smart_toy_rounded, 'مساعد الكود المحلي', _openLocalCodeAssistant, violet),
+      _DashboardAction(Icons.code_rounded, 'اللغات والقدرات المدعومة', _showLanguageCapabilities, cyan),
+      _DashboardAction(Icons.info_outline_rounded, 'معلومات المحرر', _showEditorInfoDialog, blue),
+    ];
+
+    final preferenceActions = <_DashboardAction>[
+      _DashboardAction(Icons.tune_rounded, 'إعدادات مساحة العمل', _showWorkspaceSettings, blue),
+      _DashboardAction(Icons.palette_rounded, 'تبديل المظهر الفاتح والداكن', _showDashboardThemeInfo, violet),
+      _DashboardAction(Icons.bug_report_outlined, 'لوحة المشكلات', _openDiagnosticsPanel, amber),
+    ];
+
+    final allActions = <_DashboardAction>[
+      ...projectActions,
+      ...buildActions,
+      ...editingActions,
+      ...qualityActions,
+      ...preferenceActions,
     ];
 
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
-          colors: [Color(0xFF071329), Color(0xFF050B1B), Color(0xFF080D24)]),
-      ),
-      child: Stack(children: [
-        Positioned(left: -100, bottom: 10, child: Container(width: 260, height: 170,
-          decoration: BoxDecoration(shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: cyan.withValues(alpha: .20), blurRadius: 75, spreadRadius: 20)]))),
-        Positioned(right: -100, bottom: 0, child: Container(width: 260, height: 170,
-          decoration: BoxDecoration(shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: violet.withValues(alpha: .20), blurRadius: 75, spreadRadius: 20)]))),
-        Positioned(left: 0, right: 0, bottom: 0, height: 150,
-          child: IgnorePointer(child: CustomPaint(painter: _DashboardWavePainter()))),
-        ListView(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 22),
-          children: [
-            _dashboardFileStrip(tab),
-            const SizedBox(height: 12),
-            _dashboardGlowPanel(
-              child: SizedBox(
-                height: 112,
-                child: ListView.separated(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
-                  itemCount: primary.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
-                  itemBuilder: (context, index) => SizedBox(
-                    width: 82,
-                    child: _dashboardToolCard(primary[index]),
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 14),
-            GridView.builder(
-              shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-              itemCount: tools.length + 1,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 5, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: .90),
-              itemBuilder: (context, index) => index < tools.length
-                ? _dashboardToolCard(tools[index])
-                : _dashboardSquareAction(Icons.more_horiz_rounded, 'المزيد', violet, () => _showAllDashboardTools(allTools)),
-            ),
-            const SizedBox(height: 14),
-            GridView.builder(
-              shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-              itemCount: extras.length,
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: .98),
-              itemBuilder: (context, index) => _dashboardToolCard(extras[index]),
-            ),
-            const SizedBox(height: 18),
-            Row(children: [
-              Expanded(child: _dashboardSectionTitle(Icons.history_rounded, 'المشاريع الحديثة')),
-              _dashboardPillButton('عرض الكل', Icons.chevron_left_rounded, openProjectFolder),
-            ]),
-            const SizedBox(height: 9),
-            _dashboardProjectCard(
-              icon: Icons.folder_special_rounded,
-              title: projectName == 'لا يوجد مشروع' ? tab.fileName : projectName,
-              subtitle: projectUri ?? 'الملف الحالي • ${tab.language}',
-              onTap: projectUri != null ? openProjectFolder : _openEditorFullScreen,
-              accent: cyan,
-            ),
-            const SizedBox(height: 9),
-            _dashboardProjectCard(
-              icon: Icons.code_rounded, title: tab.fileName,
-              subtitle: 'الملف المفتوح حالياً • ${tab.language}',
-              onTap: _openEditorFullScreen, accent: violet,
-            ),
-            const SizedBox(height: 15),
-            _workspaceMetricsPanel(),
-            const SizedBox(height: 12),
-            _dashboardPanel(child: Row(children: [
-              const Icon(Icons.circle, color: green, size: 9),
-              const SizedBox(width: 9),
-              Expanded(child: Text(tab.isSaved ? 'جميع التغييرات محفوظة' : 'توجد تغييرات غير محفوظة',
-                style: const TextStyle(color: Color(0xFFDCE8F7), fontSize: 11))),
-              Text(tab.language, style: const TextStyle(color: cyan, fontWeight: FontWeight.w700)),
-              const SizedBox(width: 12),
-              Text('Ln ${tab.controller.selection.isValid ? tab.controller.selection.extentOffset : 1}',
-                style: const TextStyle(color: Color(0xFF9CB1D0), fontSize: 10)),
-            ])),
-          ],
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFF101D32), Color(0xFF0B1220), Color(0xFF080E19)],
+          stops: [0, .38, 1],
         ),
+      ),
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 30),
+        children: [
+          _dashboardFileStrip(tab),
+          if (_splitTabId != null) ...[
+            const SizedBox(height: 12),
+            _buildSplitEditorPanel(),
+          ],
+          const SizedBox(height: 13),
+          _dashboardHero(tab),
+          const SizedBox(height: 16),
+          _dashboardPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: cyan.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(13),
+                    ),
+                    child: const Icon(Icons.code_rounded, color: cyan, size: 23),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('مساحة العمل', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                      const SizedBox(height: 3),
+                      Text(
+                        projectName == 'لا يوجد مشروع' ? 'ابدأ مشروعاً جديداً أو افتح ملفاتك' : projectName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF9BAFCB)),
+                      ),
+                    ],
+                  )),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: tab.isSaved ? green.withValues(alpha: .12) : amber.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.circle, size: 7, color: tab.isSaved ? green : amber),
+                      const SizedBox(width: 6),
+                      Text(tab.isSaved ? 'محفوظ' : 'غير محفوظ',
+                        style: TextStyle(fontSize: 10, color: tab.isSaved ? green : amber, fontWeight: FontWeight.w700)),
+                    ]),
+                  ),
+                ]),
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(child: _dashboardProjectCard(
+                    icon: Icons.folder_special_rounded,
+                    title: projectName == 'لا يوجد مشروع' ? 'المشروع الحالي' : projectName,
+                    subtitle: projectUri ?? 'لا يوجد مجلد مشروع مرتبط حالياً',
+                    onTap: projectUri != null ? openProjectFolder : createNewProject,
+                    accent: cyan,
+                  )),
+                ]),
+                const SizedBox(height: 8),
+                _workspaceMetricsPanel(),
+              ],
+            ),
+          ),
+          const SizedBox(height: 18),
+          _dashboardActionSection(
+            icon: Icons.folder_copy_rounded,
+            title: 'المشاريع والملفات',
+            subtitle: 'إنشاء وفتح واستيراد وحفظ وتصدير ونسخ احتياطي',
+            actions: projectActions,
+            initiallyExpanded: true,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.build_circle_rounded,
+            title: 'البناء والمحرك المحلي والسحابي',
+            subtitle: 'إدارة المحرك وفحصه وتشغيل البناء ومتابعة APK',
+            actions: buildActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.edit_note_rounded,
+            title: 'أدوات تحرير الكود',
+            subtitle: 'البحث والتعديل والتنقل والإكمال وأدوات النص',
+            actions: editingActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.fact_check_rounded,
+            title: 'الفحص والأدوات',
+            subtitle: 'تحليل الكود وجودة المشروع واللغات والإضافات',
+            actions: qualityActions,
+          ),
+          const SizedBox(height: 16),
+          _dashboardActionSection(
+            icon: Icons.settings_rounded,
+            title: 'التفضيلات والإعدادات',
+            subtitle: 'تخصيص مساحة العمل ومظهر التطبيق',
+            actions: preferenceActions,
+          ),
+          const SizedBox(height: 14),
+          _dashboardPanel(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _dashboardSectionTitle(Icons.flash_on_rounded, 'بدء سريع'),
+                const SizedBox(height: 10),
+                LayoutBuilder(builder: (context, constraints) {
+                  final width = (constraints.maxWidth - 9) / 2;
+                  final quickActions = <_DashboardAction>[
+                    _DashboardAction(Icons.create_new_folder_rounded, 'مشروع جديد', createNewProject, cyan),
+                    _DashboardAction(Icons.folder_open_rounded, 'فتح مشروع', openProjectFolder, green),
+                    _DashboardAction(Icons.note_add_rounded, 'ملف جديد', createNewTab, blue),
+                    _DashboardAction(Icons.search_rounded, 'بحث في الكود', searchCode, violet),
+                  ];
+                  return Wrap(
+                    spacing: 9,
+                    runSpacing: 9,
+                    children: quickActions.map((action) => SizedBox(
+                      width: width,
+                      child: _dashboardFeatureCard(action),
+                    )).toList(),
+                  );
+                }),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _dashboardPanel(
+            child: Row(children: [
+              const Icon(Icons.insert_drive_file_outlined, color: cyan, size: 19),
+              const SizedBox(width: 9),
+              Expanded(child: Text(tab.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+              Text(tab.language, style: const TextStyle(color: cyan, fontSize: 11, fontWeight: FontWeight.w700)),
+              const SizedBox(width: 10),
+              Text('Ln ${cursorPosition.$1}, Col ${cursorPosition.$2}',
+                style: const TextStyle(color: Color(0xFF9BAFCB), fontSize: 10, fontFamily: 'monospace')),
+            ]),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: () => _showAllDashboardTools(allActions),
+            icon: const Icon(Icons.apps_rounded),
+            label: const Text('عرض جميع الأدوات في قائمة واحدة'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _dashboardHero(EditorTab tab) {
+    const cyan = Color(0xFF38BDF8);
+    const violet = Color(0xFFA78BFA);
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: const LinearGradient(
+          begin: Alignment.topRight,
+          end: Alignment.bottomLeft,
+          colors: [Color(0xFF173D61), Color(0xFF18264B), Color(0xFF251D49)],
+        ),
+        border: Border.all(color: const Color(0xFF47739C).withValues(alpha: .65)),
+        boxShadow: const [BoxShadow(color: Color(0x26038BCE), blurRadius: 22, offset: Offset(0, 8))],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(width: 46, height: 46,
+            decoration: BoxDecoration(color: Colors.white.withValues(alpha: .10), borderRadius: BorderRadius.circular(15)),
+            child: const Icon(Icons.terminal_rounded, color: cyan, size: 27)),
+          const SizedBox(width: 12),
+          const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('مرحباً بك في Bisho IDE', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+            SizedBox(height: 4),
+            Text('بيئة عملك البرمجية — أنشئ، حرّر، وابنِ تطبيقاتك', maxLines: 2,
+              style: TextStyle(color: Color(0xFFC5D8EF), fontSize: 11, height: 1.35)),
+          ])),
+          Container(width: 9, height: 9, decoration: const BoxDecoration(color: Color(0xFF34D399), shape: BoxShape.circle)),
+        ]),
+        const SizedBox(height: 17),
+        Row(children: [
+          Expanded(child: _heroMetric(Icons.folder_special_rounded, 'المشروع', projectName == 'لا يوجد مشروع' ? 'غير محدد' : projectName)),
+          const SizedBox(width: 8),
+          Expanded(child: _heroMetric(Icons.description_rounded, 'الملف المفتوح', tab.fileName)),
+          const SizedBox(width: 8),
+          Expanded(child: _heroMetric(Icons.code_rounded, 'اللغة', tab.language)),
+        ]),
+        const SizedBox(height: 16),
+        Row(children: [
+          Expanded(child: FilledButton.icon(
+            onPressed: projectUri == null ? createNewProject : openProjectFolder,
+            icon: Icon(projectUri == null ? Icons.add_rounded : Icons.folder_open_rounded, size: 18),
+            label: Text(projectUri == null ? 'ابدأ مشروعاً' : 'فتح المشروع'),
+            style: FilledButton.styleFrom(backgroundColor: cyan, foregroundColor: const Color(0xFF06243A),
+              minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
+          const SizedBox(width: 9),
+          Expanded(child: OutlinedButton.icon(
+            onPressed: createNewTab,
+            icon: const Icon(Icons.note_add_rounded, size: 18),
+            label: const Text('ملف جديد'),
+            style: OutlinedButton.styleFrom(foregroundColor: Colors.white, side: const BorderSide(color: Color(0xFF7897BC)),
+              minimumSize: const Size(0, 44), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          )),
+        ]),
+        const SizedBox(height: 10),
+        Row(children: [
+          Icon(Icons.tips_and_updates_outlined, size: 14, color: violet),
+          const SizedBox(width: 6),
+          Expanded(child: Text(tab.isSaved ? 'مساحة العمل جاهزة — جميع التغييرات محفوظة' : 'لديك تغييرات غير محفوظة في الملف الحالي',
+            style: TextStyle(color: tab.isSaved ? const Color(0xFFB8F5DC) : const Color(0xFFFFD58A), fontSize: 10.5))),
+        ]),
       ]),
     );
   }
 
-  Widget _dashboardFileStrip(EditorTab tab) => Container(
-    height: 54, padding: const EdgeInsets.symmetric(horizontal: 10),
-    decoration: BoxDecoration(color: const Color(0xFF0A1428).withValues(alpha: .88),
-      border: Border(bottom: BorderSide(color: const Color(0xFF147DBB).withValues(alpha: .55)))),
-    child: Row(children: [
-      IconButton(onPressed: createNewTab, icon: const Icon(Icons.add, color: Color(0xFF08B9F4), size: 30)),
-      const Spacer(),
-      const Icon(Icons.close, color: Color(0xFF9AAAC4), size: 18),
-      const SizedBox(width: 9),
-      Text(tab.fileName, style: const TextStyle(color: Color(0xFFE7EFFB), fontSize: 14)),
-      const SizedBox(width: 10),
-      const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF08B9F4)),
+  Widget _heroMetric(IconData icon, String label, String value) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 9),
+    decoration: BoxDecoration(color: Colors.black.withValues(alpha: .16), borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: Colors.white.withValues(alpha: .09))),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [Icon(icon, size: 13, color: const Color(0xFF8DDCFF)), const SizedBox(width: 5),
+        Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: Color(0xFFB8CBE1), fontSize: 9)))]),
+      const SizedBox(height: 5),
+      Text(value, maxLines: 1, overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700)),
     ]),
   );
 
+  Widget _dashboardActionSection({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required List<_DashboardAction> actions,
+    bool initiallyExpanded = false,
+  }) {
+    return _dashboardPanel(
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          splashColor: const Color(0xFF38BDF8).withValues(alpha: .06),
+          highlightColor: Colors.transparent,
+        ),
+        child: ExpansionTile(
+          initiallyExpanded: initiallyExpanded,
+          maintainState: true,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 8, bottom: 4),
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF38BDF8).withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(11),
+            ),
+            child: Icon(icon, color: const Color(0xFF38BDF8), size: 20),
+          ),
+          title: Text(title, style: const TextStyle(
+            color: Color(0xFFE5EDF7), fontSize: 13, fontWeight: FontWeight.w700)),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
+          ),
+          children: [
+            LayoutBuilder(builder: (context, constraints) {
+              final width = (constraints.maxWidth - 9) / 2;
+              return Wrap(
+                spacing: 9,
+                runSpacing: 9,
+                children: [
+                  for (final action in actions)
+                    SizedBox(width: width, child: _dashboardFeatureCard(action)),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardFeatureCard(_DashboardAction action) {
+    return Material(
+      color: const Color(0xFF17263A),
+      borderRadius: BorderRadius.circular(14),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: action.onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 72),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: const Color(0xFF344B68)),
+          ),
+          child: Row(children: [
+            Container(
+              width: 35,
+              height: 35,
+              decoration: BoxDecoration(
+                color: action.color.withValues(alpha: .13),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(action.icon, color: action.color, size: 19),
+            ),
+            const SizedBox(width: 8),
+            Expanded(child: Text(
+              action.label,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.start,
+              style: const TextStyle(color: Color(0xFFE5EDF7), fontSize: 11, height: 1.28, fontWeight: FontWeight.w600),
+            )),
+            const Icon(Icons.chevron_left_rounded, size: 17, color: Color(0xFF71839D)),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _dashboardFileStrip(EditorTab tab) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+    decoration: BoxDecoration(
+      color: const Color(0xFF111D30),
+      borderRadius: BorderRadius.circular(15),
+      border: Border.all(color: const Color(0xFF26374E)),
+    ),
+    child: Row(children: [
+      Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: const Color(0xFF38BDF8).withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: const Icon(Icons.insert_drive_file_rounded, color: Color(0xFF38BDF8)),
+      ),
+      const SizedBox(width: 10),
+      Expanded(child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('الملف النشط', style: TextStyle(fontSize: 9, color: Color(0xFF94A3B8))),
+          const SizedBox(height: 3),
+          Text(tab.fileName, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Color(0xFFE7EFFB), fontSize: 12, fontWeight: FontWeight.w700)),
+        ],
+      )),
+      IconButton(
+        tooltip: 'إنشاء تبويب جديد',
+        onPressed: createNewTab,
+        icon: const Icon(Icons.add_circle_outline_rounded, color: Color(0xFF38BDF8), size: 25),
+      ),
+    ]),
+  );
+
+  // ignore: unused_element
   Widget _dashboardGlowPanel({required Widget child}) => Container(
     padding: const EdgeInsets.all(9),
     decoration: BoxDecoration(borderRadius: BorderRadius.circular(25),
@@ -4981,6 +7014,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       child: child),
   );
 
+  // ignore: unused_element
   Widget _dashboardSquareAction(IconData icon, String label, Color color, VoidCallback onTap) =>
     Material(color: const Color(0xFF111E37), borderRadius: BorderRadius.circular(19),
       child: InkWell(onTap: onTap, borderRadius: BorderRadius.circular(19),
@@ -4991,6 +7025,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
             Text(label, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
           ]))));
 
+  // ignore: unused_element
   Widget _dashboardPillButton(String label, IconData icon, VoidCallback onTap) =>
     OutlinedButton.icon(onPressed: onTap, icon: Icon(icon, size: 19), label: Text(label),
       style: OutlinedButton.styleFrom(foregroundColor: const Color(0xFFDCE8F7),
@@ -5047,10 +7082,10 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                               itemCount: filtered.length,
                               gridDelegate:
                                   const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 3,
-                                crossAxisSpacing: 9,
-                                mainAxisSpacing: 9,
-                                childAspectRatio: 1.15,
+                                crossAxisCount: 2,
+                                 crossAxisSpacing: 10,
+                                 mainAxisSpacing: 10,
+                                 childAspectRatio: 1.65,
                               ),
                               itemBuilder: (_, index) {
                                 final action = filtered[index];
@@ -5077,27 +7112,25 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     final metrics = WorkspaceMetrics.fromSources(
       tabs.map((tab) => tab.controller.text),
     );
-    return _dashboardPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _dashboardSectionTitle(Icons.insights_rounded, 'ملخص مساحة العمل'),
-          const SizedBox(height: 11),
-          Row(
-            children: [
-              _metricTile('التبويبات', metrics.fileCount.toString(), Icons.tab),
-              _metricTile('الأسطر', metrics.lineCount.toString(), Icons.format_align_left),
-              _metricTile('الكلمات', metrics.wordCount.toString(), Icons.text_fields),
-              _metricTile('الأحرف', metrics.characterCount.toString(), Icons.notes),
-            ],
-          ),
-          const SizedBox(height: 7),
-          Text(
-            'الإحصائيات محسوبة من محتوى التبويبات المفتوحة فقط',
-            style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 10),
-          ),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _dashboardSectionTitle(Icons.insights_rounded, 'ملخص مساحة العمل'),
+        const SizedBox(height: 11),
+        Row(
+          children: [
+            _metricTile('التبويبات', metrics.fileCount.toString(), Icons.tab),
+            _metricTile('الأسطر', metrics.lineCount.toString(), Icons.format_align_left),
+            _metricTile('الكلمات', metrics.wordCount.toString(), Icons.text_fields),
+            _metricTile('الأحرف', metrics.characterCount.toString(), Icons.notes),
+          ],
+        ),
+        const SizedBox(height: 7),
+        Text(
+          'الإحصائيات محسوبة من محتوى التبويبات المفتوحة فقط',
+          style: TextStyle(color: Colors.white.withValues(alpha: .48), fontSize: 10),
+        ),
+      ],
     );
   }
 
@@ -5217,65 +7250,197 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   void _openProjectInsightsPanel() {
     final files = <String, String>{};
     for (final tab in tabs) {
-      final path = tab.fileName.replaceAll('\\', '/');
+      final path = tab.fileName.replaceAll('\\\\', '/');
       if (path.isNotEmpty && !files.containsKey(path)) {
         files[path] = tab.controller.text;
       }
     }
     final report = const ProjectInsightsAnalyzer().analyze(files);
+    ProjectInsightCategory? selectedCategory;
+
+    String categoryLabel(ProjectInsightCategory category) {
+      switch (category) {
+        case ProjectInsightCategory.structure:
+          return 'هيكل المشروع';
+        case ProjectInsightCategory.imports:
+          return 'الاستيرادات';
+        case ProjectInsightCategory.maintenance:
+          return 'الصيانة';
+        case ProjectInsightCategory.security:
+          return 'الأمان';
+        case ProjectInsightCategory.dependencies:
+          return 'الحزم';
+        case ProjectInsightCategory.style:
+          return 'تنسيق الكود';
+      }
+    }
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * .72,
-          child: Column(children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
-              child: Row(children: [
-                const Icon(Icons.health_and_safety_rounded, color: Color(0xFF19D889)),
-                const SizedBox(width: 9),
-                const Expanded(child: Text('فحص جودة المشروع', style: TextStyle(fontWeight: FontWeight.w700))),
-                Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
-                    style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                IconButton(onPressed: () => Navigator.pop(sheetContext), icon: const Icon(Icons.close)),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, refreshSheet) {
+          final visibleInsights = report.insights.where((issue) =>
+              selectedCategory == null || issue.category == selectedCategory).toList();
+          final categories = ProjectInsightCategory.values
+              .where((category) => report.insights.any((issue) => issue.category == category))
+              .toList();
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .78,
+              child: Column(children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 12),
+                  child: Row(children: [
+                    const Icon(Icons.health_and_safety_rounded, color: Color(0xFF19D889)),
+                    const SizedBox(width: 9),
+                    const Expanded(child: Text('فحص الملفات المفتوحة',
+                      style: TextStyle(fontWeight: FontWeight.w800))),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF38BDF8).withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(20)),
+                      child: Text('${report.filesScanned} ملف · ${report.linesScanned} سطر',
+                        style: const TextStyle(fontSize: 10, color: Color(0xFF38BDF8),
+                          fontWeight: FontWeight.w700)),
+                    ),
+                    IconButton(onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close)),
+                  ]),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('تحليل محلي للملفات المفتوحة فقط — لا يتم تعديل أي ملف.',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                  )),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  child: Row(children: [
+                    _insightCount('أخطاء', report.count(ProjectInsightSeverity.error),
+                      const Color(0xFFFF647C)),
+                    _insightCount('تحذيرات', report.count(ProjectInsightSeverity.warning),
+                      const Color(0xFFFFC247)),
+                    _insightCount('ملاحظات', report.count(ProjectInsightSeverity.info),
+                      const Color(0xFF38BDF8)),
+                  ])),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 2),
+                  child: Row(children: [
+                    const Icon(Icons.speed_rounded, size: 17, color: Color(0xFF38BDF8)),
+                    const SizedBox(width: 7),
+                    const Expanded(child: Text('مؤشر جودة إرشادي للملفات المفتوحة',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)))),
+                    Text('${report.qualityScore}/100 · ${report.qualityLabel}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
+                        color: report.qualityScore >= 90
+                            ? const Color(0xFF19D889)
+                            : report.qualityScore >= 75
+                                ? const Color(0xFFFFC247)
+                                : const Color(0xFFFF647C))),
+                  ]),
+                ),
+                if (categories.isNotEmpty)
+                  SizedBox(
+                    height: 48,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      children: [
+                        Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: const Text('الكل'),
+                            selected: selectedCategory == null,
+                            onSelected: (_) => refreshSheet(() => selectedCategory = null),
+                          ),
+                        ),
+                        ...categories.map((category) => Padding(
+                          padding: const EdgeInsetsDirectional.only(end: 6),
+                          child: ChoiceChip(
+                            label: Text(categoryLabel(category)),
+                            selected: selectedCategory == category,
+                            onSelected: (_) => refreshSheet(
+                              () => selectedCategory = category),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ),
+                const Divider(height: 12),
+                Expanded(
+                  child: visibleInsights.isEmpty
+                      ? const Center(child: Text('لا توجد ملاحظات في هذا التصنيف.'))
+                      : ListView.separated(
+                          itemCount: visibleInsights.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (_, index) {
+                            final issue = visibleInsights[index];
+                            final color = issue.severity == ProjectInsightSeverity.error
+                                ? const Color(0xFFFF647C)
+                                : issue.severity == ProjectInsightSeverity.warning
+                                    ? const Color(0xFFFFC247)
+                                    : const Color(0xFF38BDF8);
+                            EditorTab? matchingTab;
+                            for (final candidate in tabs) {
+                              if (candidate.fileName.replaceAll('\\\\', '/') == issue.path) {
+                                matchingTab = candidate;
+                                break;
+                              }
+                            }
+                            final targetTab = matchingTab;
+                            final canNavigate = targetTab != null && issue.line > 0;
+
+                            return ListTile(
+                              dense: true,
+                              leading: Icon(
+                                issue.severity == ProjectInsightSeverity.error
+                                    ? Icons.error_outline
+                                    : issue.severity == ProjectInsightSeverity.warning
+                                        ? Icons.warning_amber_rounded
+                                        : Icons.info_outline,
+                                color: color),
+                              title: Text(issue.message,
+                                style: const TextStyle(fontSize: 12)),
+                              subtitle: Text(
+                                issue.line > 0 ? '${issue.path}:${issue.line}' : issue.path,
+                                style: const TextStyle(fontSize: 10,
+                                  color: Color(0xFF94A3B8))),
+                              trailing: canNavigate
+                                  ? const Icon(Icons.my_location_outlined,
+                                      size: 17, color: Color(0xFF38BDF8))
+                                  : null,
+                              onTap: canNavigate ? () {
+                                                                final offset = EditorDiagnosticNavigation.offsetForLineColumn(
+                                  targetTab.controller.text, issue.line, 1);
+                                if (offset == null) return;
+                                final tabIndex = tabs.indexOf(targetTab);
+                                Navigator.pop(sheetContext);
+                                setState(() {
+                                  activeIndex = tabIndex;
+                                  targetTab.controller.selection =
+                                      TextSelection.collapsed(offset: offset);
+                                });
+                                _scheduleTabStateSave();
+                              } : null,
+                            );
+                          },
+                        ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Text(
+                    'الفحص يغطي التبويبات المفتوحة فقط. اضغط على التشخيص ذي الموقع للانتقال إليه.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
+                  )),
               ]),
             ),
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 14), child: Row(children: [
-              _insightCount('أخطاء', report.count(ProjectInsightSeverity.error), const Color(0xFFFF647C)),
-              _insightCount('تحذيرات', report.count(ProjectInsightSeverity.warning), const Color(0xFFFFC247)),
-              _insightCount('ملاحظات', report.count(ProjectInsightSeverity.info), const Color(0xFF38BDF8)),
-            ])),
-            const Divider(height: 18),
-            Expanded(child: report.insights.isEmpty
-                ? const Center(child: Text('لا توجد ملاحظات في الملفات المفتوحة.'))
-                : ListView.separated(
-                    itemCount: report.insights.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, index) {
-                      final issue = report.insights[index];
-                      final color = issue.severity == ProjectInsightSeverity.error
-                          ? const Color(0xFFFF647C)
-                          : issue.severity == ProjectInsightSeverity.warning
-                              ? const Color(0xFFFFC247) : const Color(0xFF38BDF8);
-                      return ListTile(
-                        dense: true,
-                        leading: Icon(issue.severity == ProjectInsightSeverity.error
-                            ? Icons.error_outline : issue.severity == ProjectInsightSeverity.warning
-                                ? Icons.warning_amber_rounded : Icons.info_outline, color: color),
-                        title: Text(issue.message, style: const TextStyle(fontSize: 12)),
-                        subtitle: Text(issue.line > 0 ? '${issue.path}:${issue.line}' : issue.path,
-                            style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
-                      );
-                    },
-                  )),
-            const Padding(padding: EdgeInsets.all(10), child: Text(
-              'الفحص يغطي التبويبات المفتوحة فقط ولا يغيّر أي ملف. نتائج الاستيراد والتحذيرات إرشادية.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8)),
-            )),
-          ]),
-        ),
+          );
+        },
       ),
     );
   }
@@ -5291,6 +7456,113 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       ]),
     ),
   );
+
+  String _diagnosticAdvice(String message) {
+    final value = message.toLowerCase();
+    if (value.contains('قوس') || value.contains('bracket') ||
+        value.contains('parenthesis') || value.contains('delimiter')) {
+      return 'راجع أقواس الفتح والإغلاق بالترتيب، وتأكد أن كل قوس له نظير من النوع نفسه.';
+    }
+    if (value.contains('اقتباس') || value.contains('string') ||
+        value.contains('quote') || value.contains('علامة تنصيص')) {
+      return 'تحقق من إغلاق علامات التنصيص، ومن عدم وجود علامة اقتباس غير مهروبة داخل النص.';
+    }
+    if (value.contains('استيراد') || value.contains('import') ||
+        value.contains('package:')) {
+      return 'تحقق من اسم الحزمة ومسار الملف، وتأكد من وجود الاعتماد في pubspec.yaml عند الحاجة.';
+    }
+    if (value.contains('نقطة فاصلة') || value.contains('semicolon') ||
+        value.contains('الفاصلة المنقوطة')) {
+      return 'راجع نهاية التعليمة؛ بعض اللغات تتطلب فاصلة منقوطة وبعضها لا يتطلبها.';
+    }
+    if (value.contains('indent') || value.contains('مسافة بادئة') ||
+        value.contains('إزاحة')) {
+      return 'وحّد المسافات البادئة داخل الكتلة، وتأكد من تطابق مستوى الإزاحة مع الأقواس.';
+    }
+    if (value.contains('غير معروف') || value.contains('unexpected') ||
+        value.contains('unexpected token')) {
+      return 'راجع الرمز السابق لموضع المشكلة؛ قد يكون هناك عامل أو فاصلة أو قوس مفقود.';
+    }
+    return 'اقرأ رسالة الفحص وحدد أول موضع غير متوقع، ثم راجع السطر السابق والسياق المحيط قبل تعديل الملف.';
+  }
+
+  void _applyAssistantText(EditorTab tab, String value, String message) {
+    if (!mounted || !tabs.contains(tab)) return;
+    final caret = tab.controller.selection.baseOffset.clamp(0, value.length).toInt();
+    tab.controller.value = TextEditingValue(
+      text: value,
+      selection: TextSelection.collapsed(offset: caret),
+    );
+    setState(() {
+      tab.isSaved = false;
+      status = message;
+    });
+    showMessage(message);
+  }
+
+  void _openAdvancedSearch() {
+    final tab = activeTab;
+    showAdvancedSearchSheet(
+      context,
+      fileName: tab.fileName,
+      text: tab.controller.text,
+      onJump: (start, end) {
+        if (!mounted || !tabs.contains(tab)) return;
+        final length = tab.controller.text.length;
+        tab.controller.selection = TextSelection(
+          baseOffset: start.clamp(0, length).toInt(),
+          extentOffset: end.clamp(0, length).toInt(),
+        );
+      },
+      onReplace: (value) =>
+          _applyAssistantText(tab, value, 'تم الاستبدال؛ يمكنك التراجع'),
+    );
+  }
+
+  void _openFixAssistant() {
+    final tab = activeTab;
+    showFixAssistantSheet(
+      context,
+      fileName: tab.fileName,
+      source: tab.controller.text,
+      language: tab.language,
+      onApply: (value) =>
+          _applyAssistantText(tab, value, 'تم تطبيق الإصلاحات المختارة'),
+    );
+  }
+
+  void _openFormatPreview() {
+    final tab = activeTab;
+    showFormatPreviewSheet(
+      context,
+      fileName: tab.fileName,
+      source: tab.controller.text,
+      language: tab.language,
+      onApply: (value) => _applyAssistantText(tab, value, 'تم تنسيق الكود'),
+    );
+  }
+
+  Future<void> _openVersionHistory() async {
+    final tab = activeTab;
+    final history = await _ensureVersionHistory();
+    if (!mounted) return;
+    if (history == null) {
+      showMessage('تعذر الوصول إلى مساحة سجل الإصدارات');
+      return;
+    }
+    await showVersionHistorySheet(
+      context,
+      history: history,
+      historyKey: _versionKeyFor(tab),
+      fileName: tab.fileName,
+      currentText: tab.controller.text,
+      onRestore: (value) => _applyAssistantText(
+        tab,
+        value,
+        'تمت استعادة الإصدار؛ احفظ الملف لتثبيته',
+      ),
+    );
+  }
 
   void _openDiagnosticsPanel() {
     final tab = activeTab;
@@ -5321,6 +7593,25 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                       maxLines: 1, overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w700))),
                     Text('${diagnostics.length}', style: const TextStyle(color: Color(0xFF94A3B8))),
+                    IconButton(
+                      tooltip: 'نسخ تقرير المشكلات ونصائح الإصلاح',
+                      onPressed: () async {
+                        final report = diagnostics.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final message = entry.value;
+                          if (index >= parserCount) {
+                            final issue = structural[index - parserCount];
+                            return '${issue.line}:${issue.column} — ${issue.message}\n${_diagnosticAdvice(issue.message)}';
+                          }
+                          return '$message\n${_diagnosticAdvice(message)}';
+                        }).join('\n\n');
+                        await Clipboard.setData(ClipboardData(
+                          text: report.isEmpty ? 'لا توجد مشكلات في الفحص الحالي.' : report,
+                        ));
+                        if (mounted) showMessage('تم نسخ تقرير المشكلات ونصائح الإصلاح');
+                      },
+                      icon: const Icon(Icons.copy_all_rounded),
+                    ),
                     IconButton(onPressed: () => Navigator.pop(sheetContext),
                       icon: const Icon(Icons.close)),
                   ],
@@ -5339,7 +7630,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                               dense: true,
                               leading: const Icon(Icons.error_outline, color: Colors.orange),
                               title: Text(diagnostics[index], style: const TextStyle(fontSize: 12)),
-                              subtitle: const Text('نتيجة محلل البيانات المحلي'),
+                              subtitle: Text('فحص محلي\n${_diagnosticAdvice(diagnostics[index])}', maxLines: 3, overflow: TextOverflow.ellipsis),
                             );
                           }
                           final issue = structural[index - parserCount];
@@ -5347,7 +7638,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                             dense: true,
                             leading: const Icon(Icons.warning_amber_rounded, color: Colors.amber),
                             title: Text(issue.message, style: const TextStyle(fontSize: 12)),
-                            subtitle: Text('السطر ${issue.line}، العمود ${issue.column}'),
+                            subtitle: Text('السطر ${issue.line}، العمود ${issue.column}\n${_diagnosticAdvice(issue.message)}', maxLines: 3, overflow: TextOverflow.ellipsis),
                             trailing: const Icon(Icons.my_location, size: 17),
                             onTap: () {
                               final offset = issue.offset
@@ -5398,24 +7689,44 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
                   IconButton(onPressed: () => Navigator.pop(sheetContext, false),
                     icon: const Icon(Icons.close)),
                 ]),
-                const SizedBox(height: 12),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: const Text('إظهار مستكشف الملفات'),
-                  value: draftExplorerVisible,
-                  onChanged: (value) => refreshSheet(() => draftExplorerVisible = value),
+                const SizedBox(height: 14),
+                _dashboardPanel(
+                  child: SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    secondary: const Icon(Icons.folder_copy_rounded, color: Color(0xFF38BDF8)),
+                    title: const Text('إظهار مستكشف الملفات',
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                    subtitle: const Text('عرض شجرة ملفات المشروع بجانب مساحة العمل',
+                      style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                    value: draftExplorerVisible,
+                    onChanged: (value) => refreshSheet(() => draftExplorerVisible = value),
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Row(children: [
-                  const Expanded(child: Text('حجم خط المحرر')),
-                  Text('${draftFontSize.round()} px', style: const TextStyle(color: Color(0xFF38BDF8))),
-                ]),
-                Slider(
-                  min: 10, max: 24, divisions: 14,
-                  value: draftFontSize,
-                  onChanged: (value) => refreshSheet(() => draftFontSize = value),
+                const SizedBox(height: 10),
+                _dashboardPanel(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        const Icon(Icons.text_fields_rounded, color: Color(0xFF38BDF8)),
+                        const SizedBox(width: 9),
+                        const Expanded(child: Text('حجم خط المحرر',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13))),
+                        Text('${draftFontSize.round()} px',
+                          style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                      ]),
+                      const SizedBox(height: 5),
+                      const Text('اضبط حجم النص لتسهيل القراءة والكتابة',
+                        style: TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                      Slider(
+                        min: 10, max: 24, divisions: 14,
+                        value: draftFontSize,
+                        onChanged: (value) => refreshSheet(() => draftFontSize = value),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
                 SizedBox(width: double.infinity, child: FilledButton.icon(
                   onPressed: () => Navigator.pop(sheetContext, true),
                   icon: const Icon(Icons.save_rounded), label: const Text('حفظ الإعدادات'),
@@ -5436,11 +7747,11 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }
 
   Widget _dashboardPanel({required Widget child}) => Container(
-    padding: const EdgeInsets.all(12),
+    padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: const Color(0xFF151F30),
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFF29384D), width: 1),
+      color: const Color(0xFF131F30),
+      borderRadius: BorderRadius.circular(18),
+      border: Border.all(color: const Color(0xFF30445E), width: 1),
     ),
     child: child,
   );
@@ -5517,61 +7828,36 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
     );
 
   void _showDashboardThemeInfo() {
-    BishoThemeController.toggle();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('تم تبديل الثيم')),
-    );
-  }
-
-  void _showPluginsHub() {
-    final actions = <_DashboardAction>[
-      _DashboardAction(Icons.data_object_rounded, 'تنسيق JSON', () => _runEditorExtension('json_format'), const Color(0xFF08B9F4)),
-      _DashboardAction(Icons.compress_rounded, 'ضغط JSON', () => _runEditorExtension('json_minify'), const Color(0xFF8B42F5)),
-      _DashboardAction(Icons.lock_rounded, 'ترميز Base64', () => _runEditorExtension('base64_encode'), const Color(0xFF19D889)),
-      _DashboardAction(Icons.lock_open_rounded, 'فك Base64', () => _runEditorExtension('base64_decode'), const Color(0xFFFFC247)),
-      _DashboardAction(Icons.link_rounded, 'ترميز URL', () => _runEditorExtension('url_encode'), const Color(0xFF08B9F4)),
-      _DashboardAction(Icons.link_off_rounded, 'فك URL', () => _runEditorExtension('url_decode'), const Color(0xFF247BFF)),
-      _DashboardAction(Icons.sort_by_alpha_rounded, 'ترتيب الأسطر', () => _runEditorExtension('sort_lines'), const Color(0xFF8B42F5)),
-      _DashboardAction(Icons.filter_alt_rounded, 'حذف الأسطر المكررة', () => _runEditorExtension('unique_lines'), const Color(0xFF19D889)),
-    ];
-
     showModalBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
+      showDragHandle: true,
       builder: (sheetContext) => SafeArea(
-        child: SizedBox(
-          height: MediaQuery.of(sheetContext).size.height * .72,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-                child: Row(children: [
-                  const Icon(Icons.extension_rounded, color: Color(0xFF38BDF8)),
-                  const SizedBox(width: 9),
-                  const Expanded(child: Text('إضافات وأدوات مدمجة',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-                  IconButton(onPressed: () => Navigator.pop(sheetContext),
-                    icon: const Icon(Icons.close)),
-                ]),
-              ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: Align(alignment: Alignment.centerRight,
-                  child: Text('أدوات محلية تعمل مباشرة على محتوى الملف الحالي',
-                    style: TextStyle(color: Color(0xFF94A3B8), fontSize: 11))),
-              ),
-              Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(14, 4, 14, 18),
-                  itemCount: actions.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2, crossAxisSpacing: 10, mainAxisSpacing: 10,
-                    childAspectRatio: 1.55),
-                  itemBuilder: (_, index) => _dashboardToolCard(_DashboardAction(
-                    actions[index].icon, actions[index].label, () {
-                      Navigator.pop(sheetContext);
-                      actions[index].onTap();
-                    }, actions[index].color)),
+              const Text('مظهر التطبيق',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 5),
+              const Text('اختر المظهر المناسب، وسيُحفظ اختيارك تلقائيًا.',
+                style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8))),
+              const SizedBox(height: 14),
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: BishoThemeController.mode,
+                builder: (context, mode, _) => Column(
+                  children: [
+                    _themeModeTile(sheetContext, ThemeMode.system, mode,
+                      Icons.brightness_auto_rounded, 'حسب إعدادات الجهاز',
+                      'يتبع الوضع الفاتح أو الداكن في Android'),
+                    _themeModeTile(sheetContext, ThemeMode.dark, mode,
+                      Icons.dark_mode_rounded, 'داكن',
+                      'ألوان مريحة للعمل في الإضاءة المنخفضة'),
+                    _themeModeTile(sheetContext, ThemeMode.light, mode,
+                      Icons.light_mode_rounded, 'فاتح',
+                      'واجهة واضحة في الإضاءة القوية'),
+                  ],
                 ),
               ),
             ],
@@ -5579,6 +7865,289 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
         ),
       ),
     );
+  }
+
+  Widget _themeModeTile(
+    BuildContext sheetContext,
+    ThemeMode value,
+    ThemeMode selected,
+    IconData icon,
+    String title,
+    String subtitle,
+  ) {
+    final active = value == selected;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Material(
+        color: active
+            ? Theme.of(context).colorScheme.primary.withValues(alpha: .10)
+            : Theme.of(context).colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(13),
+        child: ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(13),
+            side: BorderSide(
+              color: active ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          leading: Icon(icon, color: active
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.onSurfaceVariant),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+          subtitle: Text(subtitle, style: const TextStyle(fontSize: 10)),
+          trailing: active
+              ? Icon(Icons.check_circle_rounded,
+                  color: Theme.of(context).colorScheme.primary)
+              : const Icon(Icons.circle_outlined),
+          onTap: () async {
+            await BishoThemeController.set(value);
+            if (sheetContext.mounted) Navigator.pop(sheetContext);
+          },
+        ),
+      ),
+    );
+  }
+
+  static const String _enabledExtensionsKey = 'bisho_enabled_editor_extensions_v1';
+  static const String _customExtensionsKey = 'bisho_custom_editor_extensions_v1';
+
+  Future<void> _showPluginsHub() async {
+    final entries = <_EditorExtensionEntry>[
+      _EditorExtensionEntry('json_format', 'تنسيق JSON', 'ترتيب المسافات وإظهار بنية JSON بوضوح', 'تنسيق البيانات', Icons.data_object_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('json_minify', 'ضغط JSON', 'إزالة المسافات غير الضرورية لتقليل الحجم', 'تنسيق البيانات', Icons.compress_rounded, const Color(0xFF8B42F5)),
+      _EditorExtensionEntry('base64_encode', 'ترميز Base64', 'تحويل النص إلى Base64', 'الترميز والتحويل', Icons.lock_rounded, const Color(0xFF19D889)),
+      _EditorExtensionEntry('base64_decode', 'فك Base64', 'استعادة النص من Base64', 'الترميز والتحويل', Icons.lock_open_rounded, const Color(0xFFFFC247)),
+      _EditorExtensionEntry('url_encode', 'ترميز URL', 'تهيئة النص للاستخدام داخل عناوين URL', 'الترميز والتحويل', Icons.link_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('url_decode', 'فك URL', 'فك ترميز النص الموجود داخل عنوان URL', 'الترميز والتحويل', Icons.link_off_rounded, const Color(0xFF247BFF)),
+      _EditorExtensionEntry('sort_lines', 'ترتيب الأسطر', 'ترتيب الأسطر أبجدياً داخل التحديد أو الملف', 'تحرير النص', Icons.sort_by_alpha_rounded, const Color(0xFF8B42F5)),
+      _EditorExtensionEntry('unique_lines', 'حذف الأسطر المكررة', 'إزالة الأسطر المتكررة مع الاحتفاظ بأول ظهور', 'تحرير النص', Icons.filter_alt_rounded, const Color(0xFF19D889)),
+      _EditorExtensionEntry('trim_trailing_whitespace', 'تنظيف نهايات الأسطر', 'إزالة المسافات وعلامات الجدولة غير الضرورية من نهاية كل سطر', 'تنظيف النص', Icons.cleaning_services_rounded, const Color(0xFF08B9F4)),
+      _EditorExtensionEntry('normalize_line_endings', 'توحيد نهايات الأسطر', 'تحويل CRLF وCR إلى LF لتوحيد تنسيق الملف', 'تنظيف النص', Icons.format_line_spacing_rounded, const Color(0xFF247BFF)),
+      _EditorExtensionEntry('tabs_to_spaces', 'تحويل TAB إلى مسافات', 'استبدال كل علامة TAB بأربع مسافات', 'تنظيف النص', Icons.space_bar_rounded, const Color(0xFFFFC247)),
+    ];
+    final prefs = await SharedPreferences.getInstance();
+    final customPacks = prefs.getStringList(_customExtensionsKey) ?? <String>[];
+    for (final packedEntry in customPacks) {
+      try {
+        final decoded = jsonDecode(packedEntry);
+        if (decoded is! Map<String, dynamic>) continue;
+        final manifest = EditorExtensionManifest.decode(jsonEncode({
+          'format': EditorExtensionManifest.format,
+          'version': EditorExtensionManifest.version,
+          'extensions': [decoded],
+        }));
+        final extension = manifest.extensions.single;
+        entries.add(_EditorExtensionEntry(
+          extension.id,
+          extension.title,
+          extension.description,
+          extension.category,
+          Icons.extension_rounded,
+          const Color(0xFF38BDF8),
+          operationId: extension.operation,
+        ));
+      } catch (_) {
+        // Ignore invalid legacy entries; importing never enables code execution.
+      }
+    }
+    final stored = prefs.getStringList(_enabledExtensionsKey);
+    var enabled = stored == null
+        ? entries.where((entry) => entry.operationId == null)
+            .map((entry) => entry.id).toSet()
+        : stored.toSet();
+    if (!mounted) return;
+    final searchController = TextEditingController();
+    var query = '';
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, refreshSheet) {
+          final normalized = query.trim().toLowerCase();
+          final filtered = entries.where((entry) =>
+            normalized.isEmpty ||
+            entry.title.toLowerCase().contains(normalized) ||
+            entry.description.toLowerCase().contains(normalized) ||
+            entry.category.toLowerCase().contains(normalized),
+          ).toList();
+          final activeCount = entries.where((entry) => enabled.contains(entry.id)).length;
+
+          return SafeArea(
+            child: SizedBox(
+              height: MediaQuery.of(sheetContext).size.height * .78,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
+                    child: Row(children: [
+                      const Icon(Icons.extension_rounded, color: Color(0xFF38BDF8)),
+                      const SizedBox(width: 9),
+                      const Expanded(child: Text('مدير الإضافات والأدوات',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
+                      Text('${activeCount}/${entries.length}',
+                        style: const TextStyle(color: Color(0xFF38BDF8), fontWeight: FontWeight.w800)),
+                      IconButton(onPressed: () => Navigator.pop(sheetContext),
+                        icon: const Icon(Icons.close)),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                    child: TextField(
+                      controller: searchController,
+                      onChanged: (value) => refreshSheet(() => query = value),
+                      decoration: InputDecoration(
+                        hintText: 'ابحث عن إضافة أو وظيفة...',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: query.isEmpty ? null : IconButton(
+                          onPressed: () {
+                            searchController.clear();
+                            refreshSheet(() => query = '');
+                          },
+                          icon: const Icon(Icons.close_rounded),
+                        ),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(children: [
+                      const Expanded(child: Text('اضغط على الإضافة لتشغيلها، أو استخدم المفتاح لتفعيلها وتعطيلها.',
+                        style: TextStyle(color: Color(0xFF94A3B8), fontSize: 10))),
+                      TextButton(
+                        onPressed: () async {
+                          enabled = entries.map((entry) => entry.id).toSet();
+                          await prefs.setStringList(_enabledExtensionsKey, enabled.toList());
+                          refreshSheet(() {});
+                        },
+                        child: const Text('تفعيل الكل'),
+                      ),
+                    ]),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          await _importEditorExtensionPack();
+                          if (!mounted) return;
+                          Navigator.pop(sheetContext);
+                          await _showPluginsHub();
+                        },
+                        icon: const Icon(Icons.file_upload_outlined, size: 17),
+                        label: const Text('استيراد حزمة إضافات JSON'),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: filtered.isEmpty
+                      ? const Center(child: Text('لا توجد إضافات مطابقة للبحث.'))
+                      : ListView.separated(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 5),
+                          itemBuilder: (_, index) {
+                            final entry = filtered[index];
+                            final isEnabled = enabled.contains(entry.id);
+                            return Card(
+                              color: const Color(0xFF101D36),
+                              margin: EdgeInsets.zero,
+                              child: ListTile(
+                                dense: true,
+                                leading: CircleAvatar(
+                                  backgroundColor: entry.color.withValues(alpha: .14),
+                                  child: Icon(entry.icon, color: entry.color, size: 20),
+                                ),
+                                title: Text(entry.title,
+                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
+                                subtitle: Text('${entry.category} • ${entry.description}',
+                                  maxLines: 2, overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 10, color: Color(0xFF94A3B8))),
+                                trailing: Switch(
+                                  value: isEnabled,
+                                  onChanged: (value) async {
+                                    if (value) {
+                                      enabled.add(entry.id);
+                                    } else {
+                                      enabled.remove(entry.id);
+                                    }
+                                    await prefs.setStringList(_enabledExtensionsKey, enabled.toList());
+                                    refreshSheet(() {});
+                                  },
+                                ),
+                                onTap: isEnabled ? () {
+                                  Navigator.pop(sheetContext);
+                                  _runEditorExtension(entry.operationId ?? entry.id);
+                                } : null,
+                              ),
+                            );
+                          },
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    searchController.dispose();
+  }
+
+  Future<void> _importEditorExtensionPack() async {
+    try {
+      final picked = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const ['json'],
+        withData: true,
+        allowMultiple: false,
+      );
+      if (picked == null || picked.files.isEmpty) return;
+      final bytes = picked.files.single.bytes;
+      if (bytes == null || bytes.isEmpty) {
+        throw const FormatException('تعذر قراءة ملف الحزمة.');
+      }
+      final manifest = EditorExtensionManifest.decode(utf8.decode(bytes));
+      final prefs = await SharedPreferences.getInstance();
+      final current = prefs.getStringList(_customExtensionsKey) ?? <String>[];
+      final existingIds = <String>{
+        'json_format', 'json_minify', 'base64_encode', 'base64_decode',
+        'url_encode', 'url_decode', 'sort_lines', 'unique_lines',
+        'trim_trailing_whitespace', 'normalize_line_endings', 'tabs_to_spaces',
+      };
+      for (final item in current) {
+        try {
+          final decoded = jsonDecode(item);
+          if (decoded is Map<String, dynamic> && decoded['id'] is String) {
+            existingIds.add(decoded['id'] as String);
+          }
+        } catch (_) {
+          // Invalid old entries are ignored and replaced by a valid import.
+        }
+      }
+      final duplicates = manifest.extensions
+          .where((extension) => existingIds.contains(extension.id))
+          .map((extension) => extension.id)
+          .toList();
+      if (duplicates.isNotEmpty) {
+        throw FormatException('معرّفات موجودة مسبقاً: ${duplicates.join(', ')}');
+      }
+      if (current.length + manifest.extensions.length > 60) {
+        throw const FormatException('وصلت إلى الحد الأقصى وهو 60 إضافة مخصصة.');
+      }
+      final merged = [
+        ...current,
+        ...manifest.extensions.map((extension) => jsonEncode(extension.toJson())),
+      ];
+      await prefs.setStringList(_customExtensionsKey, merged);
+      showMessage('تم استيراد ${manifest.extensions.length} إضافة. راجع تفعيلها من مدير الإضافات.');
+    } catch (error) {
+      showMessage('تعذر استيراد حزمة الإضافات: $error');
+    }
   }
 
   Future<void> _runEditorExtension(String operation) async {
@@ -5633,6 +8202,20 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
           output = input.split('\n').where((line) => seen.add(line)).join('\n');
           success = 'تم حذف الأسطر المكررة';
           break;
+        case 'trim_trailing_whitespace':
+          output = input.split('\n')
+              .map((line) => line.replaceFirst(RegExp(r'[ \t]+$'), ''))
+              .join('\n');
+          success = 'تم تنظيف المسافات من نهايات الأسطر';
+          break;
+        case 'normalize_line_endings':
+          output = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+          success = 'تم توحيد نهايات الأسطر إلى LF';
+          break;
+        case 'tabs_to_spaces':
+          output = input.replaceAll('\t', '    ');
+          success = 'تم تحويل علامات TAB إلى أربع مسافات';
+          break;
         default:
           return;
       }
@@ -5641,7 +8224,125 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
       return;
     }
 
+    if (output == input) {
+      showMessage('لا توجد تغييرات مطلوبة');
+      return;
+    }
+
     final updated = source.replaceRange(start, end, output);
+    final previewLines = output.split('\n');
+    final originalLines = input.split('\n');
+    final previewAccepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.preview_rounded, color: Color(0xFF38BDF8)),
+            const SizedBox(width: 8),
+            Expanded(child: Text('معاينة قبل التطبيق')),
+          ],
+        ),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(success, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    Chip(
+                      avatar: const Icon(Icons.remove_circle_outline, size: 16),
+                      label: Text('${originalLines.length} سطر قبل'),
+                    ),
+                    Chip(
+                      avatar: const Icon(Icons.add_circle_outline, size: 16),
+                      label: Text('${previewLines.length} سطر بعد'),
+                    ),
+                    Chip(label: Text('${output.length} حرف في الناتج')),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                const Text('النص قبل التعديل', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 120),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E293B),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF475569)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      input.length > 2500
+                          ? '${input.substring(0, 2500)}\n… تم اختصار النص السابق.'
+                          : input,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 10),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('النص بعد التعديل', style: TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  constraints: const BoxConstraints(maxHeight: 280),
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0B1220),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFF334155)),
+                  ),
+                  child: SingleChildScrollView(
+                    child: SelectableText(
+                      output.length > 6000
+                          ? '${output.substring(0, 6000)}\n\n… تم اختصار المعاينة؛ سيُطبّق الناتج كاملاً.'
+                          : output,
+                      textDirection: TextDirection.ltr,
+                      style: const TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 11,
+                        color: Color(0xFFE2E8F0),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'لن يتغير الملف حتى تضغط «تطبيق». يمكنك الإلغاء للعودة دون أي تعديل.',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('إلغاء'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.check_rounded),
+            label: const Text('تطبيق التغييرات'),
+          ),
+        ],
+      ),
+    );
+
+    if (previewAccepted != true || !mounted) return;
+    if (!tabs.contains(tab) || controller.text != source) {
+      showMessage('تغير الملف أثناء المعاينة؛ أعد تشغيل الإضافة لتجنب استبدال تعديلات أحدث');
+      return;
+    }
+
     controller.value = controller.value.copyWith(
       text: updated,
       selection: TextSelection.collapsed(offset: start + output.length),
@@ -5785,6 +8486,7 @@ class _EditorScreenState extends State<EditorScreen> with WidgetsBindingObserver
   }
 }
 
+  // ignore: unused_element
 class _DashboardWavePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -5806,6 +8508,21 @@ class _DashboardWavePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _EditorExtensionEntry {
+  final String id;
+  final String title;
+  final String description;
+  final String category;
+  final IconData icon;
+  final Color color;
+  final String? operationId;
+
+  const _EditorExtensionEntry(
+    this.id, this.title, this.description, this.category, this.icon, this.color, {
+    this.operationId,
+  });
 }
 
 class _DashboardAction {
@@ -5838,12 +8555,15 @@ class TerminalFullScreenScreen extends StatelessWidget {
       child: Scaffold(
         backgroundColor: const Color(0xFF080D19),
         appBar: AppBar(
-          backgroundColor: const Color(0xFF101827),
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
           title: const Row(
             children: [
               Icon(Icons.terminal_rounded, color: Color(0xFF38BDF8)),
-              SizedBox(width: 8),
-              Text('طرفية Bisho', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(width: 9),
+              Text('طرفية Bisho', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
             ],
           ),
           leading: IconButton(
@@ -5903,8 +8623,10 @@ class EditorFullScreenScreen extends StatefulWidget {
 
 class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
   static const String _wordWrapPreferenceKey = 'bisho_editor_word_wrap';
+  static const String _minimapPreferenceKey = 'bisho_editor_minimap';
   late double _fontSize;
   bool _wordWrap = false;
+  bool _showMinimap = true;
 
   @override
   void initState() {
@@ -5917,8 +8639,12 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
     try {
       final preferences = await SharedPreferences.getInstance();
       final savedValue = preferences.getBool(_wordWrapPreferenceKey) ?? false;
+      final savedMinimap = preferences.getBool(_minimapPreferenceKey) ?? true;
       if (!mounted) return;
-      setState(() => _wordWrap = savedValue);
+      setState(() {
+        _wordWrap = savedValue;
+        _showMinimap = savedMinimap;
+      });
     } catch (_) {
       // Word wrap remains available with its default when preferences fail.
     }
@@ -5933,6 +8659,80 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
     } catch (_) {
       // The current session setting remains active if persistence is unavailable.
     }
+  }
+
+  Future<void> _toggleMinimap() async {
+    final nextValue = !_showMinimap;
+    setState(() => _showMinimap = nextValue);
+    try {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setBool(_minimapPreferenceKey, nextValue);
+    } catch (_) {
+      // Keep the current session setting when persistence is unavailable.
+    }
+  }
+
+  Widget _buildMinimap(EditorTab tab) {
+    if (!_showMinimap) return const SizedBox.shrink();
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: tab.controller,
+      builder: (context, value, _) {
+        final lines = EditorMinimapModel.fromText(
+          value.text,
+          maximumLines: 500,
+        );
+        final cursor = value.selection.isValid
+            ? value.selection.extentOffset.clamp(0, value.text.length).toInt()
+            : value.text.length;
+        final currentLine = '\n'.allMatches(value.text.substring(0, cursor)).length + 1;
+        return Container(
+          width: 54,
+          decoration: const BoxDecoration(
+            color: Color(0xFF0D1727),
+            border: Border(left: BorderSide(color: Color(0xFF26374E))),
+          ),
+          child: Column(children: [
+            const SizedBox(height: 5),
+            const Text('MAP', style: TextStyle(
+              color: Color(0xFF64748B), fontSize: 7, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Expanded(child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
+              itemCount: lines.length,
+              itemBuilder: (context, index) {
+                final line = lines[index];
+                final active = line.number == currentLine;
+                return GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _setCursor(line.startOffset),
+                  child: Container(
+                    height: 6,
+                    margin: const EdgeInsets.symmetric(vertical: .4),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    decoration: BoxDecoration(
+                      color: active ? const Color(0x5538BDF8) : Colors.transparent,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                    child: Text(
+                      line.text.isEmpty ? ' ' : line.text,
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.clip,
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 4.2,
+                        height: 1,
+                        color: active ? const Color(0xFF7DD3FC) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            )),
+          ]),
+        );
+      },
+    );
   }
 
   void _changeFontSize(double delta) {
@@ -6217,6 +9017,10 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
       child: Scaffold(
         backgroundColor: const Color(0xFF080D19),
         appBar: AppBar(
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
           leading: IconButton(
             tooltip: 'العودة إلى Bisho IDE',
             icon: const Icon(Icons.arrow_back),
@@ -6241,14 +9045,12 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
             IconButton(
               tooltip: 'معاينة / تشغيل الملف الحالي',
               onPressed: widget.onPreview,
-              icon: const Icon(Icons.play_circle_fill_rounded,
-                color: Color(0xFF19D889)),
+              icon: const Icon(Icons.play_circle_fill_rounded, color: Color(0xFF19D889)),
             ),
             IconButton(
               tooltip: 'بناء ومعاينة Flutter',
               onPressed: widget.onFlutterPreview,
-              icon: const Icon(Icons.phone_android_rounded,
-                color: Color(0xFF38BDF8)),
+              icon: const Icon(Icons.phone_android_rounded, color: Color(0xFF38BDF8)),
             ),
             PopupMenuButton<String>(
               tooltip: 'أدوات التحرير',
@@ -6268,6 +9070,18 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                     break;
                   case 'wrap':
                     _toggleWordWrap();
+                    break;
+                  case 'minimap':
+                    _toggleMinimap();
+                    break;
+                  case 'complete':
+                    widget.onShowCompletions();
+                    break;
+                  case 'smaller':
+                    _changeFontSize(-1);
+                    break;
+                  case 'larger':
+                    _changeFontSize(1);
                     break;
                 }
               },
@@ -6312,6 +9126,30 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                     ],
                   ),
                 ),
+                const PopupMenuItem(
+                  value: 'complete',
+                  child: Row(children: [
+                    Icon(Icons.auto_awesome, size: 20),
+                    SizedBox(width: 12),
+                    Text('الإكمال التلقائي'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'smaller',
+                  child: Row(children: [
+                    Icon(Icons.text_decrease, size: 20),
+                    SizedBox(width: 12),
+                    Text('تصغير الخط'),
+                  ]),
+                ),
+                const PopupMenuItem(
+                  value: 'larger',
+                  child: Row(children: [
+                    Icon(Icons.text_increase, size: 20),
+                    SizedBox(width: 12),
+                    Text('تكبير الخط'),
+                  ]),
+                ),
                 PopupMenuItem(
                   value: 'wrap',
                   child: Row(
@@ -6322,31 +9160,27 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
                     ],
                   ),
                 ),
+                PopupMenuItem(
+                  value: 'minimap',
+                  child: Row(
+                    children: [
+                      Icon(_showMinimap ? Icons.map_rounded : Icons.map_outlined, size: 20),
+                      const SizedBox(width: 12),
+                      Text(_showMinimap ? 'إخفاء خريطة الكود' : 'إظهار خريطة الكود'),
+                    ],
+                  ),
+                ),
               ],
               icon: const Icon(Icons.edit_note),
             ),
             IconButton(
-              tooltip: 'إكمال تلقائي',
-              onPressed: widget.onShowCompletions,
-              icon: const Icon(Icons.auto_awesome),
-            ),
-            IconButton(
-              tooltip: 'تصغير الخط',
-              onPressed: () => _changeFontSize(-1),
-              icon: const Icon(Icons.text_decrease),
-            ),
-            IconButton(
-              tooltip: 'تكبير الخط',
-              onPressed: () => _changeFontSize(1),
-              icon: const Icon(Icons.text_increase),
-            ),
-            IconButton(
               tooltip: 'حفظ الملف',
               onPressed: widget.onSave,
-              icon: const Icon(Icons.save),
+              icon: const Icon(Icons.save_rounded),
             ),
           ],
         ),
+
         body: SafeArea(
           child: Focus(
             onKeyEvent: _handleEditorKey,
@@ -6366,22 +9200,25 @@ class _EditorFullScreenScreenState extends State<EditorFullScreenScreen> {
               clipBehavior: Clip.antiAlias,
               child: CodeTheme(
                 data: CodeThemeData(styles: monokaiSublimeTheme),
-                child: CodeField(
-                  key: ValueKey('fullscreen-${tab.id}'),
-                  controller: tab.controller,
-                  expands: true,
-                  wrap: _wordWrap,
-                  padding: const EdgeInsets.all(14),
-                  textStyle: TextStyle(
-                    fontFamily: 'monospace',
-                    fontSize: _fontSize,
-                  ),
-                  gutterStyle: const GutterStyle(
-                    showLineNumbers: true,
-                    showErrors: true,
-                    showFoldingHandles: true,
-                  ),
-                ),
+                child: Row(children: [
+                  Expanded(child: CodeField(
+                    key: ValueKey('fullscreen-${tab.id}'),
+                    controller: tab.controller,
+                    expands: true,
+                    wrap: _wordWrap,
+                    padding: const EdgeInsets.all(14),
+                    textStyle: TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: _fontSize,
+                    ),
+                    gutterStyle: const GutterStyle(
+                      showLineNumbers: true,
+                      showErrors: true,
+                      showFoldingHandles: true,
+                    ),
+                  )),
+                  if (_showMinimap) _buildMinimap(tab),
+                ]),
               ),
             ),
                 ),

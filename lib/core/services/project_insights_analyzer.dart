@@ -44,6 +44,22 @@ class ProjectInsightsReport {
       insights.where((item) => item.severity == severity).length;
 
   bool get hasErrors => count(ProjectInsightSeverity.error) > 0;
+
+  /// Advisory score based only on detected insights in the supplied open files.
+  /// It is not a substitute for compiler, analyzer, or security testing.
+  int get qualityScore {
+    final penalty = count(ProjectInsightSeverity.error) * 18 +
+        count(ProjectInsightSeverity.warning) * 8 +
+        count(ProjectInsightSeverity.info) * 2;
+    return (100 - penalty).clamp(0, 100);
+  }
+
+  String get qualityLabel {
+    if (qualityScore >= 90) return 'ممتاز';
+    if (qualityScore >= 75) return 'جيد';
+    if (qualityScore >= 50) return 'يحتاج تحسين';
+    return 'يحتاج مراجعة';
+  }
 }
 
 class ProjectInsightsAnalyzer {
@@ -106,6 +122,17 @@ class ProjectInsightsAnalyzer {
             caseSensitive: false).hasMatch(line)) {
           add('possible_embedded_secret', path, lineNo,
               'قد يحتوي هذا السطر على سر ثابت؛ انقل القيمة إلى تخزين آمن أو متغير بيئة.',
+              ProjectInsightSeverity.warning, ProjectInsightCategory.security);
+        }
+        if (RegExp(r'''\bhttp://[^\s'"]+''', caseSensitive: false).hasMatch(line)) {
+          add('insecure_http_endpoint', path, lineNo,
+              'رُصد عنوان HTTP غير مشفّر؛ استخدم HTTPS للخدمات الخارجية بعد التحقق من دعمها.',
+              ProjectInsightSeverity.warning, ProjectInsightCategory.security);
+        }
+        // Flag direct dynamic execution calls in source lines.
+        if (RegExp(r'\b(eval|exec)\s*\(').hasMatch(line)) {
+          add('dynamic_code_execution', path, lineNo,
+              'استدعاء eval/exec قد ينفّذ نصاً كتعليمات؛ تجنب مدخلات المستخدم غير الموثوقة.',
               ProjectInsightSeverity.warning, ProjectInsightCategory.security);
         }
         if (path.endsWith('.dart') && RegExp(r'\bprint\s*\(').hasMatch(line)) {

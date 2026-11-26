@@ -27,6 +27,14 @@ android {
     compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
+    // Keep PRoot in Android's immutable APK native-library area (/data/app).
+    // Android 10+ SELinux blocks execve() from writable app filesDir.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -45,6 +53,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Keep the test build installable beside the existing production app.
+            applicationIdSuffix = ".test"
+            versionNameSuffix = "-test"
+        }
         release {
             signingConfig = signingConfigs.debug
         }
@@ -54,6 +67,7 @@ android {
 dependencies {
     // Audited TAR/PAX/GZIP reader; extraction is additionally path- and size-bounded below.
     implementation "org.apache.commons:commons-compress:1.28.0"
+    testImplementation "junit:junit:4.13.2"
 }
 
 flutter {

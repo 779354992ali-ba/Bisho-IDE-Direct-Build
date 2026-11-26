@@ -1,11 +1,14 @@
 import 'dart:convert';
 
 import 'dart:async';
+import 'dart:io' show Directory;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 import 'package:saf/saf.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'core/services/flutter_pubspec_validator.dart';
 
@@ -14,9 +17,13 @@ import 'core/services/github_repository_service.dart';
 import 'core/services/project_scaffold_repair_service.dart';
 import 'core/services/project_health_analyzer.dart';
 import 'core/services/local_build_environment.dart';
+import 'core/services/engine_health_report.dart';
 import 'core/services/local_build_runner.dart';
 import 'core/services/local_build_engine_installer.dart';
 import 'core/services/alpine_rootfs_installer.dart';
+import 'core/services/build_history_store.dart';
+import 'core/services/remote_build_settings.dart';
+import 'features/tools/ide_tool_sheets.dart';
 
 class FlutterPreviewScreen extends StatefulWidget {
   final String projectName;
@@ -64,8 +71,51 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   bool _probingLocalEngine = false;
   StreamSubscription<LocalBuildProgress>? _localBuildSubscription;
   bool _localBuildRunning = false;
+  static const _localBuildModePreferenceKey = 'bisho_local_build_mode';
   String _localBuildMode = 'debug';
+  bool _localBuildModeChanged = false;
+  bool _remoteSettingsChanged = false;
+  Future<void> _remoteSettingsWrite = Future<void>.value();
   String _localBuildLog = '';
+  final StringBuffer _fullBuildLog = StringBuffer();
+  BuildHistoryStore? _buildHistoryStore;
+
+  Future<BuildHistoryStore?> _ensureBuildHistoryStore() async {
+    if (_buildHistoryStore != null) return _buildHistoryStore;
+    try {
+      final base = await getApplicationDocumentsDirectory();
+      _buildHistoryStore =
+          BuildHistoryStore(Directory('${base.path}/bisho_build_history'));
+    } catch (_) {
+      return null;
+    }
+    return _buildHistoryStore;
+  }
+
+  Future<void> _recordBuildHistory({required bool success}) async {
+    try {
+      final store = await _ensureBuildHistoryStore();
+      if (store == null || _fullBuildLog.isEmpty) return;
+      await store.record(
+        log: _fullBuildLog.toString(),
+        success: success,
+        mode: _localBuildMode,
+        projectName: _projectName,
+      );
+    } catch (_) {
+      // Build history is optional and must not affect the build result.
+    }
+  }
+
+  Future<void> _openBuildAnalysis() async {
+    final store = await _ensureBuildHistoryStore();
+    if (!mounted) return;
+    await showBuildAnalysisSheet(
+      context,
+      log: _fullBuildLog.isEmpty ? _localBuildLog : _fullBuildLog.toString(),
+      store: store,
+    );
+  }
   LocalBuildEnvironment? _localBuildEnvironment;
   bool _checkingLocalBuild = false;
   GitHubAccount? _githubAccount;
@@ -100,6 +150,72 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
     _checkProject();
     _inspectLocalBuildEnvironment();
     _loadGitHubSession();
+    _restoreLocalBuildMode();
+    _restoreRemoteBuildSettings();
+  }
+
+  Future<void> _restoreRemoteBuildSettings() async {
+    try {
+      final settings = await RemoteBuildSettings.load();
+      if (!mounted || _remoteSettingsChanged) return;
+      setState(() {
+        if (settings.repository.isNotEmpty) {
+          _repoController.text = settings.repository;
+        }
+        _workflowController.text = settings.workflow;
+        _branchController.text = settings.branch;
+        _versionController.text = settings.flutterVersion;
+      });
+    } catch (_) {
+      // Saved cloud settings are optional; keep the current defaults.
+    }
+  }
+
+  void _saveRemoteBuildSettings() {
+    _remoteSettingsChanged = true;
+    final settings = RemoteBuildSettings(
+      repository: _repoController.text.trim(),
+      workflow: _workflowController.text.trim().isEmpty
+          ? 'main.yml' : _workflowController.text.trim(),
+      branch: _branchController.text.trim().isEmpty
+          ? 'main' : _branchController.text.trim(),
+      flutterVersion: _versionController.text.trim().isEmpty
+          ? '3.47.9' : _versionController.text.trim(),
+    );
+    _remoteSettingsWrite = _remoteSettingsWrite.then((_) async {
+      try {
+        await settings.save();
+      } catch (_) {
+        // Persistence failure must never block a remote build.
+      }
+    });
+  }
+
+  Future<void> _restoreLocalBuildMode() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final saved = prefs.getString(_localBuildModePreferenceKey);
+      if (!mounted || _localBuildModeChanged) return;
+      if (saved == 'debug' || saved == 'release') {
+        setState(() => _localBuildMode = saved!);
+      }
+    } catch (_) {
+      // A missing preference must not block local build setup.
+    }
+  }
+
+  Future<void> _setLocalBuildMode(String mode) async {
+    if (mode != 'debug' && mode != 'release') return;
+    setState(() {
+      _localBuildModeChanged = true;
+      _localBuildMode = mode;
+    });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_localBuildModePreferenceKey, mode);
+    } catch (_) {
+      // Keep the current selection even if preference storage is unavailable.
+    }
   }
 
   @override
@@ -130,12 +246,14 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       _showMessage('محرك البناء أو متطلبات الجهاز غير مكتملة.');
       return;
     }
+    _fullBuildLog.clear();
     setState(() {
       _localBuildRunning = true;
       _localBuildLog = 'جارٍ نسخ ملفات المشروع إلى مساحة البناء الخاصة بالتطبيق...';
     });
     _localBuildSubscription?.cancel();
     _localBuildSubscription = _localBuildRunner.progress.listen((event) {
+      if (_fullBuildLog.length < 400000) _fullBuildLog.writeln(event.message);
       if (!mounted) return;
       setState(() {
         final lines = <String>[..._localBuildLog.split('\n'), event.message];
@@ -147,6 +265,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       if (mounted) setState(() => _localBuildLog = 'تعذر استقبال سجل البناء: $error');
     });
     String? staged;
+    var buildSucceeded = false;
     try {
       staged = await _localBuildRunner.stageProject(projectUri, _projectName);
       if (!mounted) return;
@@ -159,10 +278,13 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
         parentUri: projectUri,
         fileName: apkName,
       );
+      buildSucceeded = true;
       if (!mounted) return;
+      _fullBuildLog.writeln('نجح البناء المحلي وحُفظ $apkName');
       setState(() => _localBuildLog = 'نجح البناء المحلي وحُفظ $apkName داخل مجلد المشروع.');
       _showMessage('اكتمل البناء المحلي وحُفظ $apkName.');
     } catch (error) {
+      _fullBuildLog.writeln('فشل البناء المحلي: $error');
       if (!mounted) return;
       setState(() {
         final previous = _localBuildLog.trim();
@@ -175,6 +297,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       if (staged != null) {
         try { await _localBuildRunner.removeStagedProject(staged); } catch (_) { /* best-effort cleanup */ }
       }
+      await _recordBuildHistory(success: buildSucceeded);
       if (mounted) setState(() => _localBuildRunning = false);
       await _inspectLocalBuildEnvironment();
     }
@@ -196,22 +319,57 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
 
   Future<void> _installLocalBuildEngine() async {
     _engineUrlController.clear();
-    _engineShaController.clear();
+    _engineShaController.text = '8723baddc33fb92f033b142120add25d8ce7c037bd85a4af2b0cb4aba34dc8f8';
+    String? selectedArchiveUri;
     final accepted = await showDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('تثبيت محرك البناء المحلي'),
-        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('أدخل رابط HTTPS مباشرًا لحزمة ZIP الرسمية المتوافقة مع arm64-v8a، ثم بصمة SHA-256 المنشورة من مصدر مستقل موثوق. لا تستخدم روابط مجهولة.'),
-          const SizedBox(height: 12),
-          TextField(controller: _engineUrlController, keyboardType: TextInputType.url,
-            decoration: const InputDecoration(labelText: 'رابط الحزمة HTTPS', hintText: 'https://.../engine.zip')),
-          const SizedBox(height: 8),
-          TextField(controller: _engineShaController,
-            decoration: const InputDecoration(labelText: 'SHA-256 (64 خانة)', hintText: 'a1b2...')),
-        ])),
-        actions: [TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
-          FilledButton(onPressed: () => Navigator.pop(dialogContext, true), child: const Text('تنزيل وتثبيت'))],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, updateDialog) => AlertDialog(
+          title: const Text('تثبيت محرك البناء المحلي'),
+          content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Text('يمكنك اختيار ملف GitHub الموجود على الهاتف Bisho-Flutter-Local-Engine-ARM64.zip مباشرة دون تنزيله أو فك الملف الداخلي يدويًا؛ سيقرأ التطبيق المحرك من داخله مباشرة. يمكنك أيضًا اختيار ZIP الداخلي أو استخدام رابط HTTPS مع بصمته الصحيحة.'),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () async {
+                try {
+                  final uri = await _engineInstaller.pickLocalArchive();
+                  if (uri != null && dialogContext.mounted) {
+                    updateDialog(() => selectedArchiveUri = uri);
+                  }
+                } catch (error) {
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text('تعذر اختيار ملف المحرك: $error')),
+                    );
+                  }
+                }
+              },
+              icon: const Icon(Icons.folder_open),
+              label: Text(selectedArchiveUri == null
+                  ? 'اختيار ملف ZIP موجود على الهاتف'
+                  : 'تم اختيار ملف ZIP محلي'),
+            ),
+            if (selectedArchiveUri != null)
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text('سيُقرأ الملف مباشرة دون نسخه إلى مساحة التطبيق.',
+                  style: TextStyle(fontSize: 11, color: Colors.greenAccent)),
+              ),
+            const SizedBox(height: 12),
+            TextField(controller: _engineUrlController, keyboardType: TextInputType.url,
+              decoration: const InputDecoration(labelText: 'رابط HTTPS (اختياري عند اختيار ملف محلي)', hintText: 'https://.../engine.zip')),
+            const SizedBox(height: 8),
+            TextField(controller: _engineShaController,
+              decoration: const InputDecoration(labelText: 'SHA-256 للحزمة المحددة (64 خانة)', hintText: 'a1b2...')),
+          ])),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(dialogContext, false), child: const Text('إلغاء')),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(selectedArchiveUri == null ? 'تنزيل وتثبيت' : 'تثبيت الملف المحلي'),
+            ),
+          ],
+        ),
       ),
     );
     if (accepted != true || !mounted) return;
@@ -223,7 +381,17 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       setState(() => _localBuildLog = '${event.message}$progress');
     });
     try {
-      await _engineInstaller.install(archiveUrl: _engineUrlController.text, sha256: _engineShaController.text);
+      if (selectedArchiveUri != null) {
+        await _engineInstaller.installFromUri(
+          archiveUri: selectedArchiveUri!,
+          sha256: _engineShaController.text,
+        );
+      } else {
+        await _engineInstaller.install(
+          archiveUrl: _engineUrlController.text,
+          sha256: _engineShaController.text,
+        );
+      }
       _showMessage('تم تثبيت ملفات المحرك والتحقق من سلامة الحزمة.');
     } catch (error) {
       if (mounted) setState(() => _localBuildLog = 'فشل تثبيت المحرك: $error');
@@ -939,7 +1107,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
   }
 
   Widget _field(String label, TextEditingController controller, {
-    String? hint, bool secret = false,
+    String? hint, bool secret = false, ValueChanged<String>? onChanged,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -948,6 +1116,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
         obscureText: secret,
         autocorrect: false,
         enableSuggestions: !secret,
+        onChanged: onChanged,
         style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
           labelText: label,
@@ -967,6 +1136,19 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       ),
     );
   }
+
+  Widget _sectionHeading(String title, IconData icon) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(children: [
+      Icon(icon, color: _cyan, size: 17),
+      const SizedBox(width: 8),
+      Text(title, style: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w800,
+      )),
+    ]),
+  );
 
   Widget _localBuildInfoRow(String label, String value) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 3),
@@ -1001,9 +1183,12 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
       child: Scaffold(
         backgroundColor: _background,
         appBar: AppBar(
-          backgroundColor: const Color(0xFF151C30),
+          backgroundColor: const Color(0xFF101B2D),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          shape: const Border(bottom: BorderSide(color: Color(0xFF26374E))),
           title: const Text('بناء ومعاينة Flutter',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
           actions: [
             IconButton(onPressed: _copyLog, icon: const Icon(Icons.copy_rounded),
               tooltip: 'نسخ سجل البناء'),
@@ -1124,32 +1309,114 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                 ),
                 const SizedBox(height: 10),
                 if (_localBuildEnvironment != null) ...[
-                  _localBuildInfoRow('معمارية الهاتف', _localBuildEnvironment!.deviceAbi),
-                  _localBuildInfoRow('إصدار Android API', _localBuildEnvironment!.androidVersion == 0
-                      ? 'غير متاح' : _localBuildEnvironment!.androidVersion.toString()),
-                  _localBuildInfoRow('المساحة الحرة', _localBuildEnvironment!.availableStorageLabel),
-                  _localBuildInfoRow('دعم الجهاز', _localBuildEnvironment!.deviceSupported
-                      ? 'يحقق المتطلبات الأولية' : 'لا يحقق المتطلبات الأولية'),
-                  _localBuildInfoRow('المساحة المطلوبة', _localBuildEnvironment!.requiredStorageLabel),
-                  _localBuildInfoRow('نظام Alpine ARM64', _localBuildEnvironment!.alpineRootfsInstalled
-                      ? 'مثبّت وموجود' : 'غير مثبّت'),
-                  _localBuildInfoRow('ملفات المحرك', _localBuildEnvironment!.engineInstalled
-                      ? 'موجودة بنيويًا' : 'غير مكتملة'),
-                  _localBuildInfoRow('اختبار Debug APK', _localBuildEnvironment!.debugBuildVerified
-                      ? 'نجح البناء والتحقق من التوقيع والمحاذاة' : 'لم ينجح بعد'),
-                  _localBuildInfoRow('اختبار Release/AOT', _localBuildEnvironment!.releaseBuildVerified
-                      ? 'تم إنتاج APK والتحقق من توقيعه' : 'لم ينجح بعد؛ Debug لا يكفي لاعتماده'),
-                  if (_localBuildEnvironment!.missingRequirements.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    const Text('النواقص والمتطلبات:',
-                      style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orangeAccent)),
-                    ..._localBuildEnvironment!.missingRequirements.map((item) =>
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text('• $item',
-                          style: const TextStyle(color: _muted, fontSize: 11, height: 1.4)),
-                      )),
-                  ],
+                  _sectionHeading('حالة الجهاز والمحرك', Icons.fact_check_rounded),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF0C1728),
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(color: const Color(0xFF26374E)),
+                    ),
+                    child: Column(children: [
+                      _localBuildInfoRow('معمارية الهاتف', _localBuildEnvironment!.deviceAbi),
+                      _localBuildInfoRow('إصدار Android API', _localBuildEnvironment!.androidVersion == 0
+                          ? 'غير متاح' : _localBuildEnvironment!.androidVersion.toString()),
+                      _localBuildInfoRow('المساحة الحرة', _localBuildEnvironment!.availableStorageLabel),
+                      _localBuildInfoRow('دعم الجهاز', _localBuildEnvironment!.deviceSupported
+                          ? 'يحقق المتطلبات الأولية' : 'لا يحقق المتطلبات الأولية'),
+                      _localBuildInfoRow('المساحة المطلوبة', _localBuildEnvironment!.requiredStorageLabel),
+                      const Divider(height: 14, color: Color(0xFF26374E)),
+                      _localBuildInfoRow('نظام Alpine ARM64', _localBuildEnvironment!.alpineRootfsInstalled
+                          ? 'مثبّت وموجود' : 'غير مثبّت'),
+                      _localBuildInfoRow('ملفات المحرك', _localBuildEnvironment!.engineInstalled
+                          ? 'موجودة بنيويًا' : 'غير مكتملة'),
+                      _localBuildInfoRow('اختبار Debug APK', _localBuildEnvironment!.debugBuildVerified
+                          ? 'نجح البناء والتحقق من التوقيع والمحاذاة' : 'لم ينجح بعد'),
+                      _localBuildInfoRow('اختبار Release/AOT', _localBuildEnvironment!.releaseBuildVerified
+                          ? 'تم إنتاج APK والتحقق من توقيعه' : 'لم ينجح بعد؛ Debug لا يكفي لاعتماده'),
+                      if (_localBuildEnvironment!.missingRequirements.isNotEmpty) ...[
+                        const Divider(height: 14, color: Color(0xFF26374E)),
+                        const Align(
+                          alignment: Alignment.centerRight,
+                          child: Text('النواقص والمتطلبات',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orangeAccent, fontSize: 12)),
+                        ),
+                        ..._localBuildEnvironment!.missingRequirements.map((item) =>
+                          Padding(
+                            padding: const EdgeInsets.only(top: 5),
+                            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              const Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent, size: 15),
+                              const SizedBox(width: 6),
+                              Expanded(child: Text(item,
+                                style: const TextStyle(color: _muted, fontSize: 11, height: 1.4))),
+                            ]),
+                          )),
+                      ],
+                    ]),
+                  ),
+                ],
+                if (_localBuildEnvironment != null) ...[
+                  const SizedBox(height: 12),
+                  _sectionHeading('تقرير صحة المحرك — فحص آمن', Icons.health_and_safety_rounded),
+                  Builder(builder: (context) {
+                    final report = EngineHealthReport.fromEnvironment(_localBuildEnvironment!);
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(11),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0A1424),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFF26374E)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(report.headline,
+                            style: TextStyle(
+                              color: report.failed > 0 ? Colors.orangeAccent : Colors.white,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            )),
+                          const SizedBox(height: 5),
+                          Text('ناجح: ${report.passed}  •  تنبيه: ${report.warnings}  •  يحتاج معالجة: ${report.failed}',
+                            style: const TextStyle(color: _muted, fontSize: 10)),
+                          const Divider(height: 16, color: Color(0xFF26374E)),
+                          ...report.checks.map((check) {
+                            final passed = check.state == EngineCheckState.passed;
+                            final failed = check.state == EngineCheckState.failed;
+                            final color = passed ? Colors.greenAccent :
+                                failed ? Colors.redAccent : Colors.orangeAccent;
+                            final icon = passed ? Icons.check_circle_rounded :
+                                failed ? Icons.error_rounded : Icons.info_rounded;
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(icon, color: color, size: 15),
+                                  const SizedBox(width: 7),
+                                  Expanded(child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(check.title, style: const TextStyle(
+                                        color: Colors.white, fontSize: 11, fontWeight: FontWeight.w600)),
+                                      Text(check.detail, style: const TextStyle(
+                                        color: _muted, fontSize: 10, height: 1.35)),
+                                    ],
+                                  )),
+                                ],
+                              ),
+                            );
+                          }),
+                          const SizedBox(height: 5),
+                          const Text(
+                            'هذا التقرير لا يغيّر ملفات المحرك ولا يحذف النسخ السابقة. فحوص البناء غير المجراة تبقى غير معتمدة.',
+                            style: TextStyle(color: _muted, fontSize: 10, height: 1.4),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
                 const Padding(
                   padding: EdgeInsets.only(bottom: 8),
@@ -1158,7 +1425,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     style: TextStyle(color: _muted, fontSize: 11, height: 1.4),
                   ),
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 12),
+                _sectionHeading('تجهيز بيئة Linux', Icons.inventory_2_outlined),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -1189,7 +1457,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     label: Text(_probingLocalEngine ? 'جارٍ اختبار المحرك...' : 'اختبار بناء APK تجريبي فعليًا'),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
+                _sectionHeading('اختبار وإدارة المحرك', Icons.build_circle_outlined),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
@@ -1211,9 +1480,10 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     icon: const Icon(Icons.cancel_outlined),
                     label: const Text('إلغاء تنزيل المحرك'),
                   )),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
+                _sectionHeading('إعدادات البناء المحلي', Icons.tune_rounded),
                 DropdownButtonFormField<String>(
-                  value: _localBuildMode,
+                  initialValue: _localBuildMode,
                   decoration: const InputDecoration(
                     labelText: 'نوع ملف APK المحلي',
                     helperText: 'Debug مناسب لاختبار البناء على ARM64؛ Release يحتاج أدوات AOT متوافقة.',
@@ -1223,7 +1493,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     DropdownMenuItem(value: 'release', child: Text('Release APK — يتطلب AOT ARM64')),
                   ],
                   onChanged: _localBuildRunning ? null : (value) {
-                    if (value != null) setState(() => _localBuildMode = value);
+                    if (value != null) _setLocalBuildMode(value);
                   },
                 ),
                 const SizedBox(height: 8),
@@ -1247,7 +1517,8 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     label: const Text('إلغاء البناء'),
                   )),
                 if (_localBuildLog.isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 14),
+                  _sectionHeading('سجل العمليات', Icons.receipt_long_rounded),
                   Container(
                     width: double.infinity,
                     constraints: const BoxConstraints(maxHeight: 180),
@@ -1256,6 +1527,14 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     child: SingleChildScrollView(child: SelectableText(_localBuildLog,
                       style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Colors.white70))),
                   ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton.icon(
+                      onPressed: _openBuildAnalysis,
+                      icon: const Icon(Icons.fact_check_outlined),
+                      label: const Text('تحليل السجل والأخطاء وعمليات البناء السابقة'),
+                    ),
+                  ),
                 ],
                 const SizedBox(height: 4),
                 SizedBox(
@@ -1263,7 +1542,7 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   child: TextButton.icon(
                     onPressed: _checkingLocalBuild ? null : _inspectLocalBuildEnvironment,
                     icon: const Icon(Icons.refresh_rounded),
-                    label: const Text('إعادة فحص بيئة البناء'),
+                    label: const Text('فحص صحة المحرك الآن (قراءة فقط)'),
                   ),
                 ),
                 const Text(
@@ -1288,7 +1567,15 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   style: TextStyle(color: _muted, fontSize: 12, height: 1.5),
                 ),
                 const SizedBox(height: 14),
-                Row(children: [
+                _sectionHeading('اتصال GitHub الآمن', Icons.verified_user_rounded),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0C1728),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFF26374E)),
+                  ),
+                  child: Row(children: [
                   Icon(_githubAccount == null ? Icons.link_off : Icons.verified_user,
                     color: _githubAccount == null ? Colors.orangeAccent : Colors.greenAccent),
                   const SizedBox(width: 8),
@@ -1299,7 +1586,9 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   if (_githubAccount != null)
                     IconButton(onPressed: _busy ? null : _disconnectGitHub,
                       tooltip: 'فصل الحساب', icon: const Icon(Icons.logout_rounded)),
-                ]),
+                  ]),
+                ),
+                const SizedBox(height: 8),
                 _field('رمز GitHub الشخصي (PAT)', _tokenController,
                   hint: 'الصق الرمز ثم اضغط ربط الحساب', secret: true),
                 SizedBox(
@@ -1316,15 +1605,17 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                   'استخدم Classic Personal Access Token مع تحديد repo وworkflow. يُخزّن الرمز في Android Keystore عبر التخزين الآمن، ولا يُكتب في سجل البناء. لا ترسل الرمز لأي شخص.',
                   style: TextStyle(color: Colors.orangeAccent, fontSize: 11, height: 1.5),
                 ),
-                const SizedBox(height: 12),
-                _field('اسم المستودع الجديد / أو owner/repo للبناء اليدوي', _repoController, hint: 'my-flutter-app'),
-                _field('ملف Workflow', _workflowController, hint: 'build-android.yml أو main.yml'),
+                const SizedBox(height: 16),
+                _sectionHeading('إعدادات المستودع والبناء', Icons.settings_ethernet_rounded),
+                _field('اسم المستودع الجديد / أو owner/repo للبناء اليدوي', _repoController, hint: 'my-flutter-app', onChanged: (_) => _saveRemoteBuildSettings()),
+                _field('ملف Workflow', _workflowController, hint: 'build-android.yml أو main.yml', onChanged: (_) => _saveRemoteBuildSettings()),
                 Row(children: [
-                  Expanded(child: _field('الفرع', _branchController, hint: 'main')),
+                  Expanded(child: _field('الفرع', _branchController, hint: 'main', onChanged: (_) => _saveRemoteBuildSettings())),
                   const SizedBox(width: 8),
-                  Expanded(child: _field('إصدار Flutter', _versionController)),
+                  Expanded(child: _field('إصدار Flutter', _versionController, onChanged: (_) => _saveRemoteBuildSettings())),
                 ]),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+                _sectionHeading('تشغيل وإدارة البناء السحابي', Icons.rocket_launch_rounded),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -1365,7 +1656,25 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                 ]),
                 const SizedBox(height: 10),
-                Text(_status, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: success ? const Color(0xFF0D2B25)
+                        : failed ? const Color(0xFF321A24) : const Color(0xFF0C1728),
+                    borderRadius: BorderRadius.circular(11),
+                    border: Border.all(color: success ? const Color(0xFF167A5B)
+                        : failed ? const Color(0xFF8D3448) : const Color(0xFF26374E)),
+                  ),
+                  child: Row(children: [
+                    Icon(success ? Icons.check_circle_rounded
+                        : failed ? Icons.error_rounded : Icons.hourglass_top_rounded,
+                      color: success ? Colors.greenAccent : failed ? Colors.redAccent : _cyan),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text(_status,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                  ]),
+                ),
                 const SizedBox(height: 10),
                 Container(
                   width: double.infinity,

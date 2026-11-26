@@ -13,7 +13,10 @@ import android.provider.Settings
 import android.net.Uri
 import android.net.ConnectivityManager
 import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.os.StatFs
+import android.system.Os
+import android.system.OsConstants
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -22,15 +25,20 @@ import java.util.concurrent.Executors
 import org.json.JSONObject
 import java.io.File
 import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.FileInputStream
+import java.io.FilterInputStream
+import java.io.InputStream
 import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.zip.ZipInputStream
+import java.util.zip.ZipEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
 import org.apache.commons.compress.compressors.gzip.GzipCompressorInputStream
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.LinkOption
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicInteger
@@ -39,13 +47,17 @@ import java.util.concurrent.atomic.AtomicReference
 class MainActivity : FlutterActivity() {
     private val localBuildChannel = "com.bisho.ide/local_build"
     // Dynamic admission: actual archive size + a reserve, not a fixed 20 GB gate.
-    private val engineInstallStorageBytes = 1024L * 1024L * 1024L
+    private val engineInstallStorageBytes = 2560L * 1024L * 1024L
+    private val alpineInstallStorageBytes = 1024L * 1024L * 1024L
     private val extractionSafetyReserveBytes = 512L * 1024L * 1024L
     private val minimumBuildStorageBytes = 2560L * 1024L * 1024L
     private val buildExecutor = Executors.newSingleThreadExecutor()
     @Volatile private var activeBuildProcess: Process? = null
     @Volatile private var stagingCancelled: Boolean = false
+    @Volatile private var engineActivationAwaitingProbe: Boolean = false
     @Volatile private var buildEventSink: EventChannel.EventSink? = null
+    private var pendingEngineArchivePicker: MethodChannel.Result? = null
+    private val engineArchivePickerRequestCode = 48127
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -61,6 +73,19 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "inspectEnvironment" -> {
                         buildExecutor.execute {
+                            // Recover an install interrupted by process death: automatically test the
+                            // candidate on next app inspection, committing it only on success.
+                            val pendingEngineBackup = File(filesDir, "bisho-local-build-engine.previous")
+                            if (pendingEngineBackup.exists() && !engineActivationAwaitingProbe) {
+                                val recoveryProbe = probeLocalBuildEngine()
+                                if (recoveryProbe["success"] != true) {
+                                    emitBuildEvent(
+                                        recoveryProbe["message"]?.toString()
+                                            ?: "فشل اختبار المحرك المعلّق؛ تمت محاولة استعادة النسخة السابقة.",
+                                        true
+                                    )
+                                }
+                            }
                             val environment = try { inspectLocalBuildEnvironment() } catch (error: Exception) {
                                 mapOf("deviceAbi" to (Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"),
                                     "androidVersion" to Build.VERSION.SDK_INT, "availableBytes" to StatFs(filesDir.absolutePath).availableBytes,
@@ -79,6 +104,8 @@ class MainActivity : FlutterActivity() {
                                 probeLocalBuildEngine()
                             } catch (error: Exception) {
                                 mapOf("success" to false, "message" to (error.message ?: "تعذر اختبار المحرك."))
+                            } finally {
+                                engineActivationAwaitingProbe = false
                             }
                             runOnUiThread { result.success(probe) }
                         }
@@ -95,6 +122,42 @@ class MainActivity : FlutterActivity() {
                                 runOnUiThread { result.success(installed) }
                             } catch (error: Exception) {
                                 runOnUiThread { result.success(mapOf("success" to false, "message" to (error.message ?: "فشل تثبيت Alpine."))) }
+                            }
+                        }
+                    }
+                    "pickEngineArchive" -> {
+                        if (pendingEngineArchivePicker != null) {
+                            result.error("PICKER_BUSY", "اختيار ملف محرك آخر قيد التنفيذ.", null)
+                        } else {
+                            pendingEngineArchivePicker = result
+                            val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                                addCategory(Intent.CATEGORY_OPENABLE)
+                                type = "*/*"
+                                putExtra(Intent.EXTRA_MIME_TYPES, arrayOf(
+                                    "application/zip", "application/x-zip-compressed", "application/octet-stream"
+                                ))
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+                            }
+                            try {
+                                startActivityForResult(intent, engineArchivePickerRequestCode)
+                            } catch (error: Exception) {
+                                pendingEngineArchivePicker = null
+                                result.error("PICKER_FAILED", error.message ?: "تعذر فتح منتقي ملفات ZIP.", null)
+                            }
+                        }
+                    }
+                    "installEngineFromUri" -> {
+                        val archiveUri = call.argument<String>("archiveUri")
+                        val sha256 = call.argument<String>("sha256")
+                        buildExecutor.execute {
+                            try {
+                                if (archiveUri.isNullOrBlank() || sha256.isNullOrBlank()) {
+                                    throw IllegalArgumentException("بيانات ملف المحرك المحلي غير مكتملة.")
+                                }
+                                val installed = installLocalBuildEngineFromUri(archiveUri, sha256)
+                                runOnUiThread { result.success(installed) }
+                            } catch (error: Exception) {
+                                runOnUiThread { result.success(mapOf("success" to false, "message" to (error.message ?: "فشل تثبيت ملف المحرك المحلي."))) }
                             }
                         }
                     }
@@ -171,6 +234,37 @@ class MainActivity : FlutterActivity() {
     }
 
 
+    @Deprecated("Deprecated in Android API; retained for ACTION_OPEN_DOCUMENT compatibility.")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != engineArchivePickerRequestCode) return
+        val callback = pendingEngineArchivePicker
+        pendingEngineArchivePicker = null
+        val selected = if (resultCode == RESULT_OK) data?.data else null
+        if (selected == null) {
+            callback?.success(null)
+            return
+        }
+        try {
+            contentResolver.takePersistableUriPermission(selected, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        } catch (_: Exception) {
+            // Some document providers grant a temporary read permission only.
+        }
+        callback?.success(selected.toString())
+    }
+
+    /** Report the live free-space value and extraction progress without changing the safety reserve. */
+    private fun extractionSpaceFailure(stage: String, processedBytes: Long): IllegalStateException {
+        val available = StatFs(filesDir.absolutePath).availableBytes
+        val mib = 1024L * 1024L
+        val availableMiB = available / mib
+        val reserveMiB = extractionSafetyReserveBytes / mib
+        val processedMiB = processedBytes.coerceAtLeast(0L) / mib
+        return IllegalStateException(
+            "توقف $stage لحماية مساحة الهاتف. المتاح الآن: ${availableMiB} MB؛ حد الأمان: ${reserveMiB} MB؛ البيانات المعالجة في هذه المرحلة: ${processedMiB} MB. حرّر مساحة إضافية ثم أعد المحاولة. لم يتم تغيير المحرك السابق."
+        )
+    }
+
     /** Install the official Alpine minirootfs TAR.GZ after a caller-supplied SHA-256 check. */
     private fun installAlpineRootfs(archivePath: String, expectedSha256: String): Map<String, Any> {
         if (!expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) throw IllegalArgumentException("بصمة Alpine غير صالحة.")
@@ -180,7 +274,7 @@ class MainActivity : FlutterActivity() {
             throw SecurityException("أرشيف Alpine خارج مجلد التنزيل الآمن أو غير موجود.")
         }
         if (archive.length() > 256L * 1024L * 1024L) throw IllegalArgumentException("أرشيف Alpine أكبر من الحد المسموح.")
-        if (StatFs(filesDir.absolutePath).availableBytes < 1024L * 1024L * 1024L) throw IllegalStateException("يلزم 1 GB مساحة حرة قبل تثبيت Alpine.")
+        if (StatFs(filesDir.absolutePath).availableBytes < alpineInstallStorageBytes) throw IllegalStateException("يلزم 1 GB مساحة حرة قبل تثبيت Alpine.")
         val digest = MessageDigest.getInstance("SHA-256")
         FileInputStream(archive).use { input ->
             val buffer = ByteArray(256 * 1024)
@@ -231,7 +325,7 @@ class MainActivity : FlutterActivity() {
                     if (!entry.isFile || entry.size < 0L) throw SecurityException("نوع عنصر TAR غير مدعوم: $raw")
                     expanded += entry.size
                     if (expanded > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم Alpine المفكوك تجاوز 12 GB.")
-                    if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف الاستخراج لحماية مساحة الهاتف.")
+                    if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw extractionSpaceFailure("استخراج Alpine", expanded)
                     Files.createDirectories(target.parent)
                     FileOutputStream(target.toFile()).use { out ->
                         var copied = 0L
@@ -256,16 +350,36 @@ class MainActivity : FlutterActivity() {
                 val linkName = entry.linkName.replace('\\', '/')
                 if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط TAR فارغ أو غير صالح.")
                 val linkTarget = if (entry.isSymbolicLink) {
-                    if (linkName.startsWith("/")) rootPath.resolve(linkName.removePrefix("/")).normalize()
-                    else linkPath.parent.resolve(linkName).normalize()
+                    RootfsSymlinkTargets.resolveGuestTarget(rootPath, linkPath, linkName)
                 } else {
                     rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
                 }
                 if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط TAR يشير خارج Alpine: $linkName")
                 Files.createDirectories(linkPath.parent)
+                // TAR may first materialize a link path as a directory (for example usr/bin/X11)
+                // because entries below that path were encountered before deferred links are applied.
+                if (Files.exists(linkPath, LinkOption.NOFOLLOW_LINKS)) {
+                    if (entry.isSymbolicLink && Files.isDirectory(linkPath, LinkOption.NOFOLLOW_LINKS)) {
+                        val isEmpty = Files.newDirectoryStream(linkPath).use { stream -> !stream.iterator().hasNext() }
+                        if (!isEmpty) {
+                            throw IllegalStateException(
+                                "تعارض رابط TAR: المسار $linkPath موجود كمجلد غير فارغ، والهدف هو $linkName؛ لم تُحذف محتوياته."
+                            )
+                        }
+                        Files.delete(linkPath)
+                    } else {
+                        throw IllegalStateException(
+                            "تعارض رابط TAR: المسار $linkPath موجود مسبقًا بنوع لا يمكن استبداله بأمان؛ الهدف $linkName."
+                        )
+                    }
+                }
                 if (entry.isSymbolicLink) {
-                    val relativeTarget = linkPath.parent.relativize(linkTarget)
-                    Files.createSymbolicLink(linkPath, relativeTarget)
+                    // Preserve relative TAR text (especially "." for usr/bin/X11).
+                    // Absolute guest paths are translated to safe relative host paths.
+                    Files.createSymbolicLink(
+                        linkPath,
+                        RootfsSymlinkTargets.targetForCreation(linkPath, linkTarget, linkName)
+                    )
                 } else {
                     if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في TAR يشير إلى ملف غير موجود.")
                     Files.copy(linkTarget, linkPath)
@@ -294,33 +408,95 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    /** Wraps one ZIP entry without closing its parent stream; counts bytes consumed by the nested GZIP/TAR reader. */
+    private class NonClosingCountingInputStream(
+        input: InputStream,
+        private val onBytesRead: (Int) -> Unit,
+        private val digest: MessageDigest? = null
+    ) : FilterInputStream(input) {
+        override fun read(): Int {
+            val value = super.read()
+            if (value >= 0) {
+                onBytesRead(1)
+                digest?.update(value.toByte())
+            }
+            return value
+        }
+
+        override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+            val count = super.read(buffer, offset, length)
+            if (count > 0) {
+                onBytesRead(count)
+                digest?.update(buffer, offset, count)
+            }
+            return count
+        }
+
+        override fun close() {
+            // The outer ZipInputStream must remain open for subsequent entries.
+        }
+    }
+
     /** Verify the downloaded archive and extract it without loading it into RAM. */
     private fun installLocalBuildEngine(archivePath: String, expectedSha256: String): Map<String, Any> {
-        if (!expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
-            throw IllegalArgumentException("بصمة SHA-256 غير صالحة.")
-        }
         val downloads = File(filesDir, "bisho-engine-downloads").canonicalFile
         val archive = File(archivePath).canonicalFile
         if (!archive.path.startsWith(downloads.path + File.separator) || !archive.isFile || archive.length() <= 0L) {
             throw IllegalArgumentException("ملف الحزمة خارج مجلد التنزيل الآمن أو غير موجود.")
         }
-        if (archive.length() > 8L * 1024L * 1024L * 1024L) {
-            throw IllegalArgumentException("حجم الحزمة يتجاوز 8 GB.")
+        return installLocalBuildEngineFromSource(archive.length(), expectedSha256) { FileInputStream(archive) }
+    }
+
+    /** Install a user-selected ZIP through SAF without copying the 1.27 GB archive into app storage. */
+    private fun installLocalBuildEngineFromUri(archiveUri: String, expectedSha256: String): Map<String, Any> {
+        val uri = Uri.parse(archiveUri)
+        if (uri.scheme != "content") throw SecurityException("يجب اختيار ملف محرك من منتقي ملفات Android الآمن.")
+        var archiveSize = -1L
+        contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            val sizeColumn = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (cursor.moveToFirst() && sizeColumn >= 0 && !cursor.isNull(sizeColumn)) {
+                archiveSize = cursor.getLong(sizeColumn)
+            }
         }
+        if (archiveSize <= 0L) throw IllegalArgumentException("تعذر تحديد حجم ملف ZIP المحدد.")
+        return installLocalBuildEngineFromSource(archiveSize, expectedSha256) {
+            contentResolver.openInputStream(uri)
+                ?: throw IllegalStateException("تعذرت قراءة ملف ZIP المحدد من مزود التخزين.")
+        }
+    }
+
+    /** Verify the selected source, then stream ZIP -> GZIP -> TAR without an intermediate archive file. */
+    private fun installLocalBuildEngineFromSource(
+        archiveSize: Long,
+        expectedSha256: String,
+        openArchive: () -> InputStream
+    ): Map<String, Any> {
+        if (!expectedSha256.matches(Regex("^[a-fA-F0-9]{64}$"))) {
+            throw IllegalArgumentException("بصمة SHA-256 غير صالحة.")
+        }
+        if (archiveSize <= 0L || archiveSize > 8L * 1024L * 1024L * 1024L) {
+            throw IllegalArgumentException("حجم الحزمة غير معروف أو يتجاوز الحد المسموح (8 GB).")
+        }
+        val freedBytes = repairSafeLocalBuildState()
         val freeBytes = StatFs(filesDir.absolutePath).availableBytes
-        // The archive is already downloaded. Keep a live reserve, not a fixed 20 GB budget.
-        if (freeBytes < engineInstallStorageBytes) {
-            throw IllegalStateException("المساحة الحرة بعد التنزيل أقل من 1 GB؛ أوقف التثبيت لحماية الهاتف.")
+        if (freeBytes < minimumBuildStorageBytes) {
+            throw IllegalStateException(
+                "المساحة غير كافية لتثبيت المحرك بأمان. نظّف التطبيق الملفات المؤقتة الآمنة وحرّر ${"%.1f".format(minimumBuildStorageBytes / (1024.0 * 1024.0 * 1024.0))} GB على الأقل؛ المتاح الآن ${"%.1f".format(freeBytes / (1024.0 * 1024.0 * 1024.0))} GB. لم نحذف مشاريعك أو المحرك السابق. تم توفير ${"%.2f".format(freedBytes / (1024.0 * 1024.0 * 1024.0))} GB تلقائياً."
+            )
         }
         emitBuildEvent("جارٍ حساب SHA-256 لحزمة المحرك...")
         val digest = MessageDigest.getInstance("SHA-256")
-        FileInputStream(archive).use { input ->
+        openArchive().use { input ->
             val buffer = ByteArray(1024 * 1024)
+            var hashedBytes = 0L
             while (true) {
                 val count = input.read(buffer)
                 if (count < 0) break
+                hashedBytes += count
+                if (hashedBytes > archiveSize) throw SecurityException("تجاوز ملف المحرك الحجم المعلن أثناء التحقق.")
                 digest.update(buffer, 0, count)
             }
+            if (hashedBytes != archiveSize) throw SecurityException("حجم ملف المحرك لا يطابق الحجم المعلن من مزود التخزين.")
         }
         val actual = digest.digest().joinToString("") { "%02x".format(it) }
         if (!actual.equals(expectedSha256, ignoreCase = true)) {
@@ -330,7 +506,22 @@ class MainActivity : FlutterActivity() {
         val engineRoot = File(filesDir, "bisho-local-build-engine")
         val staging = File(filesDir, "bisho-local-build-engine.installing")
         val backup = File(filesDir, "bisho-local-build-engine.previous")
-        if (staging.exists()) staging.deleteRecursively()
+        // A backup plus an active engine means device smoke verification is still pending.
+        // Never discard the last known-good engine before the candidate passes on-device.
+        if (backup.exists()) {
+            if (!engineRoot.exists()) {
+                if (!backup.renameTo(engineRoot)) {
+                    throw IllegalStateException("تعذر استعادة نسخة المحرك السابقة بعد تثبيت منقطع.")
+                }
+            } else {
+                throw IllegalStateException(
+                    "توجد نسخة محرك جديدة لم تجتز اختبار الهاتف بعد؛ اختبرها أولاً أو استعد النسخة السابقة."
+                )
+            }
+        }
+        if (staging.exists() && !staging.deleteRecursively()) {
+            throw IllegalStateException("تعذر تنظيف مجلد التثبيت المؤقت المتبقي.")
+        }
         if (!staging.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد التثبيت المؤقت.")
         var extractedBytes = 0L
         var entries = 0
@@ -338,10 +529,23 @@ class MainActivity : FlutterActivity() {
         val canonicalTargets = HashSet<String>()
         var rootfsArchiveSeen = false
         try {
-            ZipInputStream(BufferedInputStream(FileInputStream(archive), 1024 * 1024)).use { zip ->
+            ZipInputStream(BufferedInputStream(openArchive(), 1024 * 1024)).use { archiveZip ->
+                val firstEntry = archiveZip.nextEntry
+                    ?: throw IllegalStateException("ملف ZIP فارغ أو غير صالح.")
+                val wrappedArtifact = firstEntry.name == "bisho-flutter-engine-arm64.zip"
+                val wrappedEngineDigest = if (wrappedArtifact) MessageDigest.getInstance("SHA-256") else null
+                val zip = if (wrappedArtifact) {
+                    ZipInputStream(BufferedInputStream(
+                        NonClosingCountingInputStream(archiveZip, {}, wrappedEngineDigest), 1024 * 1024
+                    ))
+                } else {
+                    archiveZip
+                }
+                var pendingEntry: ZipEntry? = if (wrappedArtifact) null else firstEntry
                 val buffer = ByteArray(256 * 1024)
                 while (true) {
-                    val entry = zip.nextEntry ?: break
+                    val entry = pendingEntry ?: zip.nextEntry ?: break
+                    pendingEntry = null
                     entries++
                     if (entries > 100000) throw IllegalStateException("تحتوي الحزمة على عدد ملفات يتجاوز الحد الآمن.")
                     val rawName = entry.name.replace('\\', '/')
@@ -366,17 +570,213 @@ class MainActivity : FlutterActivity() {
                     if (name == "rootfs.tar.gz") {
                         if (entry.isDirectory || rootfsArchiveSeen) throw SecurityException("أرشيف rootfs مكرر أو غير صالح.")
                         rootfsArchiveSeen = true
-                        output.parentFile?.let { if (!it.exists() && !it.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد أرشيف rootfs.") }
-                        FileOutputStream(output).use { out ->
+                        val rootfsDirectory = File(staging, "rootfs")
+                        if (!rootfsDirectory.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد rootfs المؤقت.")
+                        val rootPath = rootfsDirectory.toPath().normalize()
+                        val tarNames = HashSet<String>()
+                        var rootfsExpandedBytes = 0L
+                        val tarLinks = ArrayList<Pair<TarArchiveEntry, Path>>()
+                        var tarEntries = 0
+                        TarArchiveInputStream(
+                            GzipCompressorInputStream(
+                                BufferedInputStream(
+                                    NonClosingCountingInputStream(zip, { count ->
+                                        extractedBytes += count.toLong()
+                                        if (extractedBytes > 12L * 1024L * 1024L * 1024L) {
+                                            throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
+                                        }
+                                        if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) {
+                                            throw extractionSpaceFailure("فك حزمة المحرك", extractedBytes.toLong())
+                                        }
+                                    }), 256 * 1024
+                                )
+                            )
+                        ).use { tar ->
+                            val tarBuffer = ByteArray(256 * 1024)
                             while (true) {
-                                val count = zip.read(buffer)
-                                if (count < 0) break
-                                extractedBytes += count
-                                if (extractedBytes > 12L * 1024L * 1024L * 1024L) throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
-                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
-                                out.write(buffer, 0, count)
+                                val tarEntry = tar.nextTarEntry ?: break
+                                tarEntries++
+                                if (tarEntries > 100000) throw SecurityException("rootfs TAR يحتوي عدداً مفرطاً من العناصر.")
+                                val raw = tarEntry.name.replace('\\', '/')
+                                var clean = raw.removeSuffix("/")
+                                while (clean.startsWith("./")) clean = clean.removePrefix("./")
+                                if ((clean.isBlank() || clean == ".") && tarEntry.isDirectory) continue
+                                if (clean.isBlank() || clean == "." || clean.startsWith("/") || clean.contains('\u0000') ||
+                                    clean.split('/').any { it.isBlank() || it == "." || it == ".." } || Regex("^[A-Za-z]:").containsMatchIn(clean)) {
+                                    throw SecurityException("مسار rootfs TAR غير آمن: " + raw)
+                                }
+                                val target = rootPath.resolve(clean).normalize()
+                                if (!target.startsWith(rootPath) || !tarNames.add(target.toString())) throw SecurityException("مسار rootfs TAR مكرر أو خارج الجذر: " + raw)
+                                if (tarEntry.isSymbolicLink || tarEntry.isLink) {
+                                    tarLinks.add(tarEntry to target)
+                                    continue
+                                }
+                                if (tarEntry.isCharacterDevice || tarEntry.isBlockDevice || tarEntry.isFIFO) continue
+                                if (tarEntry.isDirectory) {
+                                    Files.createDirectories(target)
+                                    val directoryMode = tarEntry.mode
+                                    target.toFile().setReadable(directoryMode and 0x124 != 0, false)
+                                    target.toFile().setWritable(directoryMode and 0x092 != 0, false)
+                                    target.toFile().setExecutable(directoryMode and 0x049 != 0, false)
+                                    continue
+                                }
+                                if (!tarEntry.isFile || tarEntry.size < 0L) throw SecurityException("نوع عنصر rootfs TAR غير مدعوم: " + raw)
+                                rootfsExpandedBytes += tarEntry.size
+                                if (rootfsExpandedBytes > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم rootfs المفكوك تجاوز 12 GB.")
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw extractionSpaceFailure("استخراج rootfs", rootfsExpandedBytes)
+                                Files.createDirectories(target.parent)
+                                FileOutputStream(target.toFile()).use { out ->
+                                    var copied = 0L
+                                    while (true) {
+                                        val count = tar.read(tarBuffer)
+                                        if (count < 0) break
+                                        copied += count
+                                        if (copied > tarEntry.size) throw SecurityException("بيانات rootfs TAR تجاوزت الحجم المعلن.")
+                                        out.write(tarBuffer, 0, count)
+                                    }
+                                    if (copied != tarEntry.size) throw SecurityException("حجم ملف rootfs TAR غير مطابق للرأس.")
+                                    out.fd.sync()
+                                }
+                                val mode = tarEntry.mode
+                                target.toFile().setReadable(mode and 0x124 != 0, false)
+                                target.toFile().setWritable(mode and 0x092 != 0, false)
+                                target.toFile().setExecutable(mode and 0x049 != 0, false)
                             }
-                            out.fd.sync()
+                        }
+                        // Resolve hard-link chains iteratively; TAR entries may reference later entries.
+                        val pendingHardLinks = tarLinks.filter { it.first.isLink }.toMutableList()
+                        while (pendingHardLinks.isNotEmpty()) {
+                            var resolvedAny = false
+                            val iterator = pendingHardLinks.iterator()
+                            while (iterator.hasNext()) {
+                                val (tarEntry, linkPath) = iterator.next()
+                                val linkName = tarEntry.linkName.replace('\\', '/')
+                                if (linkName.isBlank() || linkName.contains('\u0000')) {
+                                    throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
+                                }
+                                val linkTarget = rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
+                                if (!linkTarget.startsWith(rootPath)) {
+                                    throw SecurityException("Hard link في rootfs TAR يشير خارج الجذر.")
+                                }
+                                if (!Files.isRegularFile(linkTarget)) continue
+                                Files.createDirectories(linkPath.parent)
+                                if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    throw IllegalStateException("مسار hard link موجود مسبقاً في rootfs: " + linkPath)
+                                }
+                                Files.copy(linkTarget, linkPath)
+                                iterator.remove()
+                                resolvedAny = true
+                            }
+                            if (!resolvedAny) {
+                                throw SecurityException("تعذر حل سلسلة hard links في rootfs TAR؛ الهدف مفقود أو توجد حلقة.")
+                            }
+                        }
+
+                        fun sameRegularFile(first: Path, second: Path): Boolean {
+                            if (!Files.isRegularFile(first, java.nio.file.LinkOption.NOFOLLOW_LINKS) ||
+                                !Files.isRegularFile(second, java.nio.file.LinkOption.NOFOLLOW_LINKS) ||
+                                Files.size(first) != Files.size(second)) return false
+                            Files.newInputStream(first).use { left ->
+                                Files.newInputStream(second).use { right ->
+                                    val a = ByteArray(32 * 1024)
+                                    val b = ByteArray(32 * 1024)
+                                    while (true) {
+                                        val na = left.read(a)
+                                        val nb = right.read(b)
+                                        if (na != nb) return false
+                                        if (na < 0) return true
+                                        for (i in 0 until na) if (a[i] != b[i]) return false
+                                    }
+                                }
+                            }
+                        }
+
+                        fun mergeDirectoryContents(source: Path, destination: Path) {
+                            if (!source.normalize().startsWith(rootPath) ||
+                                !destination.normalize().startsWith(rootPath) ||
+                                source.normalize() == destination.normalize()) {
+                                throw SecurityException("تعارض رابط رمزي خارج حدود دمج مجلدات rootfs.")
+                            }
+                            Files.newDirectoryStream(source).use { children ->
+                                for (child in children) {
+                                    val targetChild = destination.resolve(child.fileName).normalize()
+                                    if (!targetChild.startsWith(rootPath) || targetChild == source.normalize()) {
+                                        throw SecurityException("مسار متداخل غير آمن أثناء دمج محتويات رابط rootfs.")
+                                    }
+                                    if (Files.isDirectory(child, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                        if (Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS) &&
+                                            !Files.isDirectory(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                            throw IllegalStateException("تعارض ملف/مجلد أثناء دمج رابط rootfs: " + targetChild)
+                                        }
+                                        if (!Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                            Files.createDirectory(targetChild)
+                                        }
+                                        mergeDirectoryContents(child, targetChild)
+                                    } else if (Files.isSymbolicLink(child)) {
+                                        val oldTarget = RootfsSymlinkTargets.resolveGuestTarget(
+                                            rootPath, child, Files.readSymbolicLink(child).toString()
+                                        )
+                                        if (Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                            if (!Files.isSymbolicLink(targetChild) ||
+                                                targetChild.parent.resolve(Files.readSymbolicLink(targetChild)).normalize() != oldTarget) {
+                                                throw IllegalStateException("تعارض رابط رمزي أثناء دمج rootfs: " + targetChild)
+                                            }
+                                            Files.delete(child)
+                                        } else {
+                                            Files.createSymbolicLink(
+                                                targetChild,
+                                                RootfsSymlinkTargets.relativeTarget(targetChild, oldTarget)
+                                            )
+                                            Files.delete(child)
+                                        }
+                                    } else if (Files.isRegularFile(child, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                        if (Files.exists(targetChild, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                            if (!sameRegularFile(child, targetChild)) {
+                                                throw IllegalStateException("تعارض محتوى أثناء دمج رابط rootfs: " + targetChild)
+                                            }
+                                            Files.delete(child)
+                                        } else {
+                                            Files.move(child, targetChild)
+                                        }
+                                    } else {
+                                        throw SecurityException("عنصر غير مدعوم داخل مجلد رابط rootfs: " + child)
+                                    }
+                                }
+                            }
+                            Files.delete(source)
+                        }
+
+                        // Create deeper symlinks first: child entries must not be written through
+                        // a parent symlink. Absolute guest targets stay inside rootfs.
+                        val symbolicLinks = tarLinks.filter { it.first.isSymbolicLink }
+                            .sortedByDescending { it.second.nameCount }
+                        for ((tarEntry, linkPath) in symbolicLinks) {
+                            val linkName = tarEntry.linkName.replace('\\', '/')
+                            if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
+                            val linkTarget = RootfsSymlinkTargets.resolveGuestTarget(rootPath, linkPath, linkName)
+                            if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط rootfs TAR يشير خارج الجذر: " + linkName)
+                            Files.createDirectories(linkPath.parent)
+                            if (Files.exists(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                if (!Files.isDirectory(linkPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    throw IllegalStateException("مسار الرابط الرمزي موجود مسبقاً كملف في rootfs: " + linkPath)
+                                }
+                                if (linkTarget.startsWith(linkPath)) {
+                                    throw SecurityException("هدف الرابط الرمزي يقع داخل المجلد المراد استبداله: " + linkPath)
+                                }
+                                if (!Files.exists(linkTarget, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                                    Files.createDirectories(linkTarget)
+                                }
+                                if (!Files.isDirectory(linkTarget)) {
+                                    throw IllegalStateException("لا يمكن دمج مجلد موجود مع هدف رابط غير مجلد: " + linkTarget)
+                                }
+                                // Preserve entries extracted below a symlink path. Identical
+                                // duplicates are coalesced; conflicting data fails safely.
+                                mergeDirectoryContents(linkPath, linkTarget)
+                            }
+                            Files.createSymbolicLink(
+                                linkPath,
+                                RootfsSymlinkTargets.targetForCreation(linkPath, linkTarget, linkName)
+                            )
                         }
                     } else if (name.startsWith("rootfs/")) {
                         throw SecurityException("صيغة الحزمة تتطلب rootfs.tar.gz ولا تقبل مجلد rootfs مفكوكاً داخل ZIP.")
@@ -390,7 +790,7 @@ class MainActivity : FlutterActivity() {
                                 if (count < 0) break
                                 extractedBytes += count
                                 if (extractedBytes > 12L * 1024L * 1024L * 1024L) throw IllegalStateException("الحجم المفكوك يتجاوز الحد الآمن البالغ 12 GB.")
-                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف فك المحرك لحماية مساحة الهاتف.")
+                                if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw extractionSpaceFailure("فك حزمة المحرك", extractedBytes.toLong())
                                 out.write(buffer, 0, count)
                             }
                             out.fd.sync()
@@ -398,88 +798,44 @@ class MainActivity : FlutterActivity() {
                     }
                     zip.closeEntry()
                 }
+                if (wrappedArtifact) {
+                    // The GitHub Actions artifact is a ZIP containing the actual engine ZIP and its checksum sidecar.
+                    // The nested ZIP is streamed directly; neither it nor rootfs.tar.gz is written as a temporary file.
+                    zip.close()
+                    archiveZip.closeEntry()
+                    val sidecarEntry = archiveZip.nextEntry
+                        ?: throw SecurityException("حزمة GitHub الخارجية تفتقد ملف SHA-256 الجانبي.")
+                    if (sidecarEntry.name != "bisho-flutter-engine-arm64.zip.sha256" || sidecarEntry.isDirectory) {
+                        throw SecurityException("ملف SHA-256 الجانبي في حزمة GitHub غير مطابق.")
+                    }
+                    val sidecarBytes = ByteArrayOutputStream()
+                    val sidecarBuffer = ByteArray(256)
+                    while (true) {
+                        val count = archiveZip.read(sidecarBuffer)
+                        if (count < 0) break
+                        if (sidecarBytes.size() + count > 4096) {
+                            throw SecurityException("ملف SHA-256 الجانبي أكبر من الحد المتوقع.")
+                        }
+                        sidecarBytes.write(sidecarBuffer, 0, count)
+                    }
+                    val sidecarText = sidecarBytes.toString(Charsets.UTF_8.name())
+                    val sidecarMatch = Regex(
+                        "(?m)^\\s*([a-fA-F0-9]{64})\\s+\\*?(?:.*[/\\\\])?bisho-flutter-engine-arm64\\.zip\\s*$"
+                    ).find(sidecarText)
+                        ?: throw SecurityException("صيغة SHA-256 الجانبي داخل حزمة GitHub غير صالحة.")
+                    val actualNestedSha256 = wrappedEngineDigest?.digest()
+                        ?.joinToString("") { "%02x".format(it) }
+                        ?: throw SecurityException("تعذر حساب بصمة ZIP الداخلي.")
+                    if (!sidecarMatch.groupValues[1].equals(actualNestedSha256, ignoreCase = true)) {
+                        throw SecurityException("بصمة SHA-256 الجانبية لا تطابق ZIP الداخلي؛ رُفضت الحزمة.")
+                    }
+                    archiveZip.closeEntry()
+                    if (archiveZip.nextEntry != null) {
+                        throw SecurityException("حزمة GitHub الخارجية تحتوي ملفات غير متوقعة.")
+                    }
+                }
             }
             if (!rootfsArchiveSeen) throw IllegalStateException("الحزمة لا تحتوي rootfs.tar.gz؛ ارفض تثبيت صيغة ZIP القديمة.")
-            val rootfsArchive = File(staging, "rootfs.tar.gz")
-            val rootfsDirectory = File(staging, "rootfs")
-            if (!rootfsDirectory.mkdirs()) throw IllegalStateException("تعذر إنشاء مجلد rootfs المؤقت.")
-            val rootPath = rootfsDirectory.toPath().normalize()
-            val tarNames = HashSet<String>()
-            var rootfsExpandedBytes = 0L
-            val tarLinks = ArrayList<Pair<TarArchiveEntry, Path>>()
-            var tarEntries = 0
-            TarArchiveInputStream(GzipCompressorInputStream(BufferedInputStream(FileInputStream(rootfsArchive), 256 * 1024))).use { tar ->
-                val tarBuffer = ByteArray(256 * 1024)
-                while (true) {
-                    val tarEntry = tar.nextTarEntry ?: break
-                    tarEntries++
-                    if (tarEntries > 100000) throw SecurityException("rootfs TAR يحتوي عدداً مفرطاً من العناصر.")
-                    val raw = tarEntry.name.replace('\\', '/')
-                    var clean = raw.removeSuffix("/")
-                    while (clean.startsWith("./")) clean = clean.removePrefix("./")
-                    if ((clean.isBlank() || clean == ".") && tarEntry.isDirectory) continue
-                    if (clean.isBlank() || clean == "." || clean.startsWith("/") || clean.contains('\u0000') ||
-                        clean.split('/').any { it.isBlank() || it == "." || it == ".." } || Regex("^[A-Za-z]:").containsMatchIn(clean)) {
-                        throw SecurityException("مسار rootfs TAR غير آمن: " + raw)
-                    }
-                    val target = rootPath.resolve(clean).normalize()
-                    if (!target.startsWith(rootPath) || !tarNames.add(target.toString())) throw SecurityException("مسار rootfs TAR مكرر أو خارج الجذر: " + raw)
-                    if (tarEntry.isSymbolicLink || tarEntry.isLink) {
-                        tarLinks.add(tarEntry to target)
-                        continue
-                    }
-                    if (tarEntry.isCharacterDevice || tarEntry.isBlockDevice || tarEntry.isFIFO) continue
-                    if (tarEntry.isDirectory) {
-                        Files.createDirectories(target)
-                        val directoryMode = tarEntry.mode
-                        target.toFile().setReadable(directoryMode and 0x124 != 0, false)
-                        target.toFile().setWritable(directoryMode and 0x092 != 0, false)
-                        target.toFile().setExecutable(directoryMode and 0x049 != 0, false)
-                        continue
-                    }
-                    if (!tarEntry.isFile || tarEntry.size < 0L) throw SecurityException("نوع عنصر rootfs TAR غير مدعوم: " + raw)
-                    rootfsExpandedBytes += tarEntry.size
-                    if (rootfsExpandedBytes > 12L * 1024L * 1024L * 1024L) throw SecurityException("حجم rootfs المفكوك تجاوز 12 GB.")
-                    if (StatFs(filesDir.absolutePath).availableBytes < extractionSafetyReserveBytes) throw IllegalStateException("توقف استخراج rootfs لحماية مساحة الهاتف.")
-                    Files.createDirectories(target.parent)
-                    FileOutputStream(target.toFile()).use { out ->
-                        var copied = 0L
-                        while (true) {
-                            val count = tar.read(tarBuffer)
-                            if (count < 0) break
-                            copied += count
-                            if (copied > tarEntry.size) throw SecurityException("بيانات rootfs TAR تجاوزت الحجم المعلن.")
-                            out.write(tarBuffer, 0, count)
-                        }
-                        if (copied != tarEntry.size) throw SecurityException("حجم ملف rootfs TAR غير مطابق للرأس.")
-                        out.fd.sync()
-                    }
-                    val mode = tarEntry.mode
-                    target.toFile().setReadable(mode and 0x124 != 0, false)
-                    target.toFile().setWritable(mode and 0x092 != 0, false)
-                    target.toFile().setExecutable(mode and 0x049 != 0, false)
-                }
-            }
-            // Resolve absolute links inside this guest root, never against Android's host root.
-            for ((tarEntry, linkPath) in tarLinks) {
-                val linkName = tarEntry.linkName.replace('\\', '/')
-                if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
-                val linkTarget = if (tarEntry.isSymbolicLink) {
-                    if (linkName.startsWith("/")) rootPath.resolve(linkName.removePrefix("/")).normalize()
-                    else linkPath.parent.resolve(linkName).normalize()
-                } else {
-                    rootPath.resolve(linkName.removePrefix("./").trimStart('/')).normalize()
-                }
-                if (!linkTarget.startsWith(rootPath)) throw SecurityException("رابط rootfs TAR يشير خارج الجذر: " + linkName)
-                Files.createDirectories(linkPath.parent)
-                if (tarEntry.isSymbolicLink) {
-                    Files.createSymbolicLink(linkPath, linkPath.parent.relativize(linkTarget))
-                } else {
-                    if (!Files.isRegularFile(linkTarget)) throw SecurityException("Hard link في rootfs TAR يشير إلى ملف غير موجود.")
-                    Files.copy(linkTarget, linkPath)
-                }
-            }
-            rootfsArchive.delete()
             val manifest = File(staging, "engine-manifest.json")
             if (!manifest.isFile || manifest.length() <= 0L || manifest.length() > 1024L * 1024L) {
                 throw IllegalStateException("الحزمة لا تحتوي engine-manifest.json صالحًا أو أن حجمه يتجاوز 1 MB.")
@@ -509,8 +865,27 @@ class MainActivity : FlutterActivity() {
                 }
                 val executable = resolveInside(staging, relative)
                     ?: throw SecurityException("مسار تنفيذي غير آمن في engine-executables.txt.")
-                if (!executable.isFile || (!executable.setExecutable(true, false) && !executable.canExecute())) {
-                    throw IllegalStateException("تعذر استعادة صلاحية التنفيذ للملف: $relative")
+                if (!executable.isFile) {
+                    throw IllegalStateException("الملف التنفيذي غير موجود داخل الحزمة: $relative")
+                }
+                // File.setExecutable() can report success while Android's restored
+                // mode bits remain unsuitable after archive extraction. Apply POSIX
+                // 0755 explicitly, and ensure every parent directory is searchable.
+                try {
+                    Os.chmod(executable.absolutePath, 0b111101101)
+                    var parent = executable.parentFile
+                    while (parent != null && parent.canonicalFile != staging.canonicalFile) {
+                        if (!parent.isDirectory || !parent.canonicalPath.startsWith(staging.canonicalPath + File.separator)) {
+                            throw SecurityException("مجلد أب غير آمن أو غير موجود للملف التنفيذي: $relative")
+                        }
+                        Os.chmod(parent.absolutePath, 0b111101101)
+                        parent = parent.parentFile
+                    }
+                } catch (error: Exception) {
+                    throw IllegalStateException("تعذر ضبط صلاحيات POSIX للملف التنفيذي $relative: ${error.message}", error)
+                }
+                if (!executable.canExecute()) {
+                    throw IllegalStateException("الملف التنفيذي لا يملك صلاحية التنفيذ بعد chmod 0755: $relative")
                 }
             }
             val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
@@ -592,13 +967,23 @@ class MainActivity : FlutterActivity() {
                 if (backup.exists()) backup.renameTo(engineRoot)
                 throw IllegalStateException("تعذر تفعيل مجلد المحرك الجديد.")
             }
-            if (backup.exists()) backup.deleteRecursively()
+            // Keep .previous until probeLocalBuildEngine completes successfully on this device.
             File(engineRoot, "local-build-verification.json").delete()
             File(engineRoot, "local-build-debug-verification.json").delete()
+            engineActivationAwaitingProbe = true
             emitBuildEvent("تم تجهيز ملفات المحرك والتحقق من manifest وSHA-256؛ لم يُفعّل للبناء المحلي بعد. يلزم نجاح اختبار الهاتف أولًا.")
             return mapOf("success" to true, "activated" to false, "message" to "تم تجهيز ملفات المحرك والتحقق من سلامتها. لم يُفعّل للبناء المحلي؛ شغّل اختبار الهاتف أولًا.", "bytes" to extractedBytes)
         } catch (error: Exception) {
             if (staging.exists()) staging.deleteRecursively()
+            // Restore the previous engine if activation was interrupted by an exception.
+            if (!engineRoot.exists() && backup.exists()) {
+                if (!backup.renameTo(engineRoot)) {
+                    throw IllegalStateException(
+                        "فشل التثبيت وتعذرت استعادة نسخة المحرك السابقة: ${error.message}",
+                        error
+                    )
+                }
+            }
             throw error
         }
     }
@@ -791,9 +1176,12 @@ class MainActivity : FlutterActivity() {
         var process: Process? = null
         try {
             val project = File(projectPath).canonicalFile
+            val freedBytes = repairSafeLocalBuildState()
             val freeBeforeBuild = StatFs(filesDir.absolutePath).availableBytes
             if (freeBeforeBuild < minimumBuildStorageBytes) {
-                throw IllegalStateException("المساحة الحرة غير كافية للبناء المحلي؛ يلزم توفير 2.5 GB على الأقل كبداية لمساحة Gradle وملفات البناء المؤقتة؛ المشاريع الكبيرة قد تحتاج أكثر.")
+                throw IllegalStateException(
+                    "نظّف Bisho IDE الملفات المؤقتة الآمنة أولاً ووفّر مساحة إضافية. المتاح: ${"%.2f".format(freeBeforeBuild / (1024.0 * 1024.0 * 1024.0))} GB؛ المطلوب مبدئياً: 2.5 GB؛ المساحة التي حررها الإصلاح التلقائي: ${"%.2f".format(freedBytes / (1024.0 * 1024.0 * 1024.0))} GB. لم تُحذف ملفات مشاريعك أو ملفات المحرك."
+                )
             }
             val stagingRoot = File(filesDir, "bisho-local-builds").canonicalFile
             // The staging folder is app-private. Reject arbitrary paths supplied
@@ -815,12 +1203,13 @@ class MainActivity : FlutterActivity() {
                 throw IllegalStateException("بيان محرك البناء غير متوافق مع هذا الجهاز.")
             }
             verifyCriticalFileHashes(engineDirectory, json)?.let { throw SecurityException(it) }
-            val launcher = resolveInside(engineDirectory, json.optString("runtimeLauncher"))
+            val launcher = resolveProotLauncher(engineDirectory, json)
             val rootfs = resolveInside(engineDirectory, json.optString("rootfsDirectory"))
             if (launcher == null || !launcher.isFile || !launcher.canExecute() ||
                 rootfs == null || !rootfs.isDirectory) {
                 throw IllegalStateException("مشغل Linux أو نظام الملفات الجذري غير مكتمل.")
             }
+            prepareProotLauncher(launcher)
             refreshGuestResolver(rootfs)
             if (!hasDeviceVerification(engineDirectory, manifest, "debug")) {
                 throw IllegalStateException("يجب نجاح اختبار PRoot وبناء APK والتحقق منه على هذا الهاتف قبل السماح بالبناء.")
@@ -1088,7 +1477,49 @@ class MainActivity : FlutterActivity() {
      * Tool version output alone is not proof that Gradle, AAPT2, Java, and the
      * Android platform can cooperate to produce a usable APK on this device.
      */
+    /** Probe wrapper owns rollback for every failure path, including validation early-returns. */
     private fun probeLocalBuildEngine(): Map<String, Any> {
+        val result = try {
+            probeLocalBuildEngineInternal()
+        } catch (error: Exception) {
+            mapOf("success" to false, "message" to (error.message ?: "تعذر اختبار المحرك."))
+        }
+        val previous = File(filesDir, "bisho-local-build-engine.previous")
+        if (result["success"] == true) {
+            val previousRemoved = !previous.exists() || previous.deleteRecursively()
+            if (!previousRemoved) {
+                emitBuildEvent("نجح اختبار المحرك، لكن تعذر حذف النسخة السابقة؛ تم الاحتفاظ بها للحماية.", true)
+            } else {
+                val failed = File(filesDir, "bisho-local-build-engine.failed")
+                if (failed.exists() && !failed.deleteRecursively()) {
+                    emitBuildEvent("نجح اختبار المحرك؛ تعذر تنظيف بقايا المحرك الفاشل السابقة، فتم الاحتفاظ بها.", true)
+                }
+            }
+            return result
+        }
+        if (!previous.exists()) return result
+        val active = File(filesDir, "bisho-local-build-engine")
+        val failed = File(filesDir, "bisho-local-build-engine.failed")
+        return try {
+            if (failed.exists() && !failed.deleteRecursively()) {
+                throw IllegalStateException("تعذر تنظيف مجلد المحرك الفاشل السابق.")
+            }
+            if (active.exists() && !active.renameTo(failed)) {
+                throw IllegalStateException("تعذر عزل المحرك الذي فشل اختباره.")
+            }
+            if (!previous.renameTo(active)) {
+                if (failed.exists()) failed.renameTo(active)
+                throw IllegalStateException("تعذر استعادة نسخة المحرك السابقة.")
+            }
+            result + ("message" to ((result["message"] as? String ?: "فشل اختبار المحرك.") +
+                " تمت استعادة نسخة المحرك السابقة تلقائياً؛ احتفظنا بالنسخة الفاشلة للتشخيص."))
+        } catch (recoveryError: Exception) {
+            result + ("message" to ((result["message"] as? String ?: "فشل اختبار المحرك.") +
+                " تعذر الاسترداد التلقائي: ${recoveryError.message}"))
+        }
+    }
+
+    private fun probeLocalBuildEngineInternal(): Map<String, Any> {
         val engineDirectory = File(filesDir, "bisho-local-build-engine").canonicalFile
         val manifest = File(engineDirectory, "engine-manifest.json")
         if (!manifest.isFile || manifest.length() <= 0L || manifest.length() > 1024L * 1024L) {
@@ -1104,7 +1535,7 @@ class MainActivity : FlutterActivity() {
         if (!json.optBoolean("debugBuildSupported", false)) {
             return mapOf("success" to false, "message" to "بيان المحرك لا يحمل اعتماد اختبار Debug من أداة تجهيز الحزمة؛ أعد تجهيز المحرك بعد نجاح smoke build على Linux ARM64.")
         }
-        val launcher = resolveInside(engineDirectory, json.optString("runtimeLauncher"))
+        val launcher = resolveProotLauncher(engineDirectory, json)
         val rootfs = resolveInside(engineDirectory, json.optString("rootfsDirectory"))
         val flutter = resolveInside(engineDirectory, json.optString("flutterExecutable"))
         val java = resolveInside(engineDirectory, json.optString("javaExecutable"))
@@ -1194,6 +1625,7 @@ class MainActivity : FlutterActivity() {
             printf '%s\n' "${'$'}BADGING" > /bisho-home/aapt-badging.txt
             printf '%s\n' "${'$'}BADGING" | grep -q '^package:'
         """.trimIndent()
+        prepareProotLauncher(launcher)
         val prootTmpDirectory = ensureProotTmpDirectory()
         val command = mutableListOf(
             launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
@@ -1327,18 +1759,97 @@ class MainActivity : FlutterActivity() {
         if (log.isFile) log.readText().takeLast(16000) else ""
     } catch (_: Exception) { "" }
 
+    /**
+     * Repairs only app-owned, reproducible state. Never deletes projects, the active
+     * engine, its previous known-good copy, or user-selected archives.
+     */
+    private fun repairSafeLocalBuildState(): Long {
+        var freedBytes = 0L
+        val cache = cacheDir
+        cache.listFiles()?.filter { it.isFile && (
+            it.name.startsWith("bisho-engine-probe-") ||
+            it.name.startsWith("bisho-build-") ||
+            it.name.endsWith(".pending")
+        ) }?.forEach { file ->
+            val length = file.length()
+            if (file.delete()) freedBytes += length
+        }
+
+        // A staging directory is never an installed engine. It is safe to discard
+        // only when no install is currently running (all native work is serialized).
+        val staleStaging = File(filesDir, "bisho-local-build-engine.installing")
+        if (staleStaging.exists()) {
+            val length = staleStaging.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            if (staleStaging.deleteRecursively()) freedBytes += length
+        }
+
+        // Keep APKs referenced by valid proof records; remove only abandoned .pending
+        // copies and unreferenced old smoke APKs created by this app.
+        val engine = File(filesDir, "bisho-local-build-engine")
+        val artifacts = File(filesDir, "bisho-local-build-artifacts")
+        val protected = mutableSetOf<String>()
+        for (proofName in listOf("local-build-debug-verification.json", "local-build-verification.json")) {
+            try {
+                val proof = File(engine, proofName)
+                if (proof.isFile) {
+                    val path = JSONObject(proof.readText()).optString("artifactPath")
+                    if (path.isNotBlank()) protected.add(File(path).canonicalPath)
+                }
+            } catch (_: Exception) { }
+        }
+        artifacts.listFiles()?.filter { it.isFile }?.forEach { file ->
+            val ownedSmokeArtifact = file.name.startsWith("bisho-debug-") && file.name.endsWith(".apk")
+            val abandonedTemp = file.name.endsWith(".pending")
+            if ((abandonedTemp || ownedSmokeArtifact) && file.canonicalPath !in protected) {
+                val length = file.length()
+                if (file.delete()) freedBytes += length
+            }
+        }
+        return freedBytes
+    }
+
+    /** Restore executable mode bits on known toolchain entry points without changing file contents. */
+    private fun repairKnownExecutablePermissions(engineDirectory: File, manifest: JSONObject): List<String> {
+        val repaired = mutableListOf<String>()
+        val relativePaths = mutableListOf(
+            manifest.optString("flutterExecutable"),
+            manifest.optString("javaExecutable"),
+            manifest.optString("rootfsDirectory").trimEnd('/') + "/bin/sh",
+            manifest.optString("androidSdkDirectory").trimEnd('/') + "/cmdline-tools/latest/bin/sdkmanager"
+        )
+        val sdk = manifest.optString("androidSdkDirectory").trimEnd('/')
+        val buildTools = File(engineDirectory, sdk.removePrefix(engineDirectory.absolutePath).trimStart('/') + "/build-tools")
+        buildTools.listFiles()?.filter { it.isDirectory }?.forEach { version ->
+            for (tool in listOf("aapt2", "aidl", "zipalign", "split-select", "apksigner")) {
+                relativePaths.add(version.resolve(tool).relativeTo(engineDirectory).invariantSeparatorsPath)
+            }
+        }
+        for (relative in relativePaths.filter { it.isNotBlank() }) {
+            val file = resolveInside(engineDirectory, relative) ?: continue
+            if (file.isFile && !file.canExecute()) {
+                if (file.setExecutable(true, false) || file.canExecute()) repaired.add(relative)
+            }
+        }
+        return repaired
+    }
+
     private fun inspectLocalBuildEnvironment(): Map<String, Any> {
         val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
+        val freedBySafeRepair = repairSafeLocalBuildState()
         val storage = StatFs(filesDir.absolutePath).availableBytes
         val missing = mutableListOf<String>()
 
         val engineDirectory = File(filesDir, "bisho-local-build-engine")
         val manifest = File(engineDirectory, "engine-manifest.json")
+        val engineJson = try { if (manifest.isFile) JSONObject(manifest.readText()) else null } catch (_: Exception) { null }
+        val repairedExecutables = if (engineJson != null) repairKnownExecutablePermissions(engineDirectory, engineJson) else emptyList()
         val engineCheck = inspectToolchainManifest(engineDirectory, manifest, abi)
         val engineInstalled = engineCheck.first
         val requiredForCurrentState = if (engineInstalled) minimumBuildStorageBytes else engineInstallStorageBytes
-        val deviceSupported = abi == "arm64-v8a" &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && storage >= requiredForCurrentState
+        // Hardware compatibility is independent from temporary free-space readiness.
+        // Low storage must not mislabel a supported ARM64 Android device as unsupported.
+        val deviceSupported = abi == "arm64-v8a" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+        val storageReady = storage >= requiredForCurrentState
 
         if (abi != "arm64-v8a") {
             missing.add("المعمارية الحالية ($abi) غير مدعومة؛ المطلوب arm64-v8a.")
@@ -1346,7 +1857,7 @@ class MainActivity : FlutterActivity() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             missing.add("يتطلب محرك البناء Android 10 أو أحدث.")
         }
-        if (storage < requiredForCurrentState) {
+        if (!storageReady) {
             missing.add(if (engineInstalled)
                 "المساحة الحرة أقل من 2.5 GB؛ المشاريع الكبيرة قد تحتاج مساحة إضافية أثناء البناء."
             else "يلزم توفر حجم الحزمة الفعلية إضافة إلى 1 GB احتياطي؛ لا يوجد شرط ثابت قدره 20 GB.")
@@ -1389,7 +1900,7 @@ class MainActivity : FlutterActivity() {
         val releaseBuildVerified = releaseProofPresent && integrityError == null
         val runtimeVerified = releaseBuildVerified
         val debugBuildVerified = debugProofPresent && integrityError == null
-        val canBuildLocally = deviceSupported && engineInstalled && debugBuildVerified
+        val canBuildLocally = deviceSupported && storageReady && engineInstalled && debugBuildVerified
         val message = when {
             !deviceSupported ->
                 "هذا الجهاز لا يحقق متطلبات بيئة البناء المحلية: ${missing.joinToString(" ")}"
@@ -1405,10 +1916,13 @@ class MainActivity : FlutterActivity() {
         return mapOf(
             "deviceAbi" to abi,
             "androidVersion" to Build.VERSION.SDK_INT,
-            "availableBytes" to storage,
+            "availableBytes" to StatFs(filesDir.absolutePath).availableBytes,
             "requiredStorageBytes" to requiredForCurrentState,
-            "engineInstallStorageBytes" to engineInstallStorageBytes,
+            "automaticallyFreedBytes" to freedBySafeRepair,
+            "automaticallyRepairedPermissions" to repairedExecutables,
+            "engineInstallStorageBytes" to minimumBuildStorageBytes,
             "deviceSupported" to deviceSupported,
+            "storageReady" to storageReady,
             "engineInstalled" to engineInstalled,
             "engineActivated" to canBuildLocally,
             "alpineRootfsInstalled" to File(engineDirectory, "rootfs/alpine-aarch64/etc/alpine-release").let { it.isFile && it.readText().trim().startsWith("3.24.4") },
@@ -1455,7 +1969,7 @@ class MainActivity : FlutterActivity() {
                 missing.add("حقل releaseAotSupported في بيان المحرك يجب أن يكون true أو false.")
             }
 
-            val launcher = resolveInside(engineDirectory, json.optString("runtimeLauncher"))
+            val launcher = resolveProotLauncher(engineDirectory, json)
             val rootfs = resolveInside(engineDirectory, json.optString("rootfsDirectory"))
             val flutter = resolveInside(engineDirectory, json.optString("flutterExecutable"))
             val java = resolveInside(engineDirectory, json.optString("javaExecutable"))
@@ -1636,6 +2150,47 @@ class MainActivity : FlutterActivity() {
             throw IllegalStateException("تم تثبيت التطبيق وطلب تشغيله، لكن لم يُرصد process الخاص به؛ لم يتم اعتماد المحرك.")
         }
         emitBuildEvent("تم تثبيت تطبيق اختبار PRoot وتشغيله بنجاح: $expectedPackageName")
+    }
+
+    /** Resolve the immutable PRoot executable extracted by Android from the signed APK.
+     * Android 10+ SELinux blocks execve() from writable app_data_file paths even
+     * when chmod 0755 succeeds. Native libraries are extracted under /data/app
+     * and carry the apk_data_file label that permits execution.
+     */
+    private fun resolveProotLauncher(engineDirectory: File, manifest: JSONObject): File {
+        if (manifest.optString("runtimeLauncher") != "runtime/proot") {
+            throw SecurityException("مسار PRoot في بيان المحرك غير مطابق.")
+        }
+        val archived = resolveInside(engineDirectory, "runtime/proot")
+            ?: throw SecurityException("ملف PRoot داخل المحرك غير صالح.")
+        if (!archived.isFile || archived.length() <= 0L) {
+            throw IllegalStateException("ملف PRoot داخل حزمة المحرك غير موجود.")
+        }
+        val nativeDirectory = File(applicationInfo.nativeLibraryDir).canonicalFile
+        val executable = File(nativeDirectory, "libproot.so").canonicalFile
+        if (!executable.path.startsWith(nativeDirectory.path + File.separator) ||
+            !executable.isFile || executable.length() <= 0L) {
+            throw IllegalStateException(
+                "ملف PRoot الأصلي غير مثبت داخل مكتبات APK؛ أعد تثبيت نسخة التطبيق التي تتضمن libproot.so."
+            )
+        }
+        if (!Os.access(executable.absolutePath, OsConstants.X_OK)) {
+            throw SecurityException("Android لم يمنح ملف PRoot المضمّن صلاحية التنفيذ من مجلد مكتبات APK.")
+        }
+        return executable
+    }
+
+    /** Verify that the APK-packaged PRoot is executable from Android's native library directory. */
+    private fun prepareProotLauncher(launcher: File) {
+        val executable = launcher.canonicalFile
+        val nativeDirectory = File(applicationInfo.nativeLibraryDir).canonicalFile
+        if (!executable.path.startsWith(nativeDirectory.path + File.separator) ||
+            executable.name != "libproot.so" || !executable.isFile) {
+            throw SecurityException("يجب تشغيل PRoot من مجلد مكتبات APK الأصلي، وليس من ملفات المحرك القابلة للكتابة.")
+        }
+        if (!Os.access(executable.absolutePath, OsConstants.X_OK)) {
+            throw SecurityException("ملف PRoot المضمّن في APK غير قابل للتنفيذ؛ تحقق من إعداد استخراج مكتبات APK.")
+        }
     }
 
     private fun ensureProotTmpDirectory(): File {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
+import 'alpine_rootfs_installer.dart';
 
 class EngineInstallProgress {
   const EngineInstallProgress(this.message, {this.received = 0, this.total = 0});
@@ -45,6 +46,43 @@ class LocalBuildEngineInstaller {
 
   String _formatBytes(int value) => '${(value / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
 
+  /// Automatically run the full on-device PRoot + Flutter APK smoke test.
+  /// Native code keeps the previous engine until this test passes and rolls
+  /// back automatically on any failure.
+  Future<void> _verifyInstalledEngine() async {
+    // Alpine is a separate optional rootfs. Provision it automatically when
+    // network and storage allow, but do not block Flutter's own bundled rootfs
+    // smoke test if the optional Alpine mirror is unavailable.
+    try {
+      final environment = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
+      if (environment?['alpineRootfsInstalled'] != true) {
+        final alpine = AlpineRootfsInstaller();
+        await alpine.install(onProgress: (message, received, total) {
+          _report(EngineInstallProgress(message, received: received, total: total));
+        });
+        _report(const EngineInstallProgress('تم تثبيت Alpine ARM64 والتحقق منه تلقائياً.'));
+      }
+    } catch (error) {
+      _report(EngineInstallProgress(
+        'تعذر تثبيت Alpine ARM64 تلقائياً: $error. سيستمر اختبار محرك Flutter الأساسي؛ Alpine اختياري لهذا الاختبار.',
+      ));
+    }
+
+    _report(const EngineInstallProgress(
+      'اكتمل فحص المكونات. جارٍ اختبار PRoot وبناء APK تجريبي على هذا الهاتف قبل اعتماد المحرك...',
+    ));
+    final result = await _channel.invokeMapMethod<Object?, Object?>('probeEngine');
+    if (result?['success'] != true || result?['activated'] != true) {
+      throw StateError(
+        result?['message']?.toString() ??
+            'لم يجتز المحرك اختبار التشغيل الفعلي؛ لم يتم اعتماده.',
+      );
+    }
+    _report(const EngineInstallProgress(
+      'نجح اختبار PRoot وبناء APK وتثبيته وتشغيله؛ تم اعتماد المحرك تلقائياً.',
+    ));
+  }
+
   Future<void> install({required String archiveUrl, required String sha256}) async {
     final uri = Uri.tryParse(archiveUrl.trim());
     final digest = sha256.trim().toLowerCase();
@@ -63,7 +101,7 @@ class LocalBuildEngineInstaller {
       final environment = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
       final available = (environment?['availableBytes'] as num?)?.toInt() ?? 0;
       final requiredReserve = (environment?['engineInstallStorageBytes'] as num?)?.toInt() ??
-          1024 * 1024 * 1024;
+          2560 * 1024 * 1024;
       if (available < requiredReserve) {
         throw StateError('يلزم توفر ${_formatBytes(requiredReserve)} كمساحة احتياطية قبل تنزيل المحرك.');
       }
@@ -91,10 +129,18 @@ class LocalBuildEngineInstaller {
       if (total <= 0 || total > 8 * 1024 * 1024 * 1024) {
         throw StateError('حجم الحزمة غير معروف أو يتجاوز الحد المسموح (8 GB).');
       }
+      // This admission check runs before opening the archive sink or receiving
+      // response bytes. Therefore availableBytes is pre-download free space;
+      // requiring archive size + reserve here is intentional, not double-counting.
       final current = await _channel.invokeMapMethod<Object?, Object?>('inspectEnvironment');
+      final reserveAfterDownload =
+          (current?['engineInstallStorageBytes'] as num?)?.toInt() ??
+              2560 * 1024 * 1024;
       final freeAfterArchive = (current?['availableBytes'] as num?)?.toInt() ?? 0;
-      if (freeAfterArchive < total + 1024 * 1024 * 1024) {
-        throw StateError('المساحة لا تكفي لهذه الحزمة: يلزم ${_formatBytes(total)} للتنزيل إضافة إلى 1 GB احتياطي. اختر حزمة أصغر أو وفر مساحة.');
+      if (freeAfterArchive < total + reserveAfterDownload) {
+        throw StateError(
+          'المساحة لا تكفي بعد تنظيف الملفات المؤقتة الآمنة: حجم الحزمة ${_formatBytes(total)} مع احتياطي استخراج وبناء ${_formatBytes(reserveAfterDownload)}. المطلوب إجمالاً ${_formatBytes(total + reserveAfterDownload)} والمتاح ${_formatBytes(freeAfterArchive)}. لم تُحذف ملفاتك الشخصية أو المحرك السابق.',
+        );
       }
       sink = archive.openWrite();
       var received = 0;
@@ -125,7 +171,7 @@ class LocalBuildEngineInstaller {
       if (result?['success'] != true) {
         throw StateError(result?['message']?.toString() ?? 'رفض Android تثبيت حزمة المحرك.');
       }
-      _report(const EngineInstallProgress('اكتمل تثبيت ملفات المحرك. يلزم اختبار بناء APK فعلي قبل تفعيله.'));
+      await _verifyInstalledEngine();
     } finally {
       _installing = false;
       _downloadActive = false;
@@ -136,4 +182,42 @@ class LocalBuildEngineInstaller {
       if (await archive.exists()) await archive.delete();
     }
   }
+
+  /// Opens Android's document picker and returns a content:// URI without copying the selected archive.
+  Future<String?> pickLocalArchive() async {
+    return _channel.invokeMethod<String>('pickEngineArchive');
+  }
+
+  /// Installs an already-downloaded ZIP directly from its SAF URI; no HTTPS download or cache copy is made.
+  Future<void> installFromUri({required String archiveUri, required String sha256}) async {
+    final uri = Uri.tryParse(archiveUri.trim());
+    final digest = sha256.trim().toLowerCase();
+    if (uri == null || uri.scheme != 'content') {
+      throw ArgumentError('اختر ملف ZIP من منتقي ملفات Android.');
+    }
+    final validDigest = digest.length == 64 && digest.codeUnits.every((code) =>
+        (code >= 48 && code <= 57) || (code >= 97 && code <= 102));
+    if (!validDigest) {
+      throw ArgumentError('قيمة SHA-256 يجب أن تتكون من 64 خانة hex.');
+    }
+    if (_installing) throw StateError('هناك عملية تثبيت لمحرك البناء قيد التنفيذ بالفعل.');
+    _installing = true;
+    _cancelled = false;
+    _nativeInstallStarted = true;
+    try {
+      _report(const EngineInstallProgress('تم اختيار الملف المحلي. جارٍ التحقق من SHA-256 واستخراج المحرك مباشرة دون نسخة مؤقتة...'));
+      final result = await _channel.invokeMapMethod<Object?, Object?>(
+        'installEngineFromUri',
+        {'archiveUri': uri.toString(), 'sha256': digest},
+      );
+      if (result?['success'] != true) {
+        throw StateError(result?['message']?.toString() ?? 'رفض Android تثبيت ملف المحرك المحلي.');
+      }
+      await _verifyInstalledEngine();
+    } finally {
+      _installing = false;
+      _nativeInstallStarted = false;
+    }
+  }
+
 }

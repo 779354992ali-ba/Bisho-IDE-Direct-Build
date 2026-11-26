@@ -1808,21 +1808,42 @@ Thumbs.db
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 12),
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
             child: Row(
               children: [
-                Icon(
-                  Icons.create_new_folder_outlined,
-                  color: colors.primary,
-                  size: 26,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: colors.primary.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: colors.primary.withValues(alpha: .18)),
+                  ),
+                  child: Icon(
+                    Icons.create_new_folder_outlined,
+                    color: colors.primary,
+                    size: 23,
+                  ),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    'إنشاء مشروع جديد',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'إنشاء مشروع جديد',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'اتبع الخطوات لإعداد مشروعك',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 IconButton(
@@ -1950,56 +1971,70 @@ Thumbs.db
       title: 'اختر لغة المشروع',
       subtitle: 'ستظهر إعدادات خاصة باللغة التي تختارها.',
       children: [
-        ..._languages.map((language) {
-          final selected = language == _selectedLanguage;
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: InkWell(
-              onTap: _isCreating || _isPickingLocation
-                  ? null
-                  : () => _selectLanguage(language),
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? Theme.of(context).colorScheme.primaryContainer
-                      : Theme.of(context).colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: selected
-                        ? Theme.of(context).colorScheme.primary
-                        : Theme.of(context).colorScheme.outlineVariant,
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    LanguageBrandBadge(language: language, size: 44),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        language,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.w600,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final cardWidth = (constraints.maxWidth - 10) / 2;
+            return Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _languages.map((language) {
+                final selected = language == _selectedLanguage;
+                return SizedBox(
+                  width: cardWidth,
+                  child: InkWell(
+                    onTap: _isCreating || _isPickingLocation
+                        ? null
+                        : () => _selectLanguage(language),
+                    borderRadius: BorderRadius.circular(15),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      constraints: const BoxConstraints(minHeight: 82),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? Theme.of(context).colorScheme.primaryContainer
+                            : Theme.of(context).colorScheme.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color: selected
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.outlineVariant,
+                          width: selected ? 1.5 : 1,
                         ),
                       ),
-                    ),
-                    if (selected)
-                      Icon(
-                        Icons.check_circle,
-                        color: Theme.of(context).colorScheme.primary,
+                      child: Row(
+                        children: [
+                          LanguageBrandBadge(language: language, size: 34),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              language,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 11,
+                              ),
+                            ),
+                          ),
+                          if (selected)
+                            Icon(
+                              Icons.check_circle_rounded,
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 18,
+                            ),
+                        ],
                       ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
       ],
     );
   }
-
 
   Widget _buildSettingsStep() {
     return _stepContent(
@@ -2043,7 +2078,13 @@ Thumbs.db
             }
           }),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 20),
+        Row(children: [
+          Icon(Icons.folder_open_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text('ملفات المشروع', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 10),
         if (_selectedLanguage == 'Java')
           _infoCard(
             'سيتم إنشاء ملف البداية تلقائيًا وفق اسم الحزمة:\n'
@@ -2056,7 +2097,13 @@ Thumbs.db
             hint: _defaultEntryFile,
             icon: Icons.insert_drive_file_outlined,
           ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 18),
+        Row(children: [
+          Icon(Icons.tune_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text('إعدادات اللغة والإصدار', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 10),
         _field(
           controller: _versionController,
           label: 'إصدار المشروع',
@@ -2140,7 +2187,13 @@ Thumbs.db
             icon: Icons.person_outline,
           ),
         ],
-        const SizedBox(height: 18),
+        const SizedBox(height: 20),
+        Row(children: [
+          Icon(Icons.auto_awesome_rounded, size: 18, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Text('ملفات إضافية', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w800)),
+        ]),
+        const SizedBox(height: 8),
         _optionTile(
           title: 'إنشاء README.md',
           subtitle: 'ملف يشرح المشروع ومعلوماته.',
@@ -2162,35 +2215,157 @@ Thumbs.db
   }
 
   Widget _buildSummaryStep() {
+    final colors = Theme.of(context).colorScheme;
     return _stepContent(
-      title: 'مكان حفظ المشروع',
-      subtitle: 'سيتم إنشاء مجلد باسم المشروع داخل المكان الذي تختاره.',
+      title: 'راجع مشروعك قبل الإنشاء',
+      subtitle: 'تأكد من الإعدادات ومكان الحفظ. يمكنك الرجوع وتعديل أي اختيار.',
       children: [
-        _infoCard(
-          'اسم المشروع: $_projectName\n'
-          'اسم المجلد: $_safeProjectName\n'
-          'اللغة: $_selectedLanguage\n'
-          'النوع: ${_projectMode == 'integrated' ? 'متكامل' : 'أساسي'}\n'
-          'القالب: ${_templateLabel(_selectedTemplate)}\n'
-          'ملف البداية: $_actualEntryFile',
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                colors.primaryContainer.withValues(alpha: .72),
+                colors.surfaceContainerLow,
+              ],
+              begin: Alignment.topRight,
+              end: Alignment.bottomLeft,
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colors.primary.withValues(alpha: .35)),
+          ),
+          child: Row(
+            children: [
+              LanguageBrandBadge(language: _selectedLanguage, size: 48),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_projectName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 4),
+                    Text('$_selectedLanguage · ${_projectMode == 'integrated' ? 'متكامل' : 'أساسي'}',
+                      style: TextStyle(color: colors.onSurfaceVariant, fontSize: 11)),
+                  ],
+                ),
+              ),
+              Icon(Icons.check_circle_rounded, color: colors.primary, size: 24),
+            ],
+          ),
         ),
         const SizedBox(height: 14),
-        if (_saveLocation != null)
-          _infoCard(
-            'مكان الحفظ:\n${_saveLocation!.name}',
-          )
-        else
-          _infoCard(
-            'عند الضغط على إنشاء المشروع، ستفتح نافذة اختيار مجلد الحفظ.',
-          ),
+        _summaryGroup(
+          title: 'هوية المشروع',
+          icon: Icons.badge_outlined,
+          children: [
+            _summaryRow('اسم المشروع', _projectName, Icons.drive_file_rename_outline),
+            _summaryRow('اسم المجلد', _safeProjectName, Icons.folder_outlined),
+            _summaryRow('اللغة', _selectedLanguage, Icons.code_rounded),
+            _summaryRow('نوع المشروع', _projectMode == 'integrated' ? 'متكامل' : 'أساسي', Icons.layers_outlined),
+            _summaryRow('القالب', _templateLabel(_selectedTemplate), Icons.dashboard_customize_outlined),
+            _summaryRow('ملف البداية', _actualEntryFile, Icons.play_circle_outline_rounded),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _summaryGroup(
+          title: 'ملفات وإعدادات إضافية',
+          icon: Icons.tune_rounded,
+          children: [
+            _summaryRow('إصدار المشروع', _versionController.text.trim().isEmpty ? 'الافتراضي' : _versionController.text.trim(), Icons.tag_rounded),
+            _summaryRow('README.md', _includeReadme ? 'سيتم إنشاؤه' : 'غير مفعّل', Icons.description_outlined,
+              enabled: _includeReadme),
+            _summaryRow('.gitignore', _includeGitignore ? 'سيتم إنشاؤه' : 'غير مفعّل', Icons.visibility_off_outlined,
+              enabled: _includeGitignore),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _summaryGroup(
+          title: 'مكان الحفظ',
+          icon: Icons.save_alt_rounded,
+          children: [
+            _summaryRow('المجلد الأب', _saveLocation?.name ?? 'سيُطلب منك اختيار المجلد التالي', Icons.folder_open_rounded),
+          ],
+        ),
         if (_isFlutter) ...[
-          const SizedBox(height: 14),
-          _infoCard(
-            'تنبيه: مشروع Flutter الناتج يحتوي ملفات المصدر والإعدادات '
-            'الأساسية فقط، وليس scaffold أصليًا كاملًا قابلًا للبناء.',
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colors.tertiaryContainer.withValues(alpha: .45),
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(color: colors.tertiary.withValues(alpha: .35)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline_rounded, color: colors.tertiary),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: Text(
+                    'مشروع Flutter الناتج يحتوي ملفات المصدر والإعدادات الأساسية. ستحتاج إلى بيئة Flutter متوافقة لإكمال التهيئة والبناء.',
+                    style: TextStyle(fontSize: 11, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ],
+    );
+  }
+
+  Widget _summaryGroup({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 8),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: .65)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(icon, size: 17, color: colors.primary),
+            const SizedBox(width: 8),
+            Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800)),
+          ]),
+          const SizedBox(height: 8),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryRow(String label, String value, IconData icon, {bool enabled = true}) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(children: [
+        Icon(icon, size: 15, color: enabled ? colors.onSurfaceVariant : colors.outline),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 104,
+          child: Text(label, style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant)),
+        ),
+        Expanded(
+          child: Text(value,
+            textAlign: TextAlign.end,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600,
+              color: enabled ? colors.onSurface : colors.outline)),
+        ),
+      ]),
     );
   }
 

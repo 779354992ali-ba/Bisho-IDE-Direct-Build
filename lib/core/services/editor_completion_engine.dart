@@ -69,6 +69,38 @@ class EditorCompletionEngine {
         .toList(growable: false);
   }
 
+  /// Suggests members for a simple receiver expression such as `console.`
+  /// This is intentionally a small lexical catalog, not runtime reflection.
+  static List<String> contextualCandidates({
+    required String receiver,
+    required String language,
+  }) {
+    final key = receiver.trim().toLowerCase();
+    const common = <String, List<String>>{
+      'console': ['log()', 'info()', 'warn()', 'error()', 'debug()', 'table()', 'time()', 'timeEnd()'],
+      'math': ['abs()', 'ceil()', 'floor()', 'max()', 'min()', 'pow()', 'random()', 'round()', 'sqrt()'],
+      'json': ['decode()', 'encode()'],
+      'datetime': ['now()', 'parse()', 'utc()'],
+      'duration': ['zero', 'microsecondsPerSecond', 'millisecondsPerSecond', 'secondsPerMinute'],
+      'colors': ['red', 'blue', 'green', 'black', 'white', 'amber', 'transparent'],
+      'icons': ['add', 'close', 'home', 'search', 'settings', 'menu', 'check'],
+      'widget': ['build()', 'canUpdate()', 'createElement()'],
+      'string': ['fromCharCodes()', 'fromEnvironment()', 'isEmpty', 'isNotEmpty'],
+      'list': ['empty()', 'filled()', 'from()', 'generate()', 'of()'],
+      'path': ['join()', 'basename()', 'dirname()', 'extension()', 'withoutExtension()'],
+      'file': ['exists()', 'readAsString()', 'writeAsString()', 'delete()', 'length()'],
+      'debugprint': ['call()'],
+    };
+    final values = common[key];
+    if (values == null) return const [];
+    if (language == 'Dart' && key == 'console') return const [];
+    if ((language == 'JavaScript' || language == 'TypeScript') &&
+        <String>{'colors', 'icons', 'widget'}.contains(key)) {
+      return const [];
+    }
+    return values;
+  }
+
   /// Extracts identifiers already used in source code for project-local
   /// completion. Quoted strings and common comments are skipped so prose does
   /// not pollute the suggestions. This remains lexical, not semantic analysis.

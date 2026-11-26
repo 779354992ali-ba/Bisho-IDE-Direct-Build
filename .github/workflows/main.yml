@@ -1,6 +1,9 @@
 name: Build Flutter APK
 
 on:
+  push:
+    branches:
+      - fix/app-stream-rootfs-install
   workflow_dispatch:
     inputs:
       flutter_version:
@@ -103,6 +106,14 @@ jobs:
           set -euo pipefail
           APK='build/app/outputs/flutter-apk/app-release.apk'
           test -s "$APK"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          test -n "$AAPT"
+          BADGING="$("$AAPT" dump badging "$APK")"
+          printf '%s\n' "$BADGING" | grep -F "package: name='com.bisho.myapp' versionCode='100' versionName='1.0.1'"
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libflutter.so"
+          unzip -l "$APK" | grep -F "lib/arm64-v8a/libapp.so"
+          unzip -l "$APK" | grep -E "classes[0-9]*[.]dex"
+          echo "APK_IDENTITY_AND_ARM64_RUNTIME_VERIFIED"
           mkdir -p build/release-artifact
           cp "$APK" build/release-artifact/app-release.apk
           cd build/release-artifact
@@ -158,4 +169,3 @@ jobs:
           name: Bisho-IDE-Build-Diagnostics
           path: build/diagnostics/
           if-no-files-found: warn
-          retention-days: 14
