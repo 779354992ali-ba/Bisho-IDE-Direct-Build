@@ -1,3 +1,12 @@
+## Phase 8 — Security hardening (implemented)
+- Added preflight validation for GitHub PAT input, repository owner/name, workflow path, branch, and workflow-run ID before network requests.
+- Validated every SAF file/directory name before including it in a Git tree path; malformed names from document providers are skipped.
+- Sanitized GitHub API error messages so arbitrary server response text is not echoed into the UI.
+- Kept the PAT in Flutter Secure Storage and reused the trimmed validated value during project upload.
+- Added regression tests for invalid credentials and path inputs, unsafe branch names, non-positive run IDs, and server-error text redaction.
+- Flutter tests/analyzer remain pending; no build or APK was started. The existing ARM64 engine, Alpine RootFS, PRoot, installers, and runtime were not changed.
+- Details: `PHASE8_SECURITY_HARDENING.md`.
+
 ## Phase 7 — Responsive dashboard and mobile workspace
 - Dashboard action groups and quick actions now adapt between 2, 3, and 4 columns for phone/tablet/wide layouts.
 - The all-tools sheet uses responsive columns and card proportions.
