@@ -18,6 +18,21 @@ class EditorQuickFixPreview {
 class EditorQuickFixEngine {
   const EditorQuickFixEngine._();
 
+  static String _normalize(String source) {
+    final lines = source
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .split('\n')
+        .map((line) => line.replaceFirst(RegExp(r'[ \t]+$'), ''))
+        .toList();
+    while (lines.length > 1 &&
+        lines.last.isEmpty &&
+        lines[lines.length - 2].isEmpty) {
+      lines.removeLast();
+    }
+    return lines.isEmpty ? '' : '${lines.join('\n')}\n';
+  }
+
   static EditorQuickFixPreview preview(String source, String language) {
     if (source.isEmpty) {
       return const EditorQuickFixPreview(
@@ -26,9 +41,21 @@ class EditorQuickFixEngine {
         fixes: [],
       );
     }
+
     var updated = source.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
     final fixes = <String>[];
     final diagnostics = EditorSyntaxDiagnostics.analyze(updated, language);
+
+    // A canonical source with no structural diagnostics is already clean.
+    // Return before the repair/normalization pipeline to guarantee a true
+    // no-op preview (including an empty fixes list).
+    if (updated == _normalize(source) && diagnostics.isEmpty) {
+      return EditorQuickFixPreview(
+        source: source,
+        updatedSource: source,
+        fixes: const [],
+      );
+    }
 
     final unmatchedOpen = diagnostics.where((item) =>
       item.message.startsWith('قوس الفتح')
@@ -60,25 +87,18 @@ class EditorQuickFixEngine {
       }
     }
 
-    final normalizedLines = updated.split('\n')
-        .map((line) => line.replaceFirst(RegExp(r'[ \t]+$'), ''))
-        .toList();
-    while (normalizedLines.length > 1 &&
-        normalizedLines[normalizedLines.length - 1].isEmpty &&
-        normalizedLines[normalizedLines.length - 2].isEmpty) {
-      normalizedLines.removeLast();
-    }
-    updated = normalizedLines.isEmpty ? '' : '${normalizedLines.join('\n')}\n';
-    if (updated != source && !fixes.any((item) => item.contains('مسافات'))) {
-      if (source.contains('\r') || source.split('\n').any((line) => line.endsWith(' '))) {
+    updated = _normalize(updated);
+    if (updated != source && fixes.isEmpty) {
+      if (source.contains('\r') ||
+          source.split('\n').any((line) => line.endsWith(' '))) {
         fixes.add('توحيد نهايات الأسطر وإزالة المسافات الزائدة');
-      } else if (!source.isEmpty && !source.endsWith('\n')) {
+      } else if (!source.endsWith('\n')) {
         fixes.add('إضافة سطر نهائي للملف');
+      } else {
+        fixes.add('توحيد تنسيق نهايات الأسطر والمسافات');
       }
     }
-    if (fixes.isEmpty && updated != source) {
-      fixes.add('توحيد تنسيق نهايات الأسطر والمسافات');
-    }
+
     return EditorQuickFixPreview(
       source: source,
       updatedSource: updated,
