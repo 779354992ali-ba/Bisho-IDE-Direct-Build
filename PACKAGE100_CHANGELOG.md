@@ -1,4 +1,4 @@
-## Phase 8 — Security hardening (implemented)
+## Phase 9 — Integration and validation hardening (in progress)\n- Bounded locally retained build-history logs to 200,000 characters per entry while preserving the existing 50-entry retention cap.\n- Clamped history reads to the supported retention range and made zero/negative limits return an empty list safely.\n- Added regression coverage for oversized logs and invalid read limits.\n- Reviewed the editor palette, archive validator, backup repository, build-history store, and existing test inventory; no engine/runtime changes.\n- Tests and analyzer have not been executed in this continuation; no pass is claimed and no APK/build was started.\n\n## Phase 8 — Security hardening (implemented)
 - Added preflight validation for GitHub PAT input, repository owner/name, workflow path, branch, and workflow-run ID before network requests.
 - Validated every SAF file/directory name before including it in a Git tree path; malformed names from document providers are skipped.
 - Sanitized GitHub API error messages so arbitrary server response text is not echoed into the UI.
