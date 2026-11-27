@@ -1404,6 +1404,16 @@ class _FlutterPreviewScreenState extends State<FlutterPreviewScreen> {
                       _localBuildInfoRow('دعم الجهاز', _localBuildEnvironment!.deviceSupported
                           ? 'يحقق المتطلبات الأولية' : 'لا يحقق المتطلبات الأولية'),
                       _localBuildInfoRow('المساحة المطلوبة', _localBuildEnvironment!.requiredStorageLabel),
+                      if (_localBuildEnvironment!.storageBreakdown.isNotEmpty) ...[
+                        const Divider(height: 14, color: Color(0xFF26374E)),
+                        const Align(
+                          alignment: Alignment.centerRight,
+                          child: Text('تفصيل استهلاك مساحة التطبيق',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12)),
+                        ),
+                        ..._localBuildEnvironment!.storageBreakdown.map((item) =>
+                          _localBuildInfoRow(item.label, item.sizeLabel)),
+                      ],
                       const Divider(height: 14, color: Color(0xFF26374E)),
                       _localBuildInfoRow('نظام Alpine ARM64', _localBuildEnvironment!.alpineRootfsInstalled
                           ? 'مثبّت وموجود' : 'غير مثبّت'),
