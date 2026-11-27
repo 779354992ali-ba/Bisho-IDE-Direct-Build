@@ -6,7 +6,6 @@ workflows:
     '.github/workflows/build-proot-android-arm64.yml':
         - 'actions/checkout@v4.4.0'
         - 'actions/upload-artifact@v4.6.2'
-        - 'android-actions/setup-android@v4.0.2'
     '.github/workflows/direct-apk-build.yml':
         - 'actions/checkout@v5.1.0'
         - 'actions/setup-java@v5.7.0'
