@@ -190,6 +190,24 @@ void main() {
       expect(unknown.hasSufficientStorage, isFalse);
     });
 
+    test('parses detailed storage usage without trusting missing fields', () {
+      final environment = LocalBuildEnvironment.fromMap({
+        'availableBytes': 3 * 1024 * 1024 * 1024,
+        'requiredStorageBytes': 2 * 1024 * 1024 * 1024,
+        'storageBreakdown': [
+          {'label': 'Alpine RootFS', 'bytes': 1024 * 1024 * 1024},
+          {'label': 'Gradle', 'bytes': '524288000'},
+          {'label': 'invalid', 'bytes': false},
+        ],
+      });
+
+      expect(environment.storageBreakdown, hasLength(3));
+      expect(environment.storageBreakdown[0].label, 'Alpine RootFS');
+      expect(environment.storageBreakdown[0].sizeLabel, '1.00 GB');
+      expect(environment.storageBreakdown[1].bytes, 524288000);
+      expect(environment.storageBreakdown[2].bytes, 0);
+    });
+
     test('formats available storage in GiB', () {
       final environment = LocalBuildEnvironment.fromMap({
         'deviceAbi': 'arm64-v8a',
