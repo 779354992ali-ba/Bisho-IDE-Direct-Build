@@ -1468,7 +1468,6 @@ class MainActivity : FlutterActivity() {
             val runningBuild = ProcessBuilder(command).redirectErrorStream(true).apply {
                 environment()["HOME"] = persistentHome.absolutePath
                 environment()["PROOT_TMP_DIR"] = prootTmpDirectory.absolutePath
-                environment()["PROOT_TMP_DIR"] = prootTmpDirectory.absolutePath
                 environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
                 environment()["TMPDIR"] = prootTmpDirectory.absolutePath
             }.start()
@@ -1497,6 +1496,7 @@ class MainActivity : FlutterActivity() {
             }
             emitBuildEvent("تم إنتاج APK. جارٍ التحقق من التوقيع ومحاذاة ZIP...")
             val verifyProcess = ProcessBuilder(verifyCommand).redirectErrorStream(true).apply {
+                environment()["PROOT_TMP_DIR"] = prootTmpDirectory.absolutePath
                 environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
                 environment()["TMPDIR"] = prootTmpDirectory.absolutePath
             }.start()
@@ -1810,6 +1810,7 @@ class MainActivity : FlutterActivity() {
         return try {
             emitBuildEvent("بدأ اختبار البناء الحقيقي: إنشاء مشروع Flutter تجريبي داخل المحرك...")
             val process = ProcessBuilder(command).redirectErrorStream(true).apply {
+                environment()["PROOT_TMP_DIR"] = prootTmpDirectory.absolutePath
                 environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
                 environment()["TMPDIR"] = prootTmpDirectory.absolutePath
             }.start()
