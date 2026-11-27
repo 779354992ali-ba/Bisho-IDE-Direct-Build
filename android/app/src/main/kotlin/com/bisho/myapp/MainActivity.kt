@@ -1425,6 +1425,7 @@ class MainActivity : FlutterActivity() {
             val prootTmpDirectory = ensureProotTmpDirectory()
             val command = mutableListOf(
                 launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
+                "-b", "${prootTmpDirectory.absolutePath}:/tmp",
                 "-b", "${project.absolutePath}:/workspace/project",
                 "-b", "${persistentHome.absolutePath}:/bisho-home",
                 "-w", "/workspace/project", "/bin/sh", "-lc",
@@ -1488,6 +1489,7 @@ class MainActivity : FlutterActivity() {
                 "BADGING=\$(\"\$TOOLS/aapt2\" dump badging /workspace/project/${apkRelativePath}); printf '%s\\n' \"\$BADGING\" | grep -q '^package:'"
             val verifyCommand = mutableListOf(
                 launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
+                "-b", "${prootTmpDirectory.absolutePath}:/tmp",
                 "-b", "${project.absolutePath}:/workspace/project",
                 "/bin/sh", "-lc", verifyScript
             )
@@ -1799,6 +1801,7 @@ class MainActivity : FlutterActivity() {
         val prootTmpDirectory = ensureProotTmpDirectory()
         val command = mutableListOf(
             launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
+            "-b", "${prootTmpDirectory.absolutePath}:/tmp",
             "-b", "${smokeRoot.absolutePath}:/bisho-engine-smoke",
             "-b", "${persistentHome.absolutePath}:/bisho-home",
             "/bin/sh", "-lc", script
