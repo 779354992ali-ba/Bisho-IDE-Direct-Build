@@ -734,7 +734,7 @@ class MainActivity : FlutterActivity() {
                                         "نسخ hard link بديل داخل RootFS: $linkName",
                                         duplicateBytes,
                                         rootfsExpandedBytes + duplicateBytes,
-                                        reserveBytes = 64L * 1024L * 1024L
+                                        reserveBytes = 16L * 1024L * 1024L
                                     )
                                     Files.copy(linkTarget, linkPath)
                                     rootfsExpandedBytes += duplicateBytes
