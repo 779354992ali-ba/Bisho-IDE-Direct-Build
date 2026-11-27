@@ -1,5 +1,27 @@
 import 'package:flutter/services.dart';
 
+class StorageUsage {
+  const StorageUsage({required this.label, required this.bytes});
+
+  final String label;
+  final int bytes;
+
+  String get sizeLabel {
+    if (bytes <= 0) return '0 MB';
+    final gib = bytes / (1024 * 1024 * 1024);
+    if (gib >= 0.1) return '${gib.toStringAsFixed(2)} GB';
+    final mib = bytes / (1024 * 1024);
+    return '${mib.toStringAsFixed(0)} MB';
+  }
+
+  factory StorageUsage.fromMap(Object? value) {
+    final map = value is Map ? value : const <Object?, Object?>{};
+    final raw = map['bytes'];
+    final bytes = raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? '') ?? 0;
+    return StorageUsage(label: map['label']?.toString() ?? 'غير معروف', bytes: bytes);
+  }
+}
+
 /// Device and toolchain diagnostics for the on-device build feature.
 ///
 /// A local build is reported as available only after the native layer confirms
@@ -10,6 +32,7 @@ class LocalBuildEnvironment {
     required this.deviceAbi,
     required this.androidVersion,
     required this.availableBytes,
+    required this.storageBreakdown,
     required this.engineInstalled,
     required this.alpineRootfsInstalled,
     required this.deviceSupported,
@@ -25,6 +48,7 @@ class LocalBuildEnvironment {
   final String deviceAbi;
   final int androidVersion;
   final int availableBytes;
+  final List<StorageUsage> storageBreakdown;
   final bool engineInstalled;
   final bool alpineRootfsInstalled;
   final bool deviceSupported;
@@ -52,6 +76,11 @@ class LocalBuildEnvironment {
       deviceAbi: map['deviceAbi']?.toString() ?? 'غير معروف',
       androidVersion: _readInt(map['androidVersion']),
       availableBytes: _readInt(map['availableBytes']),
+      storageBreakdown: (map['storageBreakdown'] is List
+              ? map['storageBreakdown'] as List
+              : const <Object?>[])
+          .map(StorageUsage.fromMap)
+          .toList(growable: false),
       engineInstalled: engineInstalled,
       alpineRootfsInstalled: alpineRootfsInstalled,
       deviceSupported: deviceSupported,
@@ -150,6 +179,7 @@ class LocalBuildEnvironmentService {
       deviceAbi: 'غير معروف',
       androidVersion: 0,
       availableBytes: 0,
+      storageBreakdown: const [],
       engineInstalled: false,
       alpineRootfsInstalled: false,
       deviceSupported: false,
