@@ -47,11 +47,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y make pkg-config python3 curl file binutils
 
-      - name: Install Android NDK
-        uses: android-actions/setup-android@v4.0.2
-
-      - name: Install pinned NDK side-by-side
-        run: sdkmanager 'ndk;29.0.14206865'
+      - name: Install pinned Android NDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?Android SDK is not preinstalled on this runner}"
+          SDKMANAGER="$(command -v sdkmanager || find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          test -x "$SDKMANAGER"
+          "$SDKMANAGER" --install "ndk;29.0.14206865"
 
       - name: Build Android ARM64 talloc and PRoot
         shell: bash
