@@ -12,6 +12,7 @@ workflows:
         - 'actions/upload-artifact@v4.6.2'
         - 'subosito/flutter-action@v2.23.0'
     '.github/workflows/main.yml':
+        - 'actions/download-artifact@v4.3.0'
         - 'actions/cache@v5'
         - 'actions/checkout@v5.1.0'
         - 'android-actions/setup-android@v4.0.2'
@@ -34,6 +35,11 @@ dependencies:
         commit: 'sha1-fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09'
         owner_id: 44036562
         repo_id: 197814629
+    'actions/download-artifact@v4.3.0':
+        ref: 'v4.3.0'
+        commit: 'sha1-d3f86a106a0bac45b974a628896c90dbdf5c8093'
+        owner_id: 44036562
+        repo_id: 192626254
     'actions/setup-java@v5.7.0':
         ref: 'v5.7.0'
         commit: 'sha1-b6effb05e454b25005698d916606bdc6ffcbf961'
