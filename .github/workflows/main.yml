@@ -1,5 +1,7 @@
 name: Build Flutter APK
 
+# PRoot is built first and must be present in the signed APK before release.
+
 on:
   push:
     branches:
