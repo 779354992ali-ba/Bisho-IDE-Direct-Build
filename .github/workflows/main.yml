@@ -450,11 +450,37 @@ jobs:
           set -o pipefail
           flutter test --no-pub --reporter expanded 2>&1 | tee build/diagnostics/tests.log
 
+      - name: Configure persistent APK signing
+        shell: bash
+        env:
+          BISHO_RELEASE_KEYSTORE_BASE64: ${{ secrets.BISHO_RELEASE_KEYSTORE_BASE64 }}
+          BISHO_RELEASE_STORE_PASSWORD: ${{ secrets.BISHO_RELEASE_STORE_PASSWORD }}
+          BISHO_RELEASE_KEY_ALIAS: ${{ secrets.BISHO_RELEASE_KEY_ALIAS }}
+          BISHO_RELEASE_KEY_PASSWORD: ${{ secrets.BISHO_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${BISHO_RELEASE_KEYSTORE_BASE64:?Missing GitHub secret BISHO_RELEASE_KEYSTORE_BASE64}"
+          : "${BISHO_RELEASE_STORE_PASSWORD:?Missing GitHub secret BISHO_RELEASE_STORE_PASSWORD}"
+          : "${BISHO_RELEASE_KEY_ALIAS:?Missing GitHub secret BISHO_RELEASE_KEY_ALIAS}"
+          : "${BISHO_RELEASE_KEY_PASSWORD:?Missing GitHub secret BISHO_RELEASE_KEY_PASSWORD}"
+          KEYSTORE="$RUNNER_TEMP/bisho-release-signing.jks"
+          printf '%s' "$BISHO_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          test -s "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storepass "$BISHO_RELEASE_STORE_PASSWORD" -alias "$BISHO_RELEASE_KEY_ALIAS" >/dev/null
+          {
+            echo "BISHO_RELEASE_STORE_FILE=$KEYSTORE"
+            echo "BISHO_RELEASE_STORE_PASSWORD=$BISHO_RELEASE_STORE_PASSWORD"
+            echo "BISHO_RELEASE_KEY_ALIAS=$BISHO_RELEASE_KEY_ALIAS"
+            echo "BISHO_RELEASE_KEY_PASSWORD=$BISHO_RELEASE_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Persistent release keystore loaded and alias verified."
       - name: Build universal release APK
         shell: bash
         run: |
           set -o pipefail
-          flutter build apk --release --no-pub 2>&1 | tee build/diagnostics/apk-build.log
+          VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))
+          VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
+          flutter build apk --release --build-number "$VERSION_CODE" --build-name "$VERSION_NAME" --no-pub 2>&1 | tee build/diagnostics/apk-build.log
 
       - name: Verify APK and generate checksums
         shell: bash
@@ -465,7 +491,9 @@ jobs:
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           test -n "$AAPT"
           BADGING="$("$AAPT" dump badging "$APK")"
-          printf '%s\n' "$BADGING" | grep -F "package: name='com.bisho.myapp' versionCode='100' versionName='1.0.1'"
+          VERSION_CODE=$((100 + GITHUB_RUN_NUMBER))
+          VERSION_NAME="1.0.${GITHUB_RUN_NUMBER}"
+          printf '%s\n' "$BADGING" | grep -F "package: name='com.bisho.myapp' versionCode='$VERSION_CODE' versionName='$VERSION_NAME'"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libflutter.so"
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libproot.so"
           unzip -p "$APK" lib/arm64-v8a/libproot.so > build/diagnostics/apk-libproot.so
@@ -473,6 +501,9 @@ jobs:
           readelf -h build/diagnostics/apk-libproot.so | grep -E 'Machine:.*AArch64'
           unzip -l "$APK" | grep -F "lib/arm64-v8a/libapp.so"
           unzip -l "$APK" | grep -E "classes[0-9]*[.]dex"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --verbose "$APK"
+          "$APKSIGNER" verify --print-certs "$APK" | tee build/diagnostics/apk-signing-certificate.txt
           echo "APK_IDENTITY_AND_ARM64_RUNTIME_VERIFIED"
           mkdir -p build/release-artifact
           cp "$APK" build/release-artifact/app-release.apk
