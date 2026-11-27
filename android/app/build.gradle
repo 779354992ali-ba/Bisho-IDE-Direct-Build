@@ -78,10 +78,9 @@ android {
                 System.getenv('BISHO_RELEASE_STORE_PASSWORD') &&
                 System.getenv('BISHO_RELEASE_KEY_ALIAS') &&
                 System.getenv('BISHO_RELEASE_KEY_PASSWORD')
-            if (!signingReady) {
-                throw new GradleException('Stable release signing is required. Configure BISHO_RELEASE_KEYSTORE_BASE64, BISHO_RELEASE_STORE_PASSWORD, BISHO_RELEASE_KEY_ALIAS and BISHO_RELEASE_KEY_PASSWORD in GitHub Actions secrets.')
-            }
-            signingConfig = signingConfigs.release
+            // Cloud release workflow enforces the persistent key before Gradle runs.
+            // Keep on-device project builds usable when no cloud signing secrets exist.
+            signingConfig = signingReady ? signingConfigs.release : signingConfigs.debug
         }
     }
 }
