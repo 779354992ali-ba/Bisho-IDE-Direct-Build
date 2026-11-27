@@ -860,7 +860,13 @@ class MainActivity : FlutterActivity() {
                                 mergeDirectoryContents(linkPath, linkTarget)
                             }
                             // Creating a symlink consumes filesystem metadata/inodes too.
-                            ensureInstallCapacity("إنشاء روابط RootFS الرمزية")
+                            // Use the same bounded reserve as the symlink preflight above;
+                            // ensureInstallCapacity() would re-apply the global 1 GiB reserve.
+                            ensureExtractionCapacity(
+                                "إنشاء روابط RootFS الرمزية",
+                                remainingInodes = 1L,
+                                reserveBytes = 32L * 1024L * 1024L
+                            )
                             try {
                                 Files.createSymbolicLink(
                                     linkPath,
@@ -871,7 +877,7 @@ class MainActivity : FlutterActivity() {
                                 val detail = error.message.orEmpty()
                                 val noSpace = detail.contains("No space left on device", ignoreCase = true) ||
                                     detail.contains("ENOSPC", ignoreCase = true) ||
-                                    latest.availableBytes < extractionSafetyReserveBytes ||
+                                    latest.availableBytes < 32L * 1024L * 1024L ||
                                     Os.statvfs(filesDir.absolutePath).f_favail < extractionSafetyReserveInodes
                                 if (noSpace) {
                                     throw IllegalStateException(
