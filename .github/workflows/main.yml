@@ -27,14 +27,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - name: Checkout pinned Termux PRoot source
-        uses: actions/checkout@v4.4.0
+        uses: actions/checkout@v5.1.0
         with:
           repository: termux/proot
           ref: cd02c79e0ff84db3a22616e49ad44b0cc22ef4f2
           path: termux-proot
           fetch-depth: 0
       - name: Checkout pinned Android shared-memory helper
-        uses: actions/checkout@v4.4.0
+        uses: actions/checkout@v5.1.0
         with:
           repository: termux/libandroid-shmem
           ref: 7f0bd7e25dbdd146265aff7c6a890029e374622d
