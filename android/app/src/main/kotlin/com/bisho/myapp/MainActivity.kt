@@ -1376,6 +1376,7 @@ class MainActivity : FlutterActivity() {
                 throw IllegalStateException("مشغل Linux أو نظام الملفات الجذري غير مكتمل.")
             }
             prepareProotLauncher(launcher)
+            ensureGuestTmpDirectory(rootfs)
             refreshGuestResolver(rootfs)
             if (!hasDeviceVerification(engineDirectory, manifest, "debug")) {
                 throw IllegalStateException("يجب نجاح اختبار PRoot وبناء APK والتحقق منه على هذا الهاتف قبل السماح بالبناء.")
@@ -1466,6 +1467,8 @@ class MainActivity : FlutterActivity() {
             emitBuildEvent("تم تجهيز المشروع. فحص Flutter وJava وAndroid SDK ثم بدء البناء...")
             val runningBuild = ProcessBuilder(command).redirectErrorStream(true).apply {
                 environment()["HOME"] = persistentHome.absolutePath
+                environment()["PROOT_TMP_DIR"] = prootTmpDirectory.absolutePath
+                environment()["PROOT_TMP_DIR"] = prootTmpDirectory.absolutePath
                 environment()["BISHO_PROOT_TMPDIR"] = prootTmpDirectory.absolutePath
                 environment()["TMPDIR"] = prootTmpDirectory.absolutePath
             }.start()
@@ -1730,6 +1733,7 @@ class MainActivity : FlutterActivity() {
         val javaBin = javaGuest.substringBeforeLast('/')
         val javaHome = javaBin.substringBeforeLast('/')
         val flutterBin = flutterGuest.substringBeforeLast('/')
+        ensureGuestTmpDirectory(rootfs)
         refreshGuestResolver(rootfs)
         val smokeRoot = File(cacheDir, "bisho-engine-smoke").canonicalFile
         val persistentHome = File(filesDir, "bisho-local-build-home").canonicalFile
@@ -2357,6 +2361,29 @@ class MainActivity : FlutterActivity() {
         if (!Os.access(executable.absolutePath, OsConstants.X_OK)) {
             throw SecurityException("ملف PRoot المضمّن في APK غير قابل للتنفيذ؛ تحقق من إعداد استخراج مكتبات APK.")
         }
+    }
+
+    /**
+     * Alpine minirootfs archives may omit /tmp. PRoot needs a real guest /tmp,
+     * while its glue-rootfs and f2fs probe files must live in writable Android
+     * app cache. Keep the two temporary locations explicit and separate.
+     */
+    private fun ensureGuestTmpDirectory(rootfs: File): File {
+        val root = rootfs.canonicalFile
+        if (!root.isDirectory) throw IllegalStateException("نظام Linux الجذري غير موجود.")
+        val directory = File(root, "tmp")
+        if (!directory.exists() && !directory.mkdirs()) {
+            throw IllegalStateException("تعذر إنشاء /tmp داخل نظام Linux.")
+        }
+        val canonical = directory.canonicalFile
+        if (!canonical.path.startsWith(root.path + File.separator) || !canonical.isDirectory) {
+            throw SecurityException("مسار /tmp داخل RootFS غير آمن.")
+        }
+        Os.chmod(canonical.absolutePath, 0x3ff) // 01777: sticky, world-writable temp directory
+        if (!canonical.canWrite()) {
+            throw IllegalStateException("مجلد /tmp داخل Linux غير قابل للكتابة.")
+        }
+        return canonical
     }
 
     private fun ensureProotTmpDirectory(): File {
