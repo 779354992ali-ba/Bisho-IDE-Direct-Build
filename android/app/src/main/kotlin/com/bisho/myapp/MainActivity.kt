@@ -834,7 +834,8 @@ class MainActivity : FlutterActivity() {
                             val remainingLinks = (symbolicLinks.size - linkIndex).toLong()
                             ensureExtractionCapacity(
                                 "إنشاء روابط RootFS الرمزية",
-                                remainingInodes = remainingLinks
+                                remainingInodes = remainingLinks,
+                                reserveBytes = 32L * 1024L * 1024L
                             )
                             val linkName = tarEntry.linkName.replace('\\', '/')
                             if (linkName.isBlank() || linkName.contains('\u0000')) throw SecurityException("رابط rootfs TAR فارغ أو غير صالح.")
