@@ -142,7 +142,8 @@ jobs:
           TALLOC_OBJECTS=(bin/default/talloc*.o)
           if ((${#TALLOC_OBJECTS[@]} < 1)); then
             echo "ERROR: No core Talloc object found."
-            exit 1          fi
+            exit 1
+          fi
           printf "Talloc objects found: %s\n" "${TALLOC_OBJECTS[@]}"
 
           REPLACE_OBJECT="bin/default/lib/replace/replace.c.1.o"
@@ -310,7 +311,8 @@ jobs:
             echo "finished_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo
             echo '--- Toolchain ---'
-            flutter --version 2>&1 || true            dart --version 2>&1 || true
+            flutter --version 2>&1 || true
+            dart --version 2>&1 || true
             java -version 2>&1 || true
           } > build/diagnostics/BUILD_DIAGNOSTICS.txt
           echo "Run URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> build/diagnostics/BUILD_DIAGNOSTICS.txt
@@ -441,7 +443,8 @@ jobs:
           from pathlib import Path
 
           arch = Path(sys.argv[1])
-          s = arch.read_text()          old = "    #define HAS_POKEDATA_WORKAROUND true\n\n    #define HAS_LOADER_32BIT true\n"
+          s = arch.read_text()
+          old = "    #define HAS_POKEDATA_WORKAROUND true\n\n    #define HAS_LOADER_32BIT true\n"
           new = "    #define HAS_POKEDATA_WORKAROUND true\n\n    /* Bisho packages an ARM64-only Linux guest rootfs. */\n    #undef HAS_LOADER_32BIT\n"
           if s.count(old) != 1:
               raise SystemExit("ERROR: ARM64 loader capability anchor mismatch.")
@@ -656,7 +659,8 @@ jobs:
             echo "finished_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             echo
             echo '--- Toolchain ---'
-            flutter --version 2>&1 || true            dart --version 2>&1 || true
+            flutter --version 2>&1 || true
+            dart --version 2>&1 || true
             java -version 2>&1 || true
           } > build/diagnostics/BUILD_DIAGNOSTICS.txt
           echo "Run URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> build/diagnostics/BUILD_DIAGNOSTICS.txt
