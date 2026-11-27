@@ -2003,6 +2003,52 @@ class MainActivity : FlutterActivity() {
         return repaired
     }
 
+    private fun storageBytes(target: File): Long {
+        if (!target.exists()) return 0L
+        if (target.isFile) return target.length()
+        var total = 0L
+        target.walkTopDown().forEach { item ->
+            if (item.isFile) total += item.length()
+        }
+        return total
+    }
+
+    /**
+     * Read-only storage accounting. Keep active, previous and installing engine
+     * trees separate so a retained rollback copy is visible.
+     */
+    private fun inspectStorageBreakdown(): List<Map<String, Any>> {
+        val engine = File(filesDir, "bisho-local-build-engine")
+        val rootfs = File(engine, "rootfs/alpine-aarch64")
+        val engineBytes = storageBytes(engine)
+        val rootfsBytes = storageBytes(rootfs)
+        val known = setOf(
+            "bisho-local-build-engine",
+            "bisho-local-build-engine.previous",
+            "bisho-local-build-engine.installing",
+            "bisho-local-build-engine.failed",
+            "bisho-local-build-home",
+            "bisho-local-builds",
+            "bisho-local-build-artifacts",
+            "bisho-engine-downloads"
+        )
+        val otherBytes = filesDir.listFiles().orEmpty()
+            .filter { it.name !in known }
+            .sumOf { storageBytes(it) }
+        return listOf(
+            mapOf("label" to "Alpine RootFS", "bytes" to rootfsBytes),
+            mapOf("label" to "أدوات Flutter وJava وAndroid SDK", "bytes" to (engineBytes - rootfsBytes).coerceAtLeast(0L)),
+            mapOf("label" to "نسخة المحرك الاحتياطية", "bytes" to storageBytes(File(filesDir, "bisho-local-build-engine.previous"))),
+            mapOf("label" to "ملفات تثبيت المحرك المؤقتة", "bytes" to storageBytes(File(filesDir, "bisho-local-build-engine.installing"))),
+            mapOf("label" to "ذاكرة Gradle وPub", "bytes" to storageBytes(File(filesDir, "bisho-local-build-home"))),
+            mapOf("label" to "مشاريع البناء المرحلية", "bytes" to storageBytes(File(filesDir, "bisho-local-builds"))),
+            mapOf("label" to "ملفات APK الناتجة", "bytes" to storageBytes(File(filesDir, "bisho-local-build-artifacts"))),
+            mapOf("label" to "تنزيلات المحرك", "bytes" to storageBytes(File(filesDir, "bisho-engine-downloads"))),
+            mapOf("label" to "ملفات التطبيق الأخرى", "bytes" to otherBytes),
+            mapOf("label" to "الملفات المؤقتة", "bytes" to storageBytes(cacheDir))
+        )
+    }
+
     private fun inspectLocalBuildEnvironment(): Map<String, Any> {
         val abi = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"
         val freedBySafeRepair = repairSafeLocalBuildState()
@@ -2088,6 +2134,7 @@ class MainActivity : FlutterActivity() {
             "androidVersion" to Build.VERSION.SDK_INT,
             "availableBytes" to StatFs(filesDir.absolutePath).availableBytes,
             "requiredStorageBytes" to requiredForCurrentState,
+            "storageBreakdown" to inspectStorageBreakdown(),
             "automaticallyFreedBytes" to freedBySafeRepair,
             "automaticallyRepairedPermissions" to repairedExecutables,
             "engineInstallStorageBytes" to minimumBuildStorageBytes,
