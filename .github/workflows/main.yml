@@ -26,19 +26,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-name: Build Termux-compatible PRoot for Android ARM64
-
-on:
-  workflow_dispatch:
-  workflow_call:
-
-permissions:
-  contents: read
-
-jobs:
-  build:
-    runs-on: ubuntu-24.04
-    steps:
       - name: Checkout pinned Termux PRoot source
         uses: actions/checkout@v4.4.0
         with:
