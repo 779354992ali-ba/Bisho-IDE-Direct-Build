@@ -2040,6 +2040,7 @@ class MainActivity : FlutterActivity() {
             mapOf("label" to "أدوات Flutter وJava وAndroid SDK", "bytes" to (engineBytes - rootfsBytes).coerceAtLeast(0L)),
             mapOf("label" to "نسخة المحرك الاحتياطية", "bytes" to storageBytes(File(filesDir, "bisho-local-build-engine.previous"))),
             mapOf("label" to "ملفات تثبيت المحرك المؤقتة", "bytes" to storageBytes(File(filesDir, "bisho-local-build-engine.installing"))),
+            mapOf("label" to "نسخة المحرك الفاشلة المحفوظة", "bytes" to storageBytes(File(filesDir, "bisho-local-build-engine.failed"))),
             mapOf("label" to "ذاكرة Gradle وPub", "bytes" to storageBytes(File(filesDir, "bisho-local-build-home"))),
             mapOf("label" to "مشاريع البناء المرحلية", "bytes" to storageBytes(File(filesDir, "bisho-local-builds"))),
             mapOf("label" to "ملفات APK الناتجة", "bytes" to storageBytes(File(filesDir, "bisho-local-build-artifacts"))),
