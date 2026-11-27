@@ -52,6 +52,21 @@ android {
         versionName = flutterVersionName
     }
 
+    signingConfigs {
+        release {
+            def signingStore = System.getenv("BISHO_RELEASE_STORE_FILE")
+            def signingStorePassword = System.getenv("BISHO_RELEASE_STORE_PASSWORD")
+            def signingKeyAlias = System.getenv("BISHO_RELEASE_KEY_ALIAS")
+            def signingKeyPassword = System.getenv("BISHO_RELEASE_KEY_PASSWORD")
+            if (signingStore && signingStorePassword && signingKeyAlias && signingKeyPassword) {
+                storeFile = file(signingStore)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // Keep the test build installable beside the existing production app.
@@ -59,7 +74,14 @@ android {
             versionNameSuffix = "-test"
         }
         release {
-            signingConfig = signingConfigs.debug
+            def signingReady = System.getenv('BISHO_RELEASE_STORE_FILE') &&
+                System.getenv('BISHO_RELEASE_STORE_PASSWORD') &&
+                System.getenv('BISHO_RELEASE_KEY_ALIAS') &&
+                System.getenv('BISHO_RELEASE_KEY_PASSWORD')
+            if (!signingReady) {
+                throw new GradleException('Stable release signing is required. Configure BISHO_RELEASE_KEYSTORE_BASE64, BISHO_RELEASE_STORE_PASSWORD, BISHO_RELEASE_KEY_ALIAS and BISHO_RELEASE_KEY_PASSWORD in GitHub Actions secrets.')
+            }
+            signingConfig = signingConfigs.release
         }
     }
 }
