@@ -1842,7 +1842,7 @@ class MainActivity : FlutterActivity() {
             if (!completed) {
                 mapOf("success" to false, "message" to "انتهت مهلة اختبار بناء Debug التجريبي بعد 60 دقيقة. راجع السجل.", "log" to readProbeLog(log))
             } else if (process.exitValue() != 0) {
-                mapOf("success" to false, "message" to "فشل بناء Flutter Debug التجريبي داخل PRoot (رمز ${process.exitValue()}). لم يتم اعتماد المحرك.", "log" to readProbeLog(log))
+                mapOf("success" to false, "message" to ("فشل بناء Flutter Debug التجريبي داخل PRoot (رمز ${process.exitValue()}). لم يتم اعتماد المحرك." + rootfsExecutionDiagnostics(rootfs, prootTmpDirectory)), "log" to (readProbeLog(log) + rootfsExecutionDiagnostics(rootfs, prootTmpDirectory)))
             } else {
                 val apk = File(projectHost, "build/app/outputs/flutter-apk/app-debug.apk")
                 if (!apk.isFile || apk.length() < 64L * 1024L) {
@@ -2479,6 +2479,55 @@ class MainActivity : FlutterActivity() {
         }
         if (validTargets.isEmpty()) throw IllegalStateException("لم يتم العثور على /bin/sh أو /usr/bin/sh داخل RootFS.")
         return validTargets.first()
+    }
+
+    /** Collect host-side evidence for PRoot EACCES without changing engine files. */
+    private fun rootfsExecutionDiagnostics(rootfs: File, prootTmp: File): String {
+        val root = rootfs.canonicalFile
+        val out = StringBuilder("\\n--- PRoot execution diagnostics ---\\n")
+        fun describe(label: String, file: File) {
+            try {
+                val stat = Os.stat(file.absolutePath)
+                out.append(label).append(": path=").append(file.absolutePath)
+                    .append(" canonical=").append(file.canonicalPath)
+                    .append(" exists=").append(file.exists())
+                    .append(" file=").append(file.isFile)
+                    .append(" dir=").append(file.isDirectory)
+                    .append(" readable=").append(Os.access(file.absolutePath, OsConstants.R_OK))
+                    .append(" executable=").append(Os.access(file.absolutePath, OsConstants.X_OK))
+                    .append(" mode=").append(Integer.toOctalString(stat.st_mode and 0xFFF))
+                    .append(" uid=").append(stat.st_uid).append(" gid=").append(stat.st_gid).append('\\n')
+            } catch (e: Exception) {
+                out.append(label).append(": path=").append(file.absolutePath)
+                    .append(" ERROR=").append(e.message).append('\\n')
+            }
+        }
+        out.append("rootfs=").append(root.absolutePath).append('\\n')
+        listOf("", "bin", "bin/sh", "usr", "usr/bin", "usr/bin/sh").forEach { rel ->
+            describe(if (rel.isEmpty()) "root" else "/$rel", if (rel.isEmpty()) root else File(root, rel))
+        }
+        for (rel in listOf("bin/sh", "usr/bin/sh")) {
+            val file = File(root, rel)
+            try {
+                out.append("symlink /").append(rel).append(" -> ")
+                    .append(Os.readlink(file.absolutePath)).append('\\n')
+            } catch (_: Exception) {
+                out.append("symlink /").append(rel).append(": not-a-link-or-unreadable\\n")
+            }
+        }
+        describe("PROOT_TMP_DIR", prootTmp)
+        try {
+            val mounts = File("/proc/self/mountinfo").readLines()
+            val candidates = mounts.filter { line ->
+                val mountPoint = line.split(' ').getOrNull(4)?.replace("\\\\040", " ")
+                mountPoint != null && (root.path.startsWith(mountPoint) || prootTmp.canonicalPath.startsWith(mountPoint))
+            }.sortedByDescending { it.split(' ').getOrNull(4)?.length ?: 0 }.take(4)
+            out.append("matching mounts:\\n")
+            candidates.forEach { out.append(it).append('\\n') }
+        } catch (e: Exception) {
+            out.append("mountinfo ERROR=").append(e.message).append('\\n')
+        }
+        return out.toString().take(9000)
     }
 
     private fun ensureGuestTmpDirectory(rootfs: File): File {
