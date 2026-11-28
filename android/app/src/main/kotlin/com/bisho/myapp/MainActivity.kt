@@ -1055,6 +1055,7 @@ class MainActivity : FlutterActivity() {
                 throw IllegalStateException("أنواع الملفات في بيان المحرك غير مطابقة؛ تحقق من المشغل وRootFS وFlutter وJDK وSDK.")
             }
             val rootfs = resolved.getValue("rootfsDirectory").canonicalFile
+            ensureRootfsShellExecutable(rootfs)
             val rootfsPrefix = rootfs.path + File.separator
             for (key in listOf("flutterExecutable", "javaExecutable", "androidSdkDirectory")) {
                 val candidate = resolved.getValue(key).canonicalFile
@@ -1376,6 +1377,7 @@ class MainActivity : FlutterActivity() {
                 throw IllegalStateException("مشغل Linux أو نظام الملفات الجذري غير مكتمل.")
             }
             prepareProotLauncher(launcher)
+            ensureRootfsShellExecutable(rootfs)
             ensureGuestTmpDirectory(rootfs)
             refreshGuestResolver(rootfs)
             if (!hasDeviceVerification(engineDirectory, manifest, "debug")) {
@@ -1735,6 +1737,7 @@ class MainActivity : FlutterActivity() {
         val javaBin = javaGuest.substringBeforeLast('/')
         val javaHome = javaBin.substringBeforeLast('/')
         val flutterBin = flutterGuest.substringBeforeLast('/')
+        ensureRootfsShellExecutable(rootfs)
         ensureGuestTmpDirectory(rootfs)
         refreshGuestResolver(rootfs)
         val smokeRoot = File(cacheDir, "bisho-engine-smoke").canonicalFile
@@ -2420,6 +2423,38 @@ class MainActivity : FlutterActivity() {
      * while its glue-rootfs and f2fs probe files must live in writable Android
      * app cache. Keep the two temporary locations explicit and separate.
      */
+    /**
+     * Android extraction can preserve a shell symlink while leaving its target
+     * without execute bits on some filesystems. PRoot then reports EACCES for
+     * /usr/bin/sh even though /bin/sh exists. Repair the resolved shell and
+     * every parent directory explicitly before any guest command is launched.
+     */
+    private fun ensureRootfsShellExecutable(rootfs: File): File {
+        val root = rootfs.canonicalFile
+        if (!root.isDirectory) throw IllegalStateException("نظام Linux الجذري غير موجود.")
+        val shell = File(root, "bin/sh")
+        if (!shell.exists()) throw IllegalStateException("ملف /bin/sh غير موجود داخل RootFS.")
+        val target = shell.canonicalFile
+        if (!target.path.startsWith(root.path + File.separator) || !target.isFile) {
+            throw SecurityException("هدف /bin/sh غير صالح أو خارج RootFS.")
+        }
+        Os.chmod(target.absolutePath, 0x1ed) // 0755
+        var parent = target.parentFile
+        while (parent != null && parent.canonicalFile != root) {
+            if (!parent.isDirectory || !parent.canonicalPath.startsWith(root.path + File.separator)) {
+                throw SecurityException("مجلد أب غير صالح لملف /bin/sh.")
+            }
+            Os.chmod(parent.absolutePath, 0x1ed)
+            parent = parent.parentFile
+        }
+        val binDirectory = File(root, "bin")
+        if (binDirectory.isDirectory) Os.chmod(binDirectory.absolutePath, 0x1ed)
+        if (!Os.access(target.absolutePath, OsConstants.X_OK)) {
+            throw IllegalStateException("ملف /bin/sh أو هدفه داخل RootFS لا يملك صلاحية التنفيذ بعد إصلاح POSIX.")
+        }
+        return target
+    }
+
     private fun ensureGuestTmpDirectory(rootfs: File): File {
         val root = rootfs.canonicalFile
         if (!root.isDirectory) throw IllegalStateException("نظام Linux الجذري غير موجود.")
