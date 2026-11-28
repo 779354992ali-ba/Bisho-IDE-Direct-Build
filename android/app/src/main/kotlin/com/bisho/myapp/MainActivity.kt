@@ -2432,27 +2432,53 @@ class MainActivity : FlutterActivity() {
     private fun ensureRootfsShellExecutable(rootfs: File): File {
         val root = rootfs.canonicalFile
         if (!root.isDirectory) throw IllegalStateException("نظام Linux الجذري غير موجود.")
-        val shell = File(root, "bin/sh")
-        if (!shell.exists()) throw IllegalStateException("ملف /bin/sh غير موجود داخل RootFS.")
-        val target = shell.canonicalFile
-        if (!target.path.startsWith(root.path + File.separator) || !target.isFile) {
-            throw SecurityException("هدف /bin/sh غير صالح أو خارج RootFS.")
-        }
-        Os.chmod(target.absolutePath, 0x1ed) // 0755
-        var parent = target.parentFile
-        while (parent != null && parent.canonicalFile != root) {
-            if (!parent.isDirectory || !parent.canonicalPath.startsWith(root.path + File.separator)) {
-                throw SecurityException("مجلد أب غير صالح لملف /bin/sh.")
+
+        fun makeSearchable(relative: String) {
+            val path = File(root, relative)
+            if (!path.exists() || !path.isDirectory) {
+                throw IllegalStateException("مجلد تشغيل shell غير موجود: /$relative")
             }
-            Os.chmod(parent.absolutePath, 0x1ed)
-            parent = parent.parentFile
+            val canonical = path.canonicalFile
+            if (!canonical.path.startsWith(root.path + File.separator)) {
+                throw SecurityException("مجلد تشغيل shell يشير خارج RootFS: /$relative")
+            }
+            // PRoot resolves /usr/bin/sh through every directory in this chain.
+            // Repair search bits on the lexical path as well as on the final target.
+            Os.chmod(canonical.absolutePath, 0x1ed) // 0755
+            if (!Os.access(canonical.absolutePath, OsConstants.X_OK)) {
+                throw IllegalStateException("مجلد /$relative لا يملك صلاحية العبور والتنفيذ.")
+            }
         }
-        val binDirectory = File(root, "bin")
-        if (binDirectory.isDirectory) Os.chmod(binDirectory.absolutePath, 0x1ed)
-        if (!Os.access(target.absolutePath, OsConstants.X_OK)) {
-            throw IllegalStateException("ملف /bin/sh أو هدفه داخل RootFS لا يملك صلاحية التنفيذ بعد إصلاح POSIX.")
+
+        // Both Alpine's /bin/sh and the /usr/bin/sh path reported by PRoot
+        // must be traversable. /usr/bin/sh is commonly a symlink to BusyBox.
+        makeSearchable("bin")
+        makeSearchable("usr")
+        makeSearchable("usr/bin")
+
+        val shellCandidates = listOf(File(root, "bin/sh"), File(root, "usr/bin/sh"))
+        val validTargets = shellCandidates.mapNotNull { shell ->
+            if (!shell.exists()) return@mapNotNull null
+            val target = shell.canonicalFile
+            if (!target.path.startsWith(root.path + File.separator) || !target.isFile) {
+                throw SecurityException("هدف ${shell.relativeTo(root)} غير صالح أو خارج RootFS.")
+            }
+            Os.chmod(target.absolutePath, 0x1ed) // 0755
+            var parent = target.parentFile
+            while (parent != null && parent.canonicalFile != root) {
+                if (!parent.isDirectory || !parent.canonicalPath.startsWith(root.path + File.separator)) {
+                    throw SecurityException("مجلد أب غير صالح لملف shell.")
+                }
+                Os.chmod(parent.absolutePath, 0x1ed)
+                parent = parent.parentFile
+            }
+            if (!Os.access(target.absolutePath, OsConstants.X_OK)) {
+                throw IllegalStateException("ملف shell لا يملك صلاحية التنفيذ بعد إصلاح POSIX.")
+            }
+            target
         }
-        return target
+        if (validTargets.isEmpty()) throw IllegalStateException("لم يتم العثور على /bin/sh أو /usr/bin/sh داخل RootFS.")
+        return validTargets.first()
     }
 
     private fun ensureGuestTmpDirectory(rootfs: File): File {
