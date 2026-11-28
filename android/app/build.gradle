@@ -47,7 +47,11 @@ android {
     defaultConfig {
         applicationId = "com.bisho.myapp"
         minSdk = 24
-        targetSdk = 34
+        // Android 10+ blocks execve() from writable app_data_file for targetSdk >= 29.
+        // PRoot must execute Linux guest binaries from the writable private RootFS.
+        // Keep targetSdk at 28 (Android 11+ still accepts it) for the legacy
+        // untrusted_app_27 execution policy required by this on-device runtime.
+        targetSdk = 28
         versionCode = flutterVersionCode.toInteger()
         versionName = flutterVersionName
     }
