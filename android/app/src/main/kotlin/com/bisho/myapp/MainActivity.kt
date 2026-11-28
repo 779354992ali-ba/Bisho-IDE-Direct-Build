@@ -1459,7 +1459,7 @@ class MainActivity : FlutterActivity() {
                     "${shellQuote(flutterGuest)} pub get; ${shellQuote(flutterGuest)} build apk --no-pub --target-platform android-arm64 $flutterBuildArgs; " +
                     "APK=/workspace/project/${apkRelativePath}; test -s \"\$APK\"; " +
                     "test -x \"\$TOOLS/apksigner\"; \"\$TOOLS/apksigner\" verify --verbose \"\$APK\"; " +
-                    "BADGING=\$(\"\$TOOLS/aapt2\" dump badging \"\$APK\"); printf '%s\\n' \"\$BADGING\" | grep -q '^package:'"
+                    "BADGING=\$(\"\$TOOLS/aapt2\" dump badging \"\$APK\"); printf '%s\n' \"\$BADGING\" | grep -q '^package:'"
             )
             // PRoot builds often need proc/dev for Java and Android build tools.
             for (hostPath in listOf("/dev", "/proc")) {
@@ -1488,7 +1488,7 @@ class MainActivity : FlutterActivity() {
                 "TOOLS=; for candidate in $(printf '%s\n' ${shellQuote(sdkPath)}/build-tools/* | sort -Vr); do " +
                 "if [ -x \"\$candidate/aapt2\" ] && [ -x \"\$candidate/aidl\" ] && [ -x \"\$candidate/zipalign\" ] && [ -x \"\$candidate/split-select\" ] && [ -x \"\$candidate/apksigner\" ]; then TOOLS=\"\$candidate\"; break; fi; done; " +
                 "test -n \"\$TOOLS\"; \"\$TOOLS/apksigner\" verify --verbose /workspace/project/${apkRelativePath}; \"\$TOOLS/zipalign\" -c -v 4 /workspace/project/${apkRelativePath}; " +
-                "BADGING=\$(\"\$TOOLS/aapt2\" dump badging /workspace/project/${apkRelativePath}); printf '%s\\n' \"\$BADGING\" | grep -q '^package:'"
+                "BADGING=\$(\"\$TOOLS/aapt2\" dump badging /workspace/project/${apkRelativePath}); printf '%s\n' \"\$BADGING\" | grep -q '^package:'"
             val verifyCommand = mutableListOf(
                 launcher.absolutePath, "-0", "-r", rootfs.absolutePath,
                 "-b", "${prootTmpDirectory.absolutePath}:/tmp",
@@ -2484,7 +2484,7 @@ class MainActivity : FlutterActivity() {
     /** Collect host-side evidence for PRoot EACCES without changing engine files. */
     private fun rootfsExecutionDiagnostics(rootfs: File, prootTmp: File): String {
         val root = rootfs.canonicalFile
-        val out = StringBuilder("\\n--- PRoot execution diagnostics ---\\n")
+        val out = StringBuilder("\n--- PRoot execution diagnostics ---\n")
         fun describe(label: String, file: File) {
             try {
                 val stat = Os.stat(file.absolutePath)
@@ -2496,13 +2496,13 @@ class MainActivity : FlutterActivity() {
                     .append(" readable=").append(Os.access(file.absolutePath, OsConstants.R_OK))
                     .append(" executable=").append(Os.access(file.absolutePath, OsConstants.X_OK))
                     .append(" mode=").append(Integer.toOctalString(stat.st_mode and 0xFFF))
-                    .append(" uid=").append(stat.st_uid).append(" gid=").append(stat.st_gid).append('\\n')
+                    .append(" uid=").append(stat.st_uid).append(" gid=").append(stat.st_gid).append('\n')
             } catch (e: Exception) {
                 out.append(label).append(": path=").append(file.absolutePath)
-                    .append(" ERROR=").append(e.message).append('\\n')
+                    .append(" ERROR=").append(e.message).append('\n')
             }
         }
-        out.append("rootfs=").append(root.absolutePath).append('\\n')
+        out.append("rootfs=").append(root.absolutePath).append('\n')
         listOf("", "bin", "bin/sh", "usr", "usr/bin", "usr/bin/sh").forEach { rel ->
             describe(if (rel.isEmpty()) "root" else "/$rel", if (rel.isEmpty()) root else File(root, rel))
         }
@@ -2510,9 +2510,9 @@ class MainActivity : FlutterActivity() {
             val file = File(root, rel)
             try {
                 out.append("symlink /").append(rel).append(" -> ")
-                    .append(Os.readlink(file.absolutePath)).append('\\n')
+                    .append(Os.readlink(file.absolutePath)).append('\n')
             } catch (_: Exception) {
-                out.append("symlink /").append(rel).append(": not-a-link-or-unreadable\\n")
+                out.append("symlink /").append(rel).append(": not-a-link-or-unreadable\n")
             }
         }
         describe("PROOT_TMP_DIR", prootTmp)
@@ -2522,10 +2522,10 @@ class MainActivity : FlutterActivity() {
                 val mountPoint = line.split(' ').getOrNull(4)?.replace("\\\\040", " ")
                 mountPoint != null && (root.path.startsWith(mountPoint) || prootTmp.canonicalPath.startsWith(mountPoint))
             }.sortedByDescending { it.split(' ').getOrNull(4)?.length ?: 0 }.take(4)
-            out.append("matching mounts:\\n")
-            candidates.forEach { out.append(it).append('\\n') }
+            out.append("matching mounts:\n")
+            candidates.forEach { out.append(it).append('\n') }
         } catch (e: Exception) {
-            out.append("mountinfo ERROR=").append(e.message).append('\\n')
+            out.append("mountinfo ERROR=").append(e.message).append('\n')
         }
         return out.toString().take(9000)
     }
