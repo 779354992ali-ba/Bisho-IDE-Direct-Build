@@ -35,6 +35,12 @@ android {
         }
     }
 
+    // This app intentionally targets API 28 for the PRoot SELinux execution domain.
+    // Suppress the Play Store policy lint check; distribution is handled outside Play.
+    lint {
+        disable += "ExpiredTargetSdkVersion"
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
